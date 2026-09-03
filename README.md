@@ -22,10 +22,10 @@ El engine se saca en tres capas apiladas. Este repo cubre la **2** y la **2b**.
 ┌───────────────────────────────────────────────┐
 │  3. Autoría   crear una VN nueva sobre el engine│  (pendiente)
 ├───────────────────────────────────────────────┤
-│  1. Runtime   correr las escenas en la PC       │  (pendiente)
-│     VM Squirrel + render TIM2/fuente            │
+│  1. Runtime   correr las escenas en la PC       │  ✅ MVP: escena real
+│     VM Squirrel + render TIM2/fuente            │     transpilada y dibujada
 ├───────────────────────────────────────────────┤
-│  2. Acceso    abrir/inspeccionar/modificar/repack│  ✅ este repo
+│  2. Acceso    abrir/inspeccionar/modificar/repack│  ✅
 │     contenedor, codec, TIM2, fuente             │
 └───────────────────────────────────────────────┘
 ```
@@ -34,6 +34,18 @@ El engine se saca en tres capas apiladas. Este repo cubre la **2** y la **2b**.
   no ejecuta la lógica del juego.
 - **Capa 2b** — la API del engine hacia los scripts, mapeada en
   [`docs/engine_api.md`](docs/engine_api.md). Es el insumo de la capa 1.
+- **Capa 1** — runtime off-console. La fuente Squirrel se **transpila a Python**
+  (`sqparse` → `sqtranspile`) y corre sobre `sqrt` (modelo de objetos, corrutinas
+  stackful); `render` dibuja capas TIM2 + texto con la fuente; `sqrun` implementa
+  los comandos de escena (`set`/`talk`/`reset`/`next`...) y compone frames.
+  **1920/1920 escenas transpilan y compilan**; una escena real corre y se dibuja:
+
+  ```sh
+  python3 -m znt sqrun iso 1000 frame.png     # transpila+ejecuta+dibuja la escena 1000
+  ```
+
+  Falta para runtime completo: animación (módulos Layer), audio, flujo entre
+  escenas por corrutina, entrada y ventana en vivo. El núcleo está probado.
 
 ## Uso como librería
 
