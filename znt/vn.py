@@ -33,7 +33,7 @@ Formato (línea por línea):
 import sys, os, json, base64, html
 
 
-def parse(text, base_dir="."):
+def parse(text):
     title = "Visual Novel"
     chars = {"narrator": {"name": "", "color": "#cccccc"}}
     scenes = {}          # id -> lista de pasos
@@ -58,7 +58,7 @@ def parse(text, base_dir="."):
             cur = line[6:].strip(); scenes[cur] = []; order.append(cur); continue
         if cur is None:
             raise SyntaxError(f"paso fuera de una escena: {line!r}")
-        step = _step(line, chars, base_dir)
+        step = _step(line, chars)
         if step:
             scenes[cur].append(step)
     if not scenes:
@@ -67,20 +67,31 @@ def parse(text, base_dir="."):
             "start": order[0], "order": order}
 
 
-def _step(line, chars, base_dir):
+def _step(line, chars):
     head = line.split(" ", 1)[0]
     arg = line[len(head):].strip()
     if head == "bg":
-        return {"op": "bg", "spec": _bg(arg, base_dir)}
+        return {"op": "bg", "spec": _bg(arg)}
     if head == "show":
         parts = arg.split()
         cid = parts[0]; pos = parts[1] if len(parts) > 1 else "center"
-        img = _asset(chars.get(cid, {}).get("sprite"), base_dir)
-        return {"op": "show", "id": cid, "pos": pos, "img": img}
+        return {"op": "show", "id": cid, "pos": pos}
     if head == "sprite":                 # sprite <char> <file.png>: define arte del personaje
         cid, f = arg.split(None, 1)
         chars.setdefault(cid, {"name": cid, "color": "#ccc"})["sprite"] = f.strip()
         return None
+    if head == "animate":
+        parts = arg.split()
+        target, kind = parts[0], parts[1]
+        params = {}
+        for kv in parts[2:]:
+            if "=" in kv:
+                k, v = kv.split("=", 1)
+                try: params[k] = int(v)
+                except ValueError:
+                    try: params[k] = float(v)
+                    except ValueError: params[k] = v
+        return {"op": "animate", "id": target, "kind": kind, "params": params}
     if head == "hide":
         return {"op": "hide", "id": arg}
     if head == "goto":
@@ -100,13 +111,13 @@ def _step(line, chars, base_dir):
     raise SyntaxError(f"paso no reconocido: {line!r}")
 
 
-def _bg(arg, base_dir):
+def _bg(arg):
     if arg.startswith("grad:"):
         a, b = (arg[5:].split(",") + ["#000"])[:2]
         return {"kind": "grad", "a": a.strip(), "b": b.strip()}
     if arg.startswith("#"):
         return {"kind": "solid", "color": arg}
-    return {"kind": "img", "data": _asset(arg, base_dir)}
+    return {"kind": "img", "file": arg}          # se embebe al exportar (render_html)
 
 
 def _asset(fname, base_dir):
@@ -136,17 +147,73 @@ def _link_choices(model):
     return model
 
 
+def to_text(model):
+    """Serializa un modelo (el que devuelve parse) de vuelta a texto .vn."""
+    out = [f"title: {model['title']}"]
+    for cid, c in model["characters"].items():
+        if cid == "narrator":
+            continue
+        line = f'character {cid} "{c["name"]}"'
+        if c.get("color"): line += f' color={c["color"]}'
+        out.append(line)
+        if c.get("sprite"): out.append(f'sprite {cid} {c["sprite"]}')
+    out.append("")
+    for sid in model.get("order", model["scenes"]):
+        out.append(f"scene {sid}")
+        for s in model["scenes"][sid]:
+            out.append("  " + _step_text(s))
+        out.append("")
+    return "\n".join(out).rstrip() + "\n"
+
+
+def _step_text(s):
+    op = s["op"]
+    if op == "bg":
+        sp = s["spec"]
+        if sp["kind"] == "grad": return f"bg grad:{sp['a']},{sp['b']}"
+        if sp["kind"] == "solid": return f"bg {sp['color']}"
+        return f"bg {sp.get('file', '?.png')}"          # ver nota en build()
+    if op == "show": return f"show {s['id']} {s.get('pos','center')}"
+    if op == "hide": return f"hide {s['id']}"
+    if op == "say":
+        return f"* {s['text']}" if s["who"] == "narrator" else f"{s['who']}: {s['text']}"
+    if op == "animate":
+        kv = " ".join(f"{k}={v}" for k, v in s.get("params", {}).items())
+        return f"animate {s['id']} {s['kind']} {kv}".rstrip()
+    if op == "choice":
+        return "choice\n" + "\n".join(f"    - {o['label']} -> {o['target']}"
+                                      for o in s.get("options", []))
+    if op == "goto": return f"goto {s['target']}"
+    if op == "end": return "end"
+    return f"# ? {op}"
+
+
+def _embed(model, base_dir):
+    """Copia el modelo con los assets embebidos como data URI (para el HTML)."""
+    import copy
+    m = copy.deepcopy(model)
+    for c in m["characters"].values():
+        if c.get("sprite"):
+            c["spriteData"] = _asset(c["sprite"], base_dir)
+    for steps in m["scenes"].values():
+        for s in steps:
+            if s["op"] == "bg" and s["spec"].get("kind") == "img":
+                s["spec"]["data"] = _asset(s["spec"]["file"], base_dir)
+    return m
+
+
 def build(vn_path, out_html):
     text = open(vn_path, encoding="utf-8").read()
-    model = _link_choices(parse(text, os.path.dirname(os.path.abspath(vn_path))))
-    open(out_html, "w", encoding="utf-8").write(render_html(model))
+    model = _link_choices(parse(text))
+    base = os.path.dirname(os.path.abspath(vn_path))
+    open(out_html, "w", encoding="utf-8").write(render_html(model, base))
     n = sum(len(v) for v in model["scenes"].values())
     print(f"{len(model['scenes'])} escenas, {n} pasos -> {out_html}")
     return out_html
 
 
-def render_html(model):
-    data = json.dumps(model, ensure_ascii=False)
+def render_html(model, base_dir="."):
+    data = json.dumps(_embed(model, base_dir), ensure_ascii=False)
     return _TEMPLATE.replace("/*DATA*/", data).replace("__TITLE__", html.escape(model["title"]))
 
 
@@ -216,6 +283,12 @@ _TEMPLATE = r"""<!doctype html><html lang="es"><head><meta charset="utf-8">
        color:var(--amber-soft);background:#03040acc}
   #hint{position:absolute;top:10px;right:14px;font-size:.7rem;letter-spacing:.1em;
         text-transform:uppercase;color:var(--muted);opacity:.55}
+  /* aproximación CSS de las acciones del engine (Python es la fuente de verdad) */
+  @keyframes vn-jump{0%,100%{transform:translateY(0)}50%{transform:translateY(-6%)}}
+  @keyframes vn-fall{0%{transform:translateY(-30%);opacity:.2}100%{transform:translateY(0);opacity:1}}
+  @keyframes vn-shake{0%,100%{transform:translate(0,0)}25%{transform:translate(-1.5%,1%)}75%{transform:translate(1.5%,-1%)}}
+  @keyframes vn-wave{0%,100%{transform:translateX(0)}25%{transform:translateX(2%)}75%{transform:translateX(-2%)}}
+  .center.sprite[style*="vn-"]{transform-origin:bottom center}
   @media (prefers-reduced-motion:reduce){#cursor{animation:none}*{transition:none!important}}
 </style></head><body>
 <div id="stage">
@@ -239,16 +312,23 @@ function setBg(spec){
   else { bg.style.background = spec.color; }
 }
 function charColor(id){ return (M.characters[id]||{}).color || "#ccc"; }
-function show(id,pos,img){
+function show(id,pos){
+  const c = M.characters[id]||{};
   let el = sprites[id];
   if(!el){ el = document.createElement("div"); el.className="sprite"; $("#sprites").appendChild(el); sprites[id]=el; }
   el.className = "sprite "+(pos||"center");
-  if(img){ el.innerHTML = `<img src="${img}">`; }
-  else { const nm=(M.characters[id]||{}).name||id;
+  if(c.spriteData){ el.innerHTML = `<img src="${c.spriteData}">`; }
+  else { const nm=c.name||id;
          el.innerHTML = `<div class="ph" style="background:${charColor(id)}">${(nm[0]||"?").toUpperCase()}</div>`; }
-  el.style.opacity=1;
+  el.style.opacity=1; el.style.animation="";
 }
 function hide(id){ if(sprites[id]) sprites[id].style.opacity=0; }
+function animate(id,kind){        // aproximación CSS de las acciones del engine
+  const el = sprites[id]; if(!el) return;
+  const css = {jump:"vn-jump .5s 2", jumponce:"vn-jump .5s 1", vibrate:"vn-shake .4s 3",
+               wave:"vn-wave 1s 2", fall:"vn-fall .6s 1"}[kind];
+  if(css){ el.style.animation="none"; void el.offsetWidth; el.style.animation=css; }
+}
 
 function enter(id){ scene = M.scenes[id]; ip = 0; step(); }
 
@@ -257,7 +337,8 @@ function step(){
   while(ip < scene.length){
     const s = scene[ip++];
     if(s.op==="bg"){ setBg(s.spec); continue; }
-    if(s.op==="show"){ show(s.id,s.pos,s.img); continue; }
+    if(s.op==="show"){ show(s.id,s.pos); continue; }
+    if(s.op==="animate"){ animate(s.id,s.kind); continue; }
     if(s.op==="hide"){ hide(s.id); continue; }
     if(s.op==="goto"){ return enter(s.target); }
     if(s.op==="end"){ return theEnd(); }
