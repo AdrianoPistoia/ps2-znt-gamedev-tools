@@ -15,9 +15,11 @@ Opcodes: 1 bg, 2 show, 3 hide, 4 say, 5 anim, 6 bgm, 7 se, 8 choice, 9 goto, 10 
 (payloads: ver `_emit_step` / `_read_step`). Audio: opcode con el nombre de archivo,
 sin data embebida todavía (diferido, ver spike).
 """
-import struct
+import struct, os, shutil, subprocess, tempfile
 
 from . import vn, image
+
+SYSTEM_CNF = "BOOT2 = cdrom0:\\{name}.ELF;1\r\nVER = 1.00\r\nVMODE = {vmode}\r\n"
 
 MAGIC = b"VNP1"
 OP = dict(bg=1, show=2, hide=3, say=4, anim=5, bgm=6, se=7, choice=8, goto=9, end=10)
@@ -121,6 +123,25 @@ def compile_blob(model, base="."):
     for sb in scene_bytes:
         w.b += sb
     return bytes(w.b)
+
+
+def build_iso(elf_path, blob_path, out_iso, name="VN", vmode="NTSC"):
+    """Masteriza un ISO9660 booteable: SYSTEM.CNF (BOOT2 -> {name}.ELF), el ELF y el
+    blob .vnp. Requiere `genisoimage`. Nombres 8.3 en MAYÚSCULAS (iso-level 1)."""
+    name = name.upper()[:8]
+    stage = tempfile.mkdtemp()
+    try:
+        with open(f"{stage}/SYSTEM.CNF", "w", newline="") as f:
+            f.write(SYSTEM_CNF.format(name=name, vmode=vmode))
+        shutil.copyfile(elf_path, f"{stage}/{name}.ELF")
+        shutil.copyfile(blob_path, f"{stage}/{name}.VNP")
+        subprocess.run(
+            ["genisoimage", "-quiet", "-iso-level", "1", "-sysid", "PLAYSTATION",
+             "-V", name, "-o", out_iso, stage],
+            check=True)
+    finally:
+        shutil.rmtree(stage, ignore_errors=True)
+    return out_iso
 
 
 def _emit_step(w, s, S, char_idx, scene_idx, IMG):
