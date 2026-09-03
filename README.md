@@ -190,4 +190,21 @@ docs/authoring.md    formato .vn para crear una VN (capa 3)
 research/codec_search.py   búsqueda automatizada del codec (resultado negativo)
 ```
 
-Un self-check por módulo, sin depender del juego: `python3 -m znt demo` (13/13).
+Un self-check por módulo, sin depender del juego: `python3 -m znt demo` (16/16).
+
+## VN Studio — editor gráfico (`python -m znt studio [proyecto.vn]`)
+
+Corre el engine real; edita un proyecto `.vn`:
+
+- Escenas y pasos (`bg`/`show`/`hide`/`say`/`animate`/`choice`/`goto`/`end`):
+  agregar, duplicar, reordenar, borrar; renombrar/reordenar escenas.
+- Sprites: asignar PNG por personaje, **arrastrar en el escenario** con **snap +
+  guías** (centro/presets/piso/otros sprites; Shift = libre).
+- Por capa: **orden Z** (al frente/fondo), **zoom**, **opacidad**, **tinte**.
+- **Previsualización de transiciones** (▶ probar) sin entrar a Play; **Play** corre
+  la escena con animación real; **undo/redo** (Ctrl+Z/Y).
+- **Validar** el proyecto (gotos/personajes/dead-ends/assets), **biblioteca de
+  assets** (doble-click asigna), **Guardar .vn** / **Exportar** a player HTML.
+
+Lógica de modelo testeable en `vn.py` (`validate`/`rename_character`/
+`duplicate_scene`/`move_scene`/`list_assets`); el runtime `VNRuntime` es headless.
