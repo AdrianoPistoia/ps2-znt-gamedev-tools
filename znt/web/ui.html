@@ -118,7 +118,9 @@ const api = {
   op: o => fetch("/api/op", {method:"POST", headers:{"Content-Type":"application/json"},
                              body: JSON.stringify(o)}).then(r => r.json()),
   stage: (sc, st) => fetch(`/api/stage?scene=${encodeURIComponent(sc)}&step=${st}`).then(r => r.json()),
+  assets: () => fetch("/api/assets").then(r => r.json()),
 };
+let ASSETS = [];
 
 async function op(o){ S = await api.op(o); await refresh(); }
 
@@ -216,7 +218,14 @@ function renderProps(){
       add("pos","pos", select(s.pos||"center", ["left","center","right"]));
       add("z","z", input(s.z)); add("zoom","zoom %", input(s.zoom));
       add("opacity","opac %", input(s.opacity)); add("tint","tinte", input(s.tint));
-      box.insertAdjacentHTML("beforeend", '<div class="hint">arrastrá el sprite en el escenario</div>');
+      /* el sprite es del PERSONAJE (no del paso): se aplica al instante */
+      const cur = (S.model.characters[s.id] || {}).sprite || "";
+      const sel = select(cur, [""].concat(ASSETS));
+      sel.querySelector('option[value=""]').textContent = "(placeholder)";
+      sel.onchange = () => op({op:"set_sprite", id: s.id, file: sel.value});
+      box.appendChild(field("sprite", sel));
+      box.insertAdjacentHTML("beforeend",
+        '<div class="hint">imágenes: poné el PNG en la carpeta del .vn · arrastrá el sprite en el escenario</div>');
     }
   } else if (s.op === "say") {
     add("who","quién", select(s.who, chars)); add("text","texto", input(s.text));
@@ -256,6 +265,7 @@ function renderProps(){
 
 async function refresh(){
   SG = await api.stage(S.scene, S.step);
+  ASSETS = (await api.assets()).assets;
   renderLists(); renderStage(); renderProps();
 }
 

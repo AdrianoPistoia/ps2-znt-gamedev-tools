@@ -103,6 +103,13 @@ class Studio:
                 self._snapshot()
                 self.model["characters"][cid] = {"name": r.get("name") or cid,
                                                  "color": r.get("color") or "#7cc4ff"}
+        elif o == "set_sprite":
+            cid, f = r.get("id"), (r.get("file") or "").strip()
+            c = self.model["characters"].get(cid)
+            if c is not None:
+                self._snapshot()
+                if f: c["sprite"] = f
+                else: c.pop("sprite", None)      # sin archivo -> vuelve al placeholder
         elif o == "rename_char":
             self._snapshot(); vn.rename_character(self.model, r.get("old"), r.get("new"))
         elif o == "set_layer_pos":
@@ -263,6 +270,8 @@ class _Handler(BaseHTTPRequestHandler):
             sc = (q.get("scene") or [self.studio.scene])[0]
             sp = (q.get("step") or ["-1"])[0]
             return self._json(self.studio.stage(sc, sp))
+        if path == "/api/assets":
+            return self._json({"assets": vn.list_assets(self.studio.base)})
         if path == "/api/anim":
             sc = (q.get("scene") or [self.studio.scene])[0]
             sp = (q.get("step") or ["-1"])[0]
@@ -362,6 +371,13 @@ def demo():
     sh = s3.model["scenes"]["s"][0]
     assert sh["op"] == "show" and sh["x"] == 42 and sh["y"] == -8, sh
     assert s3.state()["can_undo"], "el drag debe entrar en el historial"
+
+    # sprite del personaje: asignar y quitar (vuelve al placeholder)
+    s4 = Studio(p2)
+    s4.op({"op": "set_sprite", "id": "z", "file": "zoe.png"})
+    assert s4.model["characters"]["z"]["sprite"] == "zoe.png"
+    s4.op({"op": "set_sprite", "id": "z", "file": ""})
+    assert "sprite" not in s4.model["characters"]["z"]
 
     # preview autoritativo: APNG renderizado con el engine real
     ap = Studio(p2).anim("s", 2, ms=200)
