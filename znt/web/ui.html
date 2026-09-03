@@ -151,6 +151,20 @@
           border-top:1px solid var(--edge);color:var(--mut);font:11px var(--mono);
           white-space:nowrap;overflow:hidden}
   #status .grow{flex:1}
+  /* ---------- diálogos ---------- */
+  dialog{border:1px solid var(--edge);border-radius:8px;background:var(--panel);
+         color:var(--ink);padding:0;min-width:320px;box-shadow:0 20px 60px #000a}
+  dialog::backdrop{background:#000a}
+  dialog h3{margin:0;padding:10px 14px;font:600 11px/1 var(--ui);letter-spacing:.1em;
+            text-transform:uppercase;color:var(--mut);border-bottom:1px solid var(--edge)}
+  dialog #dlg-body,dialog table{padding:12px 14px}
+  dialog menu{display:flex;justify-content:flex-end;gap:6px;margin:0;padding:10px 14px;
+              border-top:1px solid var(--edge)}
+  dialog button.primary{background:var(--acc);color:#1a1204;border-color:var(--acc);font-weight:600}
+  dialog table{border-collapse:collapse;font-size:12px}
+  dialog td{padding:3px 10px 3px 0;vertical-align:top}
+  dialog td.k{color:var(--acc2);font:12px var(--mono);white-space:nowrap}
+  #dlg-msg{color:var(--mut);margin-bottom:6px}
 </style></head>
 <body>
 <div id="app">
@@ -168,6 +182,7 @@
     <button id="b-char" title="Nuevo personaje">＋ Personaje</button>
     <button id="b-validate" title="Validar el proyecto">Validar</button>
     <div class="grow"></div>
+    <button id="b-help" class="ico" title="Atajos (?)">?</button>
     <button id="b-probar" title="Previsualizar la transición del paso">▶ Probar paso</button>
     <button id="b-play" title="Reproducir la escena (Space)">▶ Play</button>
   </header>
@@ -245,6 +260,19 @@
     <span id="m-bgm"></span><span id="m-sel"></span><span id="m-zoom"></span>
   </footer>
 </div>
+
+<dialog id="dlg"><form method="dialog">
+  <h3 id="dlg-title"></h3>
+  <div id="dlg-body"></div>
+  <menu><button value="" id="dlg-cancel">Cancelar</button>
+        <button value="ok" id="dlg-ok" class="primary">Aceptar</button></menu>
+</form></dialog>
+
+<dialog id="help"><form method="dialog">
+  <h3>Atajos</h3>
+  <table id="help-body"></table>
+  <menu><button value="" class="primary">Cerrar</button></menu>
+</form></dialog>
 
 <script src="/static/logic.js"></script>
 <script src="/static/app.js"></script>

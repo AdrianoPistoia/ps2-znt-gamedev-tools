@@ -505,22 +505,55 @@ async function refresh(){
   renderLists(); renderStage(); renderProps();
 }
 
-/* ---------- toolbar ---------- */
-const ask = (msg, def="") => { const v = prompt(msg, def); return v && v.trim() ? v.trim() : null; };
+/* ---------- diálogos propios (nada de prompt/confirm del browser) ---------- */
+function ask(title, fields, msg){
+  const dlg = $("#dlg"), body = $("#dlg-body");
+  $("#dlg-title").textContent = title;
+  body.innerHTML = msg ? `<div id="dlg-msg">${msg}</div>` : "";
+  const els = {};
+  fields.forEach(f => {
+    const el = input(f.v == null ? "" : f.v);
+    if (f.type) el.type = f.type;
+    if (f.list) { const sl = select(f.v, f.list); els[f.k] = sl; body.appendChild(field(f.label, sl)); return; }
+    els[f.k] = el; body.appendChild(field(f.label, el));
+  });
+  $("#dlg-ok").textContent = fields.length ? "Aceptar" : "Sí";
+  dlg.showModal();
+  const first = body.querySelector("input,select"); if (first) first.focus();
+  return new Promise(res => {
+    dlg.addEventListener("close", () => {
+      if (dlg.returnValue !== "ok") return res(null);
+      const out = {};
+      for (const [k, el] of Object.entries(els)) out[k] = el.value.trim();
+      res(out);
+    }, {once:true});
+  });
+}
+const askOne = async (title, label, v) => {
+  const r = await ask(title, [{k:"v", label, v}]);
+  return r && r.v ? r.v : null;
+};
 const stepCount = () => (S.model.scenes[S.scene] || []).length;
-$("#b-new").onclick = () => { if (confirm("¿Descartar el proyecto actual?")) op({op:"new_project"}); };
-$("#b-open").onclick = () => { const p = ask("ruta del .vn a abrir:", S.path || ""); if (p) op({op:"open_project", path:p}); };
+$("#b-new").onclick = async () => {
+  if (await ask("Nuevo proyecto", [], "Se descarta lo que no hayas guardado.")) op({op:"new_project"}); };
+$("#b-open").onclick = async () => {
+  const p = await askOne("Abrir proyecto", "ruta del .vn", S.path || ""); if (p) op({op:"open_project", path:p}); };
 $("#b-play").onclick = () => op(S.play ? {op:"play_stop"} : {op:"play", scene:S.scene});
 $("#b-undo").onclick = () => op({op:"undo"});
 $("#b-redo").onclick = () => op({op:"redo"});
 $("#b-validate").onclick = () => op({op:"validate"});
 $("#b-save").onclick = () => op({op:"save"});
 $("#b-export").onclick = () => op({op:"export"});
-$("#b-char").onclick = () => { const id = ask("id del personaje:"); if(!id) return;
-  op({op:"add_char", id, name: ask("nombre visible:", id) || id, color: ask("color #hex:", "#7cc4ff") || "#7cc4ff"}); };
-$("#b-scene-add").onclick = () => { const n = ask("id de la escena nueva:"); if(n) op({op:"add_scene", name:n}); };
+$("#b-char").onclick = async () => {
+  const r = await ask("Nuevo personaje", [
+    {k:"id", label:"id"}, {k:"name", label:"nombre"},
+    {k:"color", label:"color", v:"#7cc4ff", type:"color"}]);
+  if (r && r.id) op({op:"add_char", id:r.id, name:r.name || r.id, color:r.color}); };
+$("#b-scene-add").onclick = async () => {
+  const n = await askOne("Nueva escena", "id"); if(n) op({op:"add_scene", name:n}); };
 $("#b-scene-dup").onclick = () => op({op:"dup_scene"});
-$("#b-scene-ren").onclick = () => { const n = ask("nuevo id:", S.scene); if(n) op({op:"rename_scene", name:n}); };
+$("#b-scene-ren").onclick = async () => {
+  const n = await askOne("Renombrar escena", "nuevo id", S.scene); if(n) op({op:"rename_scene", name:n}); };
 $("#b-scene-up").onclick = () => op({op:"move_scene", delta:-1});
 $("#b-scene-dn").onclick = () => op({op:"move_scene", delta:1});
 $("#b-step-add").onclick = () => op({op:"add_step", kind: $("#newop").value});
@@ -536,21 +569,34 @@ $("#b-probar").onclick = () => {
   a.src = `/api/anim?scene=${encodeURIComponent(S.scene)}&step=${S.step}&ms=1200&_=${Date.now()}`;
   a.hidden = false;
 };
+$("#b-help").onclick = () => $("#help").showModal();
 $("#anim").onclick = () => { $("#anim").hidden = true; $("#anim").removeAttribute("src"); };
+
+const CMDS = {
+  play:     () => $("#b-play").click(),
+  stop:     () => { if (S.play) op({op:"play_stop"}); },
+  prev:     () => $("#b-prev").click(),
+  next:     () => $("#b-next").click(),
+  del_step: () => $("#b-step-del").click(),
+  guides:   cycleGuides,
+  undo:     () => op({op:"undo"}),
+  redo:     () => op({op:"redo"}),
+  save:     () => op({op:"save"}),
+  help:     () => { $("#help").showModal(); },
+};
+$("#help-body").innerHTML = VNS.KEYMAP.map(
+  e => `<tr><td class="k">${e.keys}</td><td>${e.desc}</td></tr>`).join("");
 
 addEventListener("keydown", e => {
   const t = e.target.tagName;
-  if (t === "INPUT" || t === "TEXTAREA" || t === "SELECT") return;
-  if (e.key === "Escape" && S.play) { op({op:"play_stop"}); return; }
+  if (t === "INPUT" || t === "TEXTAREA" || t === "SELECT" || $("#dlg").open) return;
+  if ($("#help").open) return;
+  /* en Play, espacio/enter avanzan el diálogo */
   if (S.play && (e.key === " " || e.key === "Enter") && !(SG.choices||[]).length && !SG.done) {
     e.preventDefault(); op({op:"play_advance"}); return; }
-  if (e.ctrlKey && e.key === "z") { e.preventDefault(); op({op:"undo"}); }
-  else if (e.ctrlKey && (e.key === "y" || (e.shiftKey && e.key === "Z"))) { e.preventDefault(); op({op:"redo"}); }
-  else if (e.ctrlKey && e.key === "s") { e.preventDefault(); op({op:"save"}); }
-  else if (e.key === "ArrowLeft") { e.preventDefault(); $("#b-prev").click(); }
-  else if (e.key === "ArrowRight") { e.preventDefault(); $("#b-next").click(); }
-  else if (e.key === " ") { e.preventDefault(); $("#b-play").click(); }
-  else if (e.key === "g" || e.key === "G") cycleGuides();
+  const cmd = VNS.resolveKey(e);
+  if (!cmd || !CMDS[cmd]) return;
+  e.preventDefault(); CMDS[cmd]();
 });
 
 /* ---------- arrastrar sprites: 60fps en el cliente, sync al soltar ---------- */

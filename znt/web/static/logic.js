@@ -60,6 +60,42 @@
              y: (fy - grabDY) - st.h + h };
   }
 
+  /* --- atajos --- */
+
+  /* Un solo lugar: de acá salen el dispatch y el overlay de ayuda. */
+  const KEYMAP = [
+    { keys: "Espacio",    cmd: "play",     desc: "Play / avanzar el diálogo" },
+    { keys: "Esc",        cmd: "stop",     desc: "Salir del modo Play" },
+    { keys: "←  →",       cmd: "prev",     desc: "Paso anterior / siguiente" },
+    { keys: "Supr",       cmd: "del_step", desc: "Borrar el paso" },
+    { keys: "G",          cmd: "guides",   desc: "Guías: centro / tercios / zona segura" },
+    { keys: "Ctrl+Z",     cmd: "undo",     desc: "Deshacer" },
+    { keys: "Ctrl+Y",     cmd: "redo",     desc: "Rehacer" },
+    { keys: "Ctrl+S",     cmd: "save",     desc: "Guardar el .vn" },
+    { keys: "?",          cmd: "help",     desc: "Esta ayuda" },
+    { keys: "Shift",      cmd: null,       desc: "Arrastrar sin imán / scrub fino" },
+    { keys: "Ctrl+rueda", cmd: null,       desc: "Zoom del timeline" },
+  ];
+
+  /* Tecla -> comando (null si no está mapeada). */
+  function resolveKey(e) {
+    const k = e.key, low = k.length === 1 ? k.toLowerCase() : k;
+    if (e.ctrlKey || e.metaKey) {
+      if (low === "z") return e.shiftKey ? "redo" : "undo";
+      if (low === "y") return "redo";
+      if (low === "s") return "save";
+      return null;
+    }
+    if (k === " ") return "play";
+    if (k === "Escape") return "stop";
+    if (k === "ArrowLeft") return "prev";
+    if (k === "ArrowRight") return "next";
+    if (k === "Delete" || k === "Backspace") return "del_step";
+    if (low === "g") return "guides";
+    if (k === "?") return "help";
+    return null;
+  }
+
   /* --- inspector --- */
 
   /* Campo numérico arrastrable: dx en píxeles -> valor. */
@@ -150,5 +186,5 @@
   }
 
   return { layerStyle, bgStyle, stageXY, snap, snapTargets, dragTo, POS,
-           clampPane, fitRect, scrubValue, resizeZoom, guides, nextGuide, GUIDES, outlineRows, showStepIndex, LANES, laneOf, clipRect, dropIndex };
+           clampPane, fitRect, KEYMAP, resolveKey, scrubValue, resizeZoom, guides, nextGuide, GUIDES, outlineRows, showStepIndex, LANES, laneOf, clipRect, dropIndex };
 });
