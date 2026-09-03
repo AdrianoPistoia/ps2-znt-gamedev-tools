@@ -57,12 +57,17 @@ def run_editor(path=None):
     root = tk.Tk(); root.title("znt · VN Studio"); root.configure(bg=BG)
     tkimg = {}
 
-    # ---- layout: stage a la izquierda, paneles a la derecha ---------------
-    stagef = tk.Frame(root, bg=BG); stagef.grid(row=0, column=0, padx=8, pady=8, sticky="n")
+    # ---- layout: stage a la izquierda (se reescala), paneles a la derecha --
+    root.columnconfigure(0, weight=1); root.rowconfigure(0, weight=1)
+    stagef = tk.Frame(root, bg=BG); stagef.grid(row=0, column=0, padx=8, pady=8, sticky="nsew")
     canvas = tk.Canvas(stagef, width=rt.W, height=rt.H, highlightthickness=1,
                        highlightbackground="#2a3350", bg="black")
-    canvas.pack()
+    canvas.pack(fill="both", expand=True)
     item = canvas.create_image(0, 0, anchor="nw")
+    disp = {"s": 1.0, "ox": 0, "oy": 0}      # escala y offset (letterbox) del stage
+
+    def fb_xy(e):                            # coords de pantalla -> coords del framebuffer
+        return (e.x - disp["ox"]) / disp["s"], (e.y - disp["oy"]) / disp["s"]
     # cuadro de diálogo (widgets reales -> soporta acentos)
     dbox = tk.Frame(stagef, bg=PANEL, height=90); dbox.pack(fill="x", pady=(6, 0))
     who_l = tk.Label(dbox, bg=PANEL, fg=ACC, font=("sans", 11, "bold"), anchor="w")
@@ -160,8 +165,19 @@ def run_editor(path=None):
 
     def present():
         fb = rt.frame()
-        tkimg["i"] = tk.PhotoImage(data=base64.b64encode(fb.png_bytes(1)))
-        canvas.itemconfig(item, image=tkimg["i"])
+        base = tk.PhotoImage(data=base64.b64encode(fb.png_bytes(1)))
+        cw = max(canvas.winfo_width(), 1); ch = max(canvas.winfo_height(), 1)
+        if cw <= 1 or ch <= 1: cw, ch = rt.W, rt.H          # aún no realizado
+        if cw >= rt.W and ch >= rt.H:                        # agrandar: zoom entero
+            z = max(1, min(cw // rt.W, ch // rt.H)); img = base.zoom(z); disp["s"] = float(z)
+        else:                                               # achicar: subsample entero
+            sub = max((rt.W + cw - 1) // cw, (rt.H + ch - 1) // ch, 1)
+            img = base.subsample(sub); disp["s"] = 1.0 / sub
+        dw, dh = int(rt.W * disp["s"]), int(rt.H * disp["s"])
+        disp["ox"], disp["oy"] = (cw - dw) // 2, (ch - dh) // 2
+        tkimg["i"] = img                                    # mantener ref viva
+        canvas.coords(item, disp["ox"], disp["oy"])
+        canvas.itemconfig(item, image=img)
 
     def show_dialogue():
         who = rt.speaker
@@ -521,7 +537,8 @@ def run_editor(path=None):
     def on_press(e):
         if st["play"]:                      # en Play, el click avanza el diálogo
             play_advance(); return
-        name = _hit(e.x, e.y)               # en edición, arrastra el sprite
+        fx, fy = fb_xy(e)                    # en edición, arrastra el sprite (coords del fb)
+        name = _hit(fx, fy)
         if not name:
             return
         s = _show_step_for(name)
@@ -529,7 +546,7 @@ def run_editor(path=None):
             return
         snapshot()                          # un undo por gesto de arrastre
         r = rt.layer_rect(name)
-        drag.update(name=name, ox=e.x - r[0], oy=e.y - r[1], step=s)
+        drag.update(name=name, ox=fx - r[0], oy=fy - r[1], step=s)
 
     SNAP = 12   # px de imán
 
@@ -545,9 +562,10 @@ def run_editor(path=None):
         if st["play"] or not drag["name"]:
             return
         name = drag["name"]; l = rt.stage[name]
+        fx, fy = fb_xy(e)
         w, h = len(l.rows[0]) // 4, len(l.rows)
-        raw_x = (e.x - drag["ox"]) - (rt.W // 2 - w // 2)
-        raw_y = (e.y - drag["oy"]) - (rt.H - h)
+        raw_x = (fx - drag["ox"]) - (rt.W // 2 - w // 2)
+        raw_y = (fy - drag["oy"]) - (rt.H - h)
         canvas.delete("guide")
         if e.state & 0x0001:                      # Shift = arrastre libre (sin snap)
             nx, ny = raw_x, raw_y
@@ -558,12 +576,13 @@ def run_editor(path=None):
             yt = [0.0] + [o.y for o in others]     # 0 = apoyado en el piso
             nx, sx = _nearest(raw_x, xt)
             ny, sy = _nearest(raw_y, yt)
+            s, ox, oy = disp["s"], disp["ox"], disp["oy"]   # fb -> canvas
             if sx:                                 # guía vertical (centro alineado)
-                gx = int(nx) + rt.W // 2
-                canvas.create_line(gx, 0, gx, rt.H, fill="#5fd0e0", dash=(4, 3), tags="guide")
+                gx = ox + (nx + rt.W / 2) * s
+                canvas.create_line(gx, oy, gx, oy + rt.H * s, fill="#5fd0e0", dash=(4, 3), tags="guide")
             if sy:                                 # guía horizontal (misma base)
-                gy = int(ny) + rt.H
-                canvas.create_line(0, gy, rt.W, gy, fill="#e8b04b", dash=(4, 3), tags="guide")
+                gy = oy + (ny + rt.H) * s
+                canvas.create_line(ox, gy, ox + rt.W * s, gy, fill="#e8b04b", dash=(4, 3), tags="guide")
         l.x, l.y = float(nx), float(ny)
         drag["step"]["x"], drag["step"]["y"] = int(nx), int(ny)
         present()
@@ -575,6 +594,7 @@ def run_editor(path=None):
     canvas.bind("<Button-1>", on_press)
     canvas.bind("<B1-Motion>", on_motion)
     canvas.bind("<ButtonRelease-1>", on_release)
+    canvas.bind("<Configure>", lambda e: present())   # reescalar el stage con la ventana
 
     # ------------------------------------------------------------------ probar transición
     def preview_transition():
