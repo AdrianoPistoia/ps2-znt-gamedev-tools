@@ -125,6 +125,13 @@ class Studio:
                 self._snapshot()
                 tgt["x"] = int(round(float(r.get("x", tgt.get("x", 0)))))
                 tgt["y"] = int(round(float(r.get("y", tgt.get("y", 0)))))
+        elif o == "open_project":
+            path = r.get("path")
+            if path and os.path.exists(path):
+                m = vn._link_choices(vn.parse(open(path, encoding="utf-8").read()))
+                self._load(m, path, os.path.dirname(os.path.abspath(path)))
+        elif o == "new_project":
+            self._load(vn.blank_model(), None, self.base)
         elif o == "undo":
             if self.undo:
                 self.redo.append(copy.deepcopy(self.model)); self._restore(self.undo.pop())
@@ -200,6 +207,15 @@ class Studio:
                    "color": cc.get("color", "#cccccc"), "text": self.rt.text}
         return {"w": self.rt.W, "h": self.rt.H, "bg": bg, "layers": layers,
                 "say": say, "choices": self.rt.choices, "bgm": self.rt.bgm}
+
+    def _load(self, m, path, base):
+        """Reemplaza el proyecto IN-PLACE (el runtime comparte la referencia)."""
+        self.model.clear(); self.model.update(m)
+        self.path, self.base = path, base
+        self.rt.base = base; self.rt.invalidate()
+        self.undo.clear(); self.redo.clear()
+        self.scene = self.model["order"][0]; self.step = -1
+        self.problems = []
 
     def _set_props(self, s, props):
         for k, v in props.items():

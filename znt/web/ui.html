@@ -77,6 +77,7 @@
 
 <div id="right">
   <div class="bar">
+    <button id="b-new">Nuevo</button><button id="b-open">Abrir</button>
     <button id="b-undo">↶</button><button id="b-redo">↷</button>
     <button id="b-validate">Validar</button>
     <button id="b-save">Guardar .vn</button>
@@ -271,6 +272,8 @@ async function refresh(){
 
 /* ---- toolbar ---- */
 const ask = (msg, def="") => { const v = prompt(msg, def); return v && v.trim() ? v.trim() : null; };
+$("#b-new").onclick = () => { if (confirm("¿Descartar el proyecto actual?")) op({op:"new_project"}); };
+$("#b-open").onclick = () => { const p = ask("ruta del .vn a abrir:", S.path || ""); if (p) op({op:"open_project", path:p}); };
 $("#b-undo").onclick = () => op({op:"undo"});
 $("#b-redo").onclick = () => op({op:"redo"});
 $("#b-validate").onclick = () => op({op:"validate"});
