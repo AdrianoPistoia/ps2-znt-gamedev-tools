@@ -60,6 +60,32 @@
              y: (fy - grabDY) - st.h + h };
   }
 
+  /* --- timeline: los pasos como clips, en pistas por tipo --- */
+
+  const LANES = [
+    { key: "fondo",      ops: ["bg"],                  color: "#3d6a8f" },
+    { key: "personajes", ops: ["show", "hide", "animate"], color: "#7a5aa8" },
+    { key: "diálogo",    ops: ["say"],                 color: "#2f7a5f" },
+    { key: "audio",      ops: ["bgm", "se"],           color: "#8f6a30" },
+    { key: "flujo",      ops: ["choice", "goto", "end"], color: "#8f4050" },
+  ];
+  const laneOf = op => {
+    const i = LANES.findIndex(l => l.ops.indexOf(op) >= 0);
+    return i < 0 ? LANES.length - 1 : i;                // lo desconocido: flujo
+  };
+
+  /* Rectángulo del clip i (view: ancho de clip, alto de pista y separación). */
+  function clipRect(step, i, view) {
+    const lane = laneOf(step.op);
+    return { x: i * view.cw, y: lane * view.lh,
+             w: view.cw - view.gap, h: view.lh - view.gap, lane };
+  }
+
+  /* Al soltar en x, ¿en qué posición cae? */
+  function dropIndex(x, view, n) {
+    return Math.max(0, Math.min(n - 1, Math.round(x / view.cw)));
+  }
+
   /* --- shell --- */
 
   /* Ancho de un panel al arrastrar el splitter: respeta su mínimo y el del vecino. */
@@ -75,5 +101,5 @@
   }
 
   return { layerStyle, bgStyle, stageXY, snap, snapTargets, dragTo, POS,
-           clampPane, fitRect };
+           clampPane, fitRect, LANES, laneOf, clipRect, dropIndex };
 });

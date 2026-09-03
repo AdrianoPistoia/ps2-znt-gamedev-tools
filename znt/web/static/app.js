@@ -85,15 +85,7 @@ function renderLists(){
     li.onclick = () => op({op:"select", scene:id, step:-1});
     sc.appendChild(li);
   });
-  const stl = $("#steps"); stl.innerHTML = "";
-  (S.model.scenes[S.scene]||[]).forEach((s,i) => {
-    const li = document.createElement("li");
-    li.textContent = stepText(s);
-    li.title = stepText(s);
-    if (i === S.step) li.className = "sel";
-    li.onclick = () => op({op:"select", scene:S.scene, step:i});
-    stl.appendChild(li);
-  });
+  renderTimeline();
   const steps = S.model.scenes[S.scene] || [];
   $("#b-undo").disabled = !S.can_undo; $("#b-redo").disabled = !S.can_redo;
   $("#probs").textContent = (S.problems||[]).join("\n");
@@ -105,6 +97,93 @@ function renderLists(){
   $("#m-path").textContent = S.path || "(sin guardar)";
   $("#b-play").classList.toggle("on", !!S.play);
 }
+
+/* ---------- timeline: los pasos como clips en pistas ---------- */
+const TLV = { cw: 118, lh: 22, gap: 2, ruler: 18 };
+try { TLV.cw = parseInt(localStorage.getItem("vnscw"), 10) || TLV.cw; } catch (e) {}
+const trackX = e => {
+  const r = $("#tlbody .tl-track").getBoundingClientRect();
+  return e.clientX - r.left + $("#tlbody .tl-track").scrollLeft;
+};
+
+function renderTimeline(){
+  const steps = S.model.scenes[S.scene] || [];
+  const keep = $("#tlbody .tl-track"), sx = keep ? keep.scrollLeft : 0;
+  const lab = VNS.LANES.map(l => `<div>${l.key}</div>`).join("");
+  const H = TLV.ruler + VNS.LANES.length * TLV.lh;
+  $("#tlbody").innerHTML =
+    `<div class="tl-labels">${lab}</div>` +
+    `<div class="tl-track"><div class="tl-inner" style="height:${H}px;` +
+    `width:${Math.max(steps.length + 1, 8) * TLV.cw}px"></div></div>`;
+  const inner = $("#tlbody .tl-inner");
+
+  const ruler = document.createElement("div");
+  ruler.className = "tl-ruler"; ruler.style.width = "100%";
+  steps.forEach((_, i) => {
+    const t = document.createElement("div");
+    t.className = "tl-tick"; t.style.left = (i * TLV.cw) + "px";
+    t.style.width = TLV.cw + "px"; t.textContent = i + 1;
+    ruler.appendChild(t);
+  });
+  inner.appendChild(ruler);
+
+  steps.forEach((st, i) => {
+    const r = VNS.clipRect(st, i, TLV), c = document.createElement("div");
+    c.className = "clip" + (i === S.step ? " sel" : "");
+    c.dataset.i = i;
+    Object.assign(c.style, {left: r.x + "px", top: (TLV.ruler + r.y) + "px",
+                            width: r.w + "px", height: r.h + "px",
+                            background: VNS.LANES[r.lane].color});
+    c.textContent = stepText(st); c.title = stepText(st);
+    inner.appendChild(c);
+  });
+
+  if (S.step >= 0) {
+    const ph = document.createElement("div");
+    ph.className = "playhead"; ph.style.left = (S.step * TLV.cw) + "px";
+    inner.appendChild(ph);
+  }
+  $("#tlbody .tl-track").scrollLeft = sx;
+}
+
+/* arrastrar un clip lo reordena; arrastrar la regla mueve el playhead */
+$("#tlbody").addEventListener("pointerdown", e => {
+  const steps = S.model.scenes[S.scene] || [];
+  const c = e.target.closest(".clip");
+  if (c) {
+    const i = +c.dataset.i, x0 = trackX(e), left0 = i * TLV.cw;
+    let moved = false;
+    c.setPointerCapture(e.pointerId); c.classList.add("drag");
+    const move = ev => { moved = true; c.style.left = (left0 + trackX(ev) - x0) + "px"; };
+    const up = async ev => {
+      c.classList.remove("drag");
+      c.removeEventListener("pointermove", move); c.removeEventListener("pointerup", up);
+      const to = VNS.dropIndex(left0 + trackX(ev) - x0, TLV, steps.length);
+      await op({op:"select", scene:S.scene, step:i});
+      if (moved && to !== i) op({op:"move_step_to", to});
+    };
+    c.addEventListener("pointermove", move); c.addEventListener("pointerup", up);
+    e.preventDefault(); return;
+  }
+  if (!steps.length) return;
+  const seek = ev => {                        // scrub: elegí paso arrastrando
+    const i = VNS.dropIndex(trackX(ev), TLV, steps.length);
+    if (i !== S.step) op({op:"select", scene:S.scene, step:i});
+  };
+  const t = $("#tlbody .tl-track");
+  t.setPointerCapture(e.pointerId);
+  const up = () => { t.removeEventListener("pointermove", seek); t.removeEventListener("pointerup", up); };
+  t.addEventListener("pointermove", seek); t.addEventListener("pointerup", up);
+  seek(e);
+});
+$("#tlbody").addEventListener("dblclick", () => $("#b-probar").click());
+$("#tlbody").addEventListener("wheel", e => {   // Ctrl+rueda: zoom del timeline
+  if (!e.ctrlKey) return;
+  e.preventDefault();
+  TLV.cw = Math.max(48, Math.min(260, TLV.cw - Math.sign(e.deltaY) * 12));
+  try { localStorage.setItem("vnscw", TLV.cw); } catch (err) {}
+  renderTimeline();
+}, {passive:false});
 
 function renderStage(){
   const st = $("#stage"); st.innerHTML = "";

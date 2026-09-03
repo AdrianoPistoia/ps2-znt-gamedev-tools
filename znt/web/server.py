@@ -81,6 +81,12 @@ class Studio:
                 self._snapshot()
                 self.steps()[i], self.steps()[j] = self.steps()[j], self.steps()[i]
                 self.step = j
+        elif o == "move_step_to":
+            # el drag del timeline mueve a una posición cualquiera (no es un swap)
+            steps, to = self.steps(), int(r.get("to", -1))
+            if 0 <= self.step < len(steps) and 0 <= to < len(steps):
+                self._snapshot()
+                steps.insert(to, steps.pop(self.step)); self.step = to
         elif o == "set_props":
             if 0 <= self.step < len(self.steps()):
                 self._snapshot(); self._set_props(self.steps()[self.step], r.get("props", {}))
