@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+
+# Nunca versionar assets del juego ni el ejecutable
+*.HD
+*.BIN
+*.iso
+*.ISO
+*.nut
+*.tm2
+*.TM2
+SLPS_*
+SLPM_*
+api.json
+iso/
+work/
