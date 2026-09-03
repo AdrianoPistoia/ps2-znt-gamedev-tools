@@ -58,11 +58,32 @@ def run_editor(path=None):
 
     # --- tamaño de fuente de la UI (fuentes con nombre -> reescalado en vivo) ---
     _style = ttk.Style()
-    _FBASE = {"ui": (9, "normal", "sans"), "ui10": (10, "normal", "sans"),
-              "bold": (11, "bold", "sans"), "big": (12, "normal", "sans"),
-              "mono": (9, "normal", "monospace")}
+
+    def _pick_family(cands):
+        """Elegir una familia que EXISTA en este Tk (no asumir 'sans'/'monospace')."""
+        fams = set(tkfont.families())
+        for c in cands:
+            if c in fams:
+                return c
+        return tkfont.nametofont("TkDefaultFont").actual("family")
+
+    SANS = _pick_family(("DejaVu Sans", "Liberation Sans", "Noto Sans", "Cantarell",
+                         "Helvetica", "Arial", "sans-serif"))
+    MONO = _pick_family(("DejaVu Sans Mono", "Liberation Mono", "Noto Sans Mono",
+                         "Hack", "Courier New", "monospace"))
+    _FBASE = {"ui": (9, "normal", SANS), "ui10": (10, "normal", SANS),
+              "bold": (11, "bold", SANS), "big": (12, "normal", SANS),
+              "mono": (9, "normal", MONO)}
     F = {k: tkfont.Font(family=fam, size=sz, weight=wt) for k, (sz, wt, fam) in _FBASE.items()}
-    ui_scale = {"v": 1.0}
+    ui_scale = {"v": 1.0, "warned": False}
+
+    def _fonts_scalable():
+        """Un Tk sin Xft/fontconfig sólo ve la bitmap 'fixed' e IGNORA el tamaño."""
+        probe = tkfont.Font(family=SANS, size=9)
+        a = probe.measure("Guardar"); probe.configure(size=18)
+        return a != probe.measure("Guardar")
+
+    FONTS_SCALABLE = _fonts_scalable()
 
     def apply_ui_scale():
         for k, (sz, wt, fam) in _FBASE.items():
@@ -74,6 +95,16 @@ def run_editor(path=None):
         root.option_add("*TCombobox*Listbox.font", F["ui"])
 
     def bump_ui(d):
+        if not FONTS_SCALABLE:                 # avisar en vez de no hacer nada en silencio
+            if not ui_scale["warned"]:
+                ui_scale["warned"] = True
+                messagebox.showwarning(
+                    "Fuentes no escalables",
+                    "Este Tk no tiene soporte de fuentes escalables (Xft/fontconfig): sólo ve "
+                    f"la familia '{SANS}', de tamaño fijo, y por eso ignora el tamaño pedido.\n\n"
+                    "Arreglo: instalar Tcl/Tk con Xft y usar un Python cuyo tkinter lo use.\n"
+                    "En Arch:  sudo pacman -S tk   y correr el editor con /usr/bin/python3")
+            return
         ui_scale["v"] = min(2.5, max(0.7, round(ui_scale["v"] + d, 2))); apply_ui_scale()
     apply_ui_scale()
     root.bind("<Control-plus>", lambda e: bump_ui(0.1))
