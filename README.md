@@ -44,8 +44,21 @@ El engine se saca en tres capas apiladas. Este repo cubre la **2** y la **2b**.
   python3 -m znt sqrun iso 1000 frame.png     # transpila+ejecuta+dibuja la escena 1000
   ```
 
-  Falta para runtime completo: animación (módulos Layer), audio, flujo entre
-  escenas por corrutina, entrada y ventana en vivo. El núcleo está probado.
+  **Runtime en vivo, con frontend desacoplado:** el core `engine` es headless
+  (estado de capas con **animación por tween**, cuadro de diálogo, corrutina de
+  escena que suspende en cada `talk`) y no sabe nada de la pantalla; los
+  frontends de `frontends` lo consumen — `TkWindow` (ventana en vivo, tkinter) y
+  un export **APNG** a todo color. La animación sale de las props de `set`
+  (`xFrom`→`x` en `moveTime`, `opacityFrom`→`opacity`), y las escenas encadenan
+  solas por `next`.
+
+  ```sh
+  python3 -m znt play   iso 1000              # ventana en vivo (click/espacio avanza)
+  python3 -m znt record iso 1000 out.apng     # graba la corrida a un PNG animado
+  ```
+
+  Falta para runtime completo: los módulos de animación `LayerModule` (curvas
+  accel/decel/wave, no solo tween lineal), audio, y entrada más allá de avanzar.
 - **Capa 3** — autoría de una VN nueva. Formato de texto `.vn` (personajes,
   escenas, `bg`/`show`/`say`/`choice`/`goto`) que `vn` compila a un player HTML
   autocontenido y compartible. Ver [`docs/authoring.md`](docs/authoring.md).
@@ -157,6 +170,8 @@ znt/            el SDK (paquete importable, stdlib)
   sqtranspile.py  AST Squirrel -> Python
   sqrt.py       runtime del código transpilado (objetos, corrutinas)
   sqrun.py      corre una escena real y saca frames
+  engine.py     runtime en vivo headless (animación + corrutina de escena)
+  frontends.py  frontends del engine: ventana tkinter + export APNG
   # capa 3 — autoría
   vn.py         DSL .vn -> player HTML
 docs/engine_api.md   catálogo de la API del engine (capa 2b)
@@ -164,4 +179,4 @@ docs/authoring.md    formato .vn para crear una VN (capa 3)
 research/codec_search.py   búsqueda automatizada del codec (resultado negativo)
 ```
 
-Un self-check por módulo, sin depender del juego: `python3 -m znt demo` (11/11).
+Un self-check por módulo, sin depender del juego: `python3 -m znt demo` (13/13).
