@@ -21,7 +21,7 @@ Contrato para el frontend:
             e.advance()
     # e.speaker / e.text = diálogo actual ; e.animating() = hay tweens vivos
 """
-import sys
+import sys, math, random
 
 from . import render, sqrt, sqtranspile
 from .tim2 import Texture
@@ -30,17 +30,63 @@ IDX = lambda v: int(v) & 0xFFFFFF
 BANK = lambda v: (int(v) >> 24) & 0xFF
 
 
+def ease(curve, k):
+    """Curvas de movimiento del juego (LayerMoveModule.action, 0001.nut):
+    normal n=t, accel n=t², decel n=1-(1-t)². Fiel al ELF/scripts."""
+    if curve == "accel": return k * k
+    if curve == "decel": return 1 - (1 - k) * (1 - k)
+    return k                                            # normal / lineal
+
+
+CURVES = ("linear", "accel", "decel")
+
+
 class Tween:
-    __slots__ = ("frm", "to", "dur", "t")
-    def __init__(self, frm, to, dur):
-        self.frm, self.to, self.dur, self.t = float(frm), float(to), max(1.0, float(dur)), 0.0
+    __slots__ = ("frm", "to", "dur", "t", "curve")
+    def __init__(self, frm, to, dur, curve="linear"):
+        self.frm, self.to = float(frm), float(to)
+        self.dur, self.t, self.curve = max(1.0, float(dur)), 0.0, curve
     def tick(self, dt): self.t = min(self.dur, self.t + dt)
     @property
     def done(self): return self.t >= self.dur
     @property
     def value(self):
-        k = self.t / self.dur
-        return self.frm + (self.to - self.frm) * k
+        return self.frm + (self.to - self.frm) * ease(self.curve, self.t / self.dur)
+
+
+class Action:
+    """Offset de acción (setActionOffset), aparte de la posición. Tres tipos, con
+    la matemática de los *ActionModule (0001.nut):
+      wave      dx = vibration·sin(2π·now/cycle)                 (continuo)
+      waveonce  dx = vibration·sin(π + 2π·now/cycle)  hasta now≥cycle/2
+      vibrate   cada waitTime: dx=rand(vib)-vib/2, dy=rand(vib)  (sólo hacia abajo)
+    """
+    def __init__(self, kind, vibration=0, cycle=0, wait=0):
+        self.kind = kind
+        self.vib = float(vibration)
+        self.cycle = max(1.0, float(cycle))
+        self.wait = max(1.0, float(wait))
+        self.now = 0.0
+        self.next = 0.0
+        self.ox = self.oy = 0.0
+        self.done = False
+
+    def tick(self, dt):
+        if self.done:
+            self.ox = self.oy = 0.0; return
+        self.now += dt
+        if self.kind == "wave":
+            self.ox = self.vib * math.sin(math.pi * 2 * self.now / self.cycle); self.oy = 0.0
+        elif self.kind == "waveonce":
+            if self.now >= self.cycle / 2:
+                self.done = True; self.ox = self.oy = 0.0
+            else:
+                self.ox = self.vib * math.sin(math.pi + math.pi * 2 * self.now / self.cycle); self.oy = 0.0
+        elif self.kind == "vibrate":
+            if self.now >= self.next:
+                self.ox = random.random() * self.vib - self.vib / 2
+                self.oy = random.random() * self.vib
+                self.next += self.wait
 
 
 class LayerState:
@@ -52,10 +98,11 @@ class LayerState:
         self.level = 0
         self.show = True
         self.tw = {}                 # prop -> Tween
+        self.action = None           # Action (wave/vibrate) o None
 
-    def target(self, prop, to, frm=None, dur=0):
+    def target(self, prop, to, frm=None, dur=0, curve="linear"):
         if frm is not None and dur and frm != to:
-            self.tw[prop] = Tween(frm, to, dur)
+            self.tw[prop] = Tween(frm, to, dur, curve)
             setattr(self, prop, float(frm))
         else:
             self.tw.pop(prop, None)
@@ -66,9 +113,16 @@ class LayerState:
             t.tick(dt); setattr(self, prop, t.value)
             if t.done:
                 setattr(self, prop, t.to); del self.tw[prop]
+        if self.action:
+            self.action.tick(dt)
 
     @property
-    def animating(self): return bool(self.tw)
+    def offset(self):
+        return (self.action.ox, self.action.oy) if self.action else (0.0, 0.0)
+
+    @property
+    def animating(self):
+        return bool(self.tw) or (self.action is not None and not self.action.done)
 
 
 class Engine:
@@ -107,10 +161,22 @@ class Engine:
                 l.rows = rows
         if "level" in p: l.level = int(p["level"])
         if "show" in p: l.show = p["show"] not in (0, False)
-        if "x" in p: l.target("x", p["x"], p.get("xFrom"), p.get("moveTime", 0))
-        if "y" in p: l.target("y", p["y"], p.get("yFrom"), p.get("moveTime", 0))
-        if "opacity" in p:
+        if "hide" in p and p["hide"]: l.show = False
+        # curva de movimiento por el signo de accel (LayerAccel/Normal/Decel, 0001.nut)
+        acc = p.get("accel", 0)
+        curve = "accel" if acc and acc > 0 else ("decel" if acc and acc < 0 else "linear")
+        mt = p.get("moveTime", 0)
+        if "x" in p: l.target("x", p["x"], p.get("xFrom"), mt, curve)
+        if "y" in p: l.target("y", p["y"], p.get("yFrom"), mt, curve)
+        if "opacity" in p:                              # los fades del juego son lineales
             l.target("opacity", p["opacity"], p.get("opacityFrom"), p.get("opacityTime", 0))
+        if "action" in p:
+            kind = {"LayerVibrateActionModule": "vibrate", "LayerWaveActionModule": "wave",
+                    "LayerWaveOnceActionModule": "waveonce"}.get(p["action"])
+            if kind:
+                l.action = Action(kind, p.get("vibration", 0), p.get("cycle", 0), p.get("waitTime", 0))
+        if p.get("stop") or p.get("reset"):
+            l.action = None
 
     def cmd_talk(self, name, _u, text, voice=None):
         self.speaker, self.text = name, str(text)
@@ -163,8 +229,9 @@ class Engine:
             if not l.rows or not l.show:
                 continue
             w = len(l.rows[0]) // 4
+            ox, oy = l.offset
             ly = render.Layer().loadImage(l.rows)
-            ly.setPos(int(l.x) + self.W // 2 - w // 2, int(l.y))
+            ly.setPos(int(l.x + ox) + self.W // 2 - w // 2, int(l.y + oy))
             ly.setOpacity(l.opacity)
             ly.draw(fb)
         if self.text:
@@ -197,10 +264,27 @@ def demo():
     l = LayerState()
     l.target("x", 100, frm=0, dur=200)
     assert l.x == 0.0 and l.animating
-    l.tick(100); assert 49 <= l.x <= 51, l.x        # mitad
+    l.tick(100); assert 49 <= l.x <= 51, l.x        # lineal: mitad
     l.tick(100); assert l.x == 100.0 and not l.animating
     # sin From: set inmediato
     l.target("opacity", 50); assert l.opacity == 50.0 and "opacity" not in l.tw
+
+    # curvas exactas (0001.nut): en t=0.5  accel=0.25, decel=0.75, normal=0.5
+    assert ease("accel", 0.5) == 0.25 and ease("decel", 0.5) == 0.75 and ease("linear", 0.5) == 0.5
+    la = LayerState(); la.target("x", 100, frm=0, dur=200, curve="accel")
+    la.tick(100); assert 24 <= la.x <= 26, la.x     # t²·100 = 25
+    ld = LayerState(); ld.target("x", 100, frm=0, dur=200, curve="decel")
+    ld.tick(100); assert 74 <= ld.x <= 76, ld.x     # (1-(1-t)²)·100 = 75
+
+    # action wave: dx = vib·sin(2π·now/cycle); en now=cycle/4 -> vib
+    aw = Action("wave", vibration=10, cycle=400); aw.tick(100)
+    assert 9.9 <= aw.ox <= 10.1 and aw.oy == 0.0, (aw.ox, aw.oy)
+    # waveonce termina en cycle/2
+    a1 = Action("waveonce", vibration=8, cycle=200); a1.tick(120)
+    assert a1.done and a1.ox == 0.0
+    # vibrate: sacude dentro de rango y hacia abajo en y
+    av = Action("vibrate", vibration=12, wait=16); av.tick(20)
+    assert -6.01 <= av.ox <= 6.01 and 0 <= av.oy <= 12, (av.ox, av.oy)
 
     # engine con un disc falso: corre una "escena" transpilada de verdad
     class FakeCont:
