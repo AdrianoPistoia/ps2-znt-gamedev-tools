@@ -122,7 +122,7 @@ const api = {
   stage: (sc, st) => fetch(`/api/stage?scene=${encodeURIComponent(sc)}&step=${st}`).then(r => r.json()),
   assets: () => fetch("/api/assets").then(r => r.json()),
 };
-let ASSETS = [];
+let ASSETS = [], AUDIO = [];
 
 async function op(o){ S = await api.op(o); await refresh(); }
 
@@ -207,17 +207,30 @@ function select(v, opts){
                       if (o === v) x.selected = true; e.appendChild(x); });
   return e;
 }
-function upload(id){
+function upload(req, accept){
   const f = document.createElement("input");
-  f.type = "file"; f.accept = "image/png,image/jpeg,image/*";
+  f.type = "file"; f.accept = accept || "image/*";
   f.onchange = () => {
     const file = f.files[0]; if (!file) return;
     const rd = new FileReader();
-    rd.onload = () => op({op:"upload_sprite", id, name: file.name,
-                          data: rd.result.split(",")[1]});   // saca el data: URI
+    rd.onload = () => op(Object.assign({name: file.name,
+                                        data: rd.result.split(",")[1]}, req));  // sin data: URI
     rd.readAsDataURL(file);
   };
   f.click();
+}
+/* selector de asset + botón "…" para traer uno del sistema */
+function picker(cur, list, onpick, apply, accept){
+  const sel = select(cur, [""].concat(list.includes(cur) || !cur ? list : list.concat(cur)));
+  sel.querySelector('option[value=""]').textContent = "(ninguno)";
+  sel.onchange = () => onpick(sel.value);
+  const b = document.createElement("button");
+  b.textContent = "…"; b.title = "elegir un archivo de tu compu";
+  b.style.flex = "0 0 auto";
+  b.onclick = () => upload({op:"upload", apply}, accept);
+  const w = document.createElement("div");
+  w.style.cssText = "display:flex;gap:4px;flex:1"; w.append(sel, b);
+  return w;
 }
 function renderProps(){
   const box = $("#props"); box.innerHTML = "";
@@ -229,6 +242,8 @@ function renderProps(){
   if (s.op === "bg") {
     const p = s.spec||{};
     add("bg","fondo", input(p.kind==="grad" ? `grad:${p.a},${p.b}` : p.kind==="solid" ? p.color : (p.file||"")));
+    box.appendChild(field("imagen", picker(p.file || "", ASSETS,
+      v => op({op:"set_props", props:{bg: v || "#000000"}}), "bg", "image/*")));
     box.insertAdjacentHTML("beforeend", '<div class="hint">grad:#a,#b · #rrggbb · archivo.png</div>');
   } else if (s.op === "show" || s.op === "hide") {
     add("id","personaje", select(s.id, chars));
@@ -244,7 +259,7 @@ function renderProps(){
       const pick = document.createElement("button");           // elegir del sistema
       pick.textContent = "…"; pick.title = "elegir una imagen de tu compu";
       pick.style.flex = "0 0 auto";
-      pick.onclick = () => upload(s.id);
+      pick.onclick = () => upload({op:"upload_sprite", id: s.id});
       const wrap = document.createElement("div");
       wrap.style.cssText = "display:flex;gap:4px;flex:1";
       wrap.append(sel, pick);
@@ -266,7 +281,8 @@ function renderProps(){
     add("kind","tipo", select(s.kind, ["linear","accel","decel","move","wave","waveonce","jump","jumponce","fall","vibrate"]));
     add("params","params", input(Object.entries(s.params||{}).map(([k,v])=>`${k}=${v}`).join(" ")));
   } else if (s.op === "bgm" || s.op === "se") {
-    add("file","archivo", input(s.file));
+    box.appendChild(field("archivo", picker(s.file || "", AUDIO,
+      v => op({op:"set_props", props:{file: v}}), "file", "audio/*")));
     if (s.op === "bgm") { const c = document.createElement("input"); c.type="checkbox"; c.checked=!!s.stop;
                           c.style.width="auto"; add("stop","detener", c); }
   } else if (s.op === "goto") {
@@ -297,7 +313,7 @@ function renderProps(){
 
 async function refresh(){
   SG = S.play ? S.play : await api.stage(S.scene, S.step);
-  ASSETS = (await api.assets()).assets;
+  const as = await api.assets(); ASSETS = as.assets; AUDIO = as.audio;
   renderLists(); renderStage(); renderProps();
 }
 

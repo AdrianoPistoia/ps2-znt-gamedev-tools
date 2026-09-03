@@ -116,12 +116,17 @@ class Studio:
             self._snapshot(); vn.rename_character(self.model, r.get("old"), r.get("new"))
         elif o == "upload_sprite":
             # el browser no ve el disco del server: manda la imagen elegida en base64.
-            cid, name = r.get("id"), os.path.basename(r.get("name") or "")
-            c = self.model["characters"].get(cid)
+            c = self.model["characters"].get(r.get("id"))
+            name = self._save_upload(r)
             if c is not None and name:
-                open(os.path.join(self.base or ".", name), "wb").write(
-                    base64.b64decode(r.get("data") or ""))
                 self._snapshot(); c["sprite"] = name
+                self.rt.invalidate()
+        elif o == "upload":
+            # sube un archivo y (opcional) lo aplica a una prop del paso elegido.
+            name, steps = self._save_upload(r), self.steps()
+            ap = r.get("apply")
+            if name and ap and 0 <= self.step < len(steps):
+                self._snapshot(); self._set_props(steps[self.step], {ap: name})
                 self.rt.invalidate()
         elif o == "set_z":
             # ▲/▼: el orden Z vive en el `show`, como x/y.
@@ -236,8 +241,16 @@ class Studio:
                 "say": say, "choices": rt.choices, "bgm": rt.bgm}
 
 
-    def assets(self):
-        return vn.list_assets(self.base)
+    def assets(self, kind="img"):
+        return vn.list_assets(self.base, kind)
+
+    def _save_upload(self, r):
+        """Guarda el archivo que mandó el browser junto al .vn. Devuelve el nombre."""
+        name = os.path.basename(r.get("name") or "")
+        if name:
+            open(os.path.join(self.base or ".", name), "wb").write(
+                base64.b64decode(r.get("data") or ""))
+        return name
 
     def _show_of(self, cid):
         """El último `show` de ese personaje en o antes del paso seleccionado."""
@@ -327,7 +340,8 @@ class _Handler(BaseHTTPRequestHandler):
             sp = (q.get("step") or ["-1"])[0]
             return self._json(self.studio.stage(sc, sp))
         if path == "/api/assets":
-            return self._json({"assets": self.studio.assets()})
+            return self._json({"assets": self.studio.assets(),
+                               "audio": self.studio.assets("audio")})
         if path == "/api/anim":
             sc = (q.get("scene") or [self.studio.scene])[0]
             sp = (q.get("step") or ["-1"])[0]

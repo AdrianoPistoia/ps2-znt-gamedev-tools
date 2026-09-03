@@ -199,13 +199,17 @@ def blank_model(title="Nueva VN"):
 _IMG_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}
 
 
-def list_assets(base):
-    """Imágenes en el directorio del proyecto, ordenadas ([] si no existe)."""
+_SND_EXTS = {".wav", ".ogg", ".mp3"}
+
+def list_assets(base, kind="img"):
+    """Assets del directorio del proyecto, ordenados ([] si no existe).
+    kind: "img" (default), "audio" o "all"."""
+    exts = {"img": _IMG_EXTS, "audio": _SND_EXTS}.get(kind, _IMG_EXTS | _SND_EXTS)
     try:
         names = os.listdir(base)
     except OSError:
         return []
-    return sorted(f for f in names if os.path.splitext(f)[1].lower() in _IMG_EXTS)
+    return sorted(f for f in names if os.path.splitext(f)[1].lower() in exts)
 
 
 def validate(model, base=None):
