@@ -50,6 +50,10 @@ typedef struct {
     uint32_t n_chars;   const VnpChar *chars;      /* NO: se copian; ver impl */
     uint32_t n_images;
     uint32_t n_scenes;
+    /* fuente (opcional) */
+    uint8_t  has_font; uint16_t font_w, font_h; uint32_t font_n;
+    const uint8_t *font_cps;   /* font_n * u32 (codepoints ascendentes) */
+    const uint8_t *font_bmp;   /* font_n * font_h * ceil(font_w/8) bytes 1bpp */
     /* índices calculados en vnp_open (offsets a cada sección) */
     const uint8_t *p_strings, *p_chars, *p_images, *p_scenes;
 } VnpDoc;
@@ -65,6 +69,9 @@ void vnp_char(const VnpDoc *d, uint32_t i, VnpChar *out);
 
 /* Devuelve la imagen i (ptr al RGBA dentro del buffer). */
 void vnp_image(const VnpDoc *d, uint32_t i, VnpImage *out);
+
+/* Bitmap 1bpp del glifo de un codepoint (font_h * ceil(font_w/8) bytes), o NULL. */
+const uint8_t *vnp_glyph(const VnpDoc *d, uint32_t codepoint);
 
 /* Itera los pasos de una escena: vnp_scene_begin + vnp_step hasta que devuelva 0. */
 typedef struct { const uint8_t *p; uint32_t left; } VnpScene;

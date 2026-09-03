@@ -8,11 +8,16 @@ en el SDK Python.
 
 - **`vnp.c` (lector del blob): verificado** — compila en el host y parsea correctamente
   un blob generado por `znt.vniso` (`make host && ./test_vnp <blob.vnp>` → `C READER OK`).
-- **`main.c` (gsKit): PROOF OF LIFE, sin compilar en este entorno.** Cubre fondo
-  (solid/grad/img), sprites (Z, zoom, opacidad), caja de diálogo, avance y choices
-  con el pad. Los puntos marcados `/*GSKIT*/` pueden necesitar ajustes según tu
-  versión de gsKit. **Falta (próxima iteración):** texto con fuente bitmap,
-  animación por tiempo (curvas/acciones), y audio (SPU2).
+- **`main.c` (gsKit): sin compilar en este entorno (sin toolchain).** Cubre fondo
+  (solid/grad/img), sprites (Z, zoom, opacidad), caja de diálogo, **texto con fuente
+  (nombre + diálogo + opciones, UTF-8, acentos)** desde el atlas horneado en el blob,
+  avance y choices con el pad. Los puntos `/*GSKIT*/` pueden necesitar ajustes según
+  tu versión de gsKit. **Falta:** animación por tiempo (curvas/acciones) y audio (SPU2).
+
+La **fuente** se hornea en el blob desde un `.psf` de consola (`znt iso build` la
+autodetecta; `--font ruta.psf` para elegirla, `--no-font` para omitirla). Solo se
+embeben los glifos que la VN usa. La licencia de la fuente elegida viaja con el
+`.vnp`, no con este repo.
 
 ## Build (con ps2dev)
 

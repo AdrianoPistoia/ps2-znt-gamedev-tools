@@ -19,7 +19,7 @@ int main(int argc, char **argv) {
 
     VnpDoc d;
     CHECK(vnp_open(&d, buf, n) == 0);
-    CHECK(d.version == 1);
+    CHECK(d.version == 2);
     CHECK(d.start == 0);
     CHECK(d.n_scenes == 2);
     CHECK(d.n_chars == 1);
@@ -40,6 +40,11 @@ int main(int argc, char **argv) {
     CHECK(vnp_scene_begin(&d, 1, &sc) == 0);
     CHECK(vnp_step(&sc, &s) && s.op == OP_SAY && s.who == VNP_NONE16 && streq(&d, s.text, "chau"));
     CHECK(vnp_step(&sc, &s) && s.op == OP_END);
+
+    /* fuente horneada: glifos presentes y ausentes */
+    CHECK(d.has_font && d.font_w == 8 && d.font_h == 16);
+    CHECK(vnp_glyph(&d, 'H') != 0);
+    CHECK(vnp_glyph(&d, 0x3000) == 0);       /* CJK: no está en el atlas */
 
     printf(fails ? "%d CHECKS FALLARON\n" : "C READER OK\n", fails);
     return fails ? 1 : 0;

@@ -17,7 +17,7 @@ sin data embebida todavía (diferido, ver spike).
 """
 import struct, os, shutil, subprocess, tempfile
 
-from . import vn, image
+from . import vn, image, psf
 
 SYSTEM_CNF = "BOOT2 = cdrom0:\\{name}.ELF;1\r\nVER = 1.00\r\nVMODE = {vmode}\r\n"
 
@@ -49,7 +49,37 @@ class _W:
     def blob(self, data): self.u32(len(data)); self.b += data
 
 
-def compile_blob(model, base="."):
+def _codepoints(model):
+    """Todos los caracteres que la VN muestra (diálogos, opciones, nombres) + ASCII."""
+    cps = set(range(0x20, 0x7F))
+    for c in model["characters"].values():
+        cps |= set(ord(ch) for ch in c.get("name", ""))
+    for steps in model["scenes"].values():
+        for s in steps:
+            if s["op"] == "say":
+                cps |= set(ord(ch) for ch in s.get("text", ""))
+            elif s["op"] == "choice":
+                for o in s.get("options", []):
+                    cps |= set(ord(ch) for ch in o["label"])
+    return sorted(cps)
+
+
+def bake_font(model, psf_path):
+    """Hornea un atlas 1bpp con los glifos que la VN usa, desde un .psf.
+    Devuelve (cell_w, cell_h, cps_ordenados, bitmap) o None si no hay fuente."""
+    if not psf_path:
+        return None
+    f = psf.load(psf_path)
+    blank = bytes(f.h * f.stride)
+    qmark = f.glyphs.get(ord("?"), blank)
+    cps = [cp for cp in _codepoints(model) if cp in f.glyphs] or [ord(" ")]
+    data = bytearray()
+    for cp in cps:
+        data += f.glyphs.get(cp, qmark)
+    return (f.w, f.h, cps, bytes(data))
+
+
+def compile_blob(model, base=".", font=None):
     model = vn._link_choices(model) if any(
         s["op"] == "_option" for steps in model["scenes"].values() for s in steps) else model
     order = model["order"]
@@ -90,7 +120,7 @@ def compile_blob(model, base="."):
         c["_spr"] = IMG(c.get("sprite"))
 
     w = _W()
-    w.b += MAGIC; w.u16(1); w.u16(scene_idx.get(model.get("start", order[0]), 0))
+    w.b += MAGIC; w.u16(2); w.u16(scene_idx.get(model.get("start", order[0]), 0))
     S(model["title"])                                    # reservar título como string 0
 
     # cuerpo de escenas primero (llena el pool), luego se serializa el pool al final…
@@ -118,6 +148,16 @@ def compile_blob(model, base="."):
     w.u32(len(images))
     for iw, ih, data in images:
         w.u16(iw); w.u16(ih); w.u8(0); w.blob(data)
+    # --- font (opcional) ---
+    fnt = bake_font(model, font)
+    if fnt:
+        cw, ch, cps, fdata = fnt
+        w.u8(1); w.u16(cw); w.u16(ch); w.u32(len(cps))
+        for cp in cps:
+            w.u32(cp)
+        w.b += fdata
+    else:
+        w.u8(0)
     # --- scenes ---
     w.u32(len(order))
     for sb in scene_bytes:
@@ -209,12 +249,19 @@ def read_blob(data):
     images = []
     for _ in range(r.u32()):
         iw = r.u16(); ih = r.u16(); r.u8(); images.append((iw, ih)); r.take(r.u32())
+    font = None
+    if r.u8():
+        cw = r.u16(); ch = r.u16(); n = r.u32()
+        cps = [r.u32() for _ in range(n)]
+        stride = (cw + 7) // 8
+        r.take(n * ch * stride)
+        font = {"cell": (cw, ch), "cps": cps}
     scenes = []
     for _ in range(r.u32()):
         steps = [_read_step(r, S) for _ in range(r.u32())]
         scenes.append(steps)
     return dict(version=version, start=start, title=pool[0] if pool else None,
-                characters=chars, images=images, scenes=scenes)
+                characters=chars, images=images, font=font, scenes=scenes)
 
 
 def _read_step(r, S):
@@ -247,12 +294,17 @@ def _read_step(r, S):
     return {"op": op}
 
 
-def build(vn_path, out, elf=None, name="VN"):
+def build(vn_path, out, elf=None, name="VN", font="auto"):
     """Compila una .vn a blob; si se da un ELF, masteriza el .iso booteable.
-    Sin ELF, escribe sólo el blob .vnp (para probar el pipeline)."""
+    Sin ELF, escribe sólo el blob .vnp (para probar el pipeline). `font`: ruta a un
+    .psf, "auto" (detecta una del sistema) o None (sin texto)."""
+    if font == "auto":
+        font = psf.find_default()
     text = open(vn_path, encoding="utf-8").read()
     model = vn._link_choices(vn.parse(text))
-    blob = compile_blob(model, os.path.dirname(os.path.abspath(vn_path)))
+    blob = compile_blob(model, os.path.dirname(os.path.abspath(vn_path)), font=font)
+    if font:
+        print(f"fuente horneada: {os.path.basename(font)}")
     if elf:
         tmp = out + ".vnp.tmp"
         open(tmp, "wb").write(blob)
@@ -272,14 +324,16 @@ def cli(argv):
     if not argv or argv[0] == "demo":
         return demo()
     if argv[0] == "build":
-        a = argv[1:]; elf = name = None
+        a = argv[1:]; elf = name = None; font = "auto"
         pos = []
         it = iter(a)
         for x in it:
             if x == "--elf": elf = next(it)
             elif x == "--name": name = next(it)
+            elif x == "--font": font = next(it)
+            elif x == "--no-font": font = None
             else: pos.append(x)
-        return build(pos[0], pos[1], elf=elf, name=name or "VN")
+        return build(pos[0], pos[1], elf=elf, name=name or "VN", font=font)
     print(__doc__)
 
 
@@ -311,8 +365,17 @@ def demo():
                                    '  h: hi\n  end\n'))
     r2 = read_blob(compile_blob(m2, d))
     assert r2["images"] == [(2, 2)], r2["images"]
+    assert r2["version"] == 2 and r2["font"] is None      # sin fuente -> sección vacía
     an = r2["scenes"][0][1]
     assert an["op"] == "animate" and an["kind"] == "move" and an["curve"] == "accel" and an["x"] == 200
+    # horneado de fuente (si hay una PSF de sistema)
+    pf = psf.find_default()
+    if pf:
+        m3 = vn._link_choices(vn.parse('title: t\ncharacter a "Añí"\nscene s\n  a: Holá ¿ñ?\n  end\n'))
+        rf = read_blob(compile_blob(m3, ".", font=pf))
+        assert rf["font"] and rf["font"]["cell"] == (8, 16), rf["font"]
+        for ch in "Holá¿ñ?A":
+            assert ord(ch) in rf["font"]["cps"], f"falta glifo {ch!r}"
     print("demo OK")
 
 

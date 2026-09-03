@@ -26,8 +26,33 @@ int vnp_open(VnpDoc *d, const uint8_t *buf, uint32_t size)
     /* images */
     d->n_images = rd32(p); p += 4; d->p_images = p;
     for (uint32_t i = 0; i < d->n_images; i++) { p += 5; uint32_t len = rd32(p); p += 4 + len; }
+    /* font (opcional) */
+    d->has_font = *p++;
+    if (d->has_font) {
+        d->font_w = rd16(p); p += 2; d->font_h = rd16(p); p += 2;
+        d->font_n = rd32(p); p += 4;
+        d->font_cps = p; p += d->font_n * 4;
+        d->font_bmp = p;
+        uint32_t stride = (d->font_w + 7) / 8;
+        p += d->font_n * d->font_h * stride;
+    }
     /* scenes */
     d->n_scenes = rd32(p); p += 4; d->p_scenes = p;
+    return 0;
+}
+
+const uint8_t *vnp_glyph(const VnpDoc *d, uint32_t cp)
+{
+    if (!d->has_font) return 0;
+    uint32_t lo = 0, hi = d->font_n;             /* codepoints ascendentes -> binaria */
+    while (lo < hi) {
+        uint32_t mid = (lo + hi) / 2, v = rd32(d->font_cps + mid * 4);
+        if (v == cp) {
+            uint32_t stride = (d->font_w + 7) / 8;
+            return d->font_bmp + mid * d->font_h * stride;
+        }
+        if (v < cp) lo = mid + 1; else hi = mid;
+    }
     return 0;
 }
 

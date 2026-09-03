@@ -39,6 +39,78 @@ static uint8_t *load_blob(uint32_t *size)
     return 0;
 }
 
+/* --- fuente: atlas de glifos construido del blob --- */
+static GSTEXTURE g_font;      /*GSKIT*/ static int g_font_cols, g_have_font;
+static int g_choice_sel;      /* opción resaltada en un choice */
+
+static void build_font_atlas(GSGLOBAL *gs)
+{
+    if (!doc.has_font) return;
+    int w = doc.font_w, h = doc.font_h, n = doc.font_n;
+    int cols = 1024 / w; if (cols > n) cols = n; if (cols < 1) cols = 1;
+    int rows = (n + cols - 1) / cols;
+    int aw = cols * w, ah = rows * h, stride = (w + 7) / 8;
+    uint32_t *px = memalign(128, (uint32_t)aw * ah * 4);
+    memset(px, 0, (uint32_t)aw * ah * 4);
+    for (int g = 0; g < n; g++) {
+        const uint8_t *bmp = doc.font_bmp + (uint32_t)g * h * stride;
+        int cx = (g % cols) * w, cy = (g / cols) * h;
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++)
+                if (bmp[y*stride + (x>>3)] & (0x80 >> (x & 7)))
+                    px[(cy + y) * aw + (cx + x)] = 0x80FFFFFF;   /* blanco, alfa 0x80 */
+    }
+    memset(&g_font, 0, sizeof(g_font));
+    g_font.Width = aw; g_font.Height = ah; g_font.PSM = GS_PSM_CT32;
+    g_font.Filter = GS_FILTER_NEAREST; g_font.Mem = px;
+    gsKit_setup_tbw(&g_font);                                   /*GSKIT*/
+    g_font_cols = cols; g_have_font = 1;
+}
+
+static int font_cell(uint32_t cp)   /* índice de celda, o -1 */
+{
+    uint32_t lo = 0, hi = doc.font_n;
+    while (lo < hi) {
+        uint32_t mid = (lo + hi) / 2;
+        uint32_t v = doc.font_cps[mid*4] | (doc.font_cps[mid*4+1]<<8)
+                   | (doc.font_cps[mid*4+2]<<16) | ((uint32_t)doc.font_cps[mid*4+3]<<24);
+        if (v == cp) return (int)mid;
+        if (v < cp) lo = mid + 1; else hi = mid;
+    }
+    return -1;
+}
+
+/* siguiente codepoint UTF-8 en s[*i..len) */
+static uint32_t utf8_next(const char *s, int len, int *i)
+{
+    unsigned char c = s[*i]; (*i)++;
+    if (c < 0x80) return c;
+    if ((c >> 5) == 6 && *i < len)      { uint32_t r = (c&0x1F)<<6 | (s[*i]&0x3F); (*i)++; return r; }
+    if ((c >> 4) == 14 && *i+1 < len)   { uint32_t r=(c&0x0F)<<12 | (s[*i]&0x3F)<<6 | (s[*i+1]&0x3F); *i+=2; return r; }
+    if (*i+2 < len)                     { uint32_t r=(c&0x07)<<18 | (s[*i]&0x3F)<<12 | (s[*i+1]&0x3F)<<6 | (s[*i+2]&0x3F); *i+=3; return r; }
+    return '?';
+}
+
+/* dibuja texto (UTF-8) desde (x,y) con wrap simple. /*GSKIT*/ */
+static void draw_text(GSGLOBAL *gs, float x, float y, const char *s, int len, uint8_t r, uint8_t g_, uint8_t b)
+{
+    if (!g_have_font) return;
+    int fw = doc.font_w, fh = doc.font_h;
+    float pen = x, py = y, maxx = SCR_W - 32;
+    int i = 0;
+    while (i < len) {
+        uint32_t cp = utf8_next(s, len, &i);
+        if (cp == '\n' || pen > maxx) { pen = x; py += fh + 2; if (cp == '\n') continue; }
+        int cell = font_cell(cp);
+        if (cell >= 0) {
+            int cx = (cell % g_font_cols) * fw, cy = (cell / g_font_cols) * fh;
+            gsKit_prim_sprite_texture(gs, &g_font, pen, py, cx, cy, pen+fw, py+fh, cx+fw, cy+fh,
+                                      4, GS_SETREG_RGBAQ(r, g_, b, 0x80, 0));
+        }
+        pen += fw;
+    }
+}
+
 /* --- capa activa en el stage --- */
 typedef struct {
     int used, chr;
@@ -148,7 +220,23 @@ static void draw_frame(GSGLOBAL *gs, const Block *blk)
     if (blk->kind == 1 || blk->kind == 2)
         gsKit_prim_sprite(gs, 24, SCR_H - 108, SCR_W - 24, SCR_H - 12, 3,
                           GS_SETREG_RGBAQ(0x0b, 0x13, 0x30, 0x60, 0));
-    /* TODO(siguiente): texto del diálogo / opciones con fuente bitmap. */
+    if (g_have_font) gsKit_TexManager_bind(gs, &g_font);          /*GSKIT*/
+    if (blk->kind == 1) {                                          /* diálogo */
+        if (blk->step.who != VNP_NONE16) {
+            VnpChar c; vnp_char(&doc, blk->step.who, &c);
+            VnpStr nm = vnp_str(&doc, c.name);
+            draw_text(gs, 36, SCR_H - 102, nm.ptr, nm.len, 0xe8, 0xb0, 0x4b);
+        }
+        VnpStr t = vnp_str(&doc, blk->step.text);
+        draw_text(gs, 36, SCR_H - 82, t.ptr, t.len, 0xff, 0xff, 0xff);
+    } else if (blk->kind == 2) {                                   /* opciones */
+        for (int i = 0; i < blk->step.n_opts; i++) {
+            VnpStr l = vnp_str(&doc, blk->step.opt_label[i]);
+            int sel = (i == g_choice_sel);
+            draw_text(gs, sel ? 52 : 40, SCR_H - 100 + i * 20, l.ptr, l.len,
+                      sel ? 0xff : 0xa0, sel ? 0xd0 : 0xa0, sel ? 0x40 : 0xa0);
+        }
+    }
 }
 
 /* --- pad --- */
@@ -173,6 +261,7 @@ int main(void)
     gs->PSM = GS_PSM_CT24; gs->PSMZ = GS_PSMZ_16S;
     gsKit_init_screen(gs); gsKit_mode_switch(gs, GS_ONESHOT);
     gsKit_TexManager_init(gs);
+    build_font_atlas(gs);
 
     /* pad */
     SifLoadModule("rom0:SIO2MAN", 0, 0); SifLoadModule("rom0:PADMAN", 0, 0);
@@ -180,16 +269,16 @@ int main(void)
     u32 prev = 0;
 
     Block blk = enter_scene(gs, doc.start);
-    int choice_sel = 0;
+    g_choice_sel = 0;
 
     while (blk.kind != 3) {
         u32 hit = pad_pressed(&prev);
         if (blk.kind == 1 && (hit & PAD_CROSS)) {          /* avanzar diálogo: continúa el cursor */
             blk = advance(gs);
         } else if (blk.kind == 2) {
-            if (hit & PAD_UP)   choice_sel = (choice_sel + blk.step.n_opts - 1) % blk.step.n_opts;
-            if (hit & PAD_DOWN) choice_sel = (choice_sel + 1) % blk.step.n_opts;
-            if (hit & PAD_CROSS) { blk = enter_scene(gs, blk.step.opt_target[choice_sel]); choice_sel = 0; }
+            if (hit & PAD_UP)   g_choice_sel = (g_choice_sel + blk.step.n_opts - 1) % blk.step.n_opts;
+            if (hit & PAD_DOWN) g_choice_sel = (g_choice_sel + 1) % blk.step.n_opts;
+            if (hit & PAD_CROSS) { blk = enter_scene(gs, blk.step.opt_target[g_choice_sel]); g_choice_sel = 0; }
         }
         gsKit_TexManager_nextFrame(gs);
         draw_frame(gs, &blk);
