@@ -2,10 +2,11 @@
 """Servidor del editor web (stdlib). `Studio` es el estado del editor (modelo,
 selección, historial) sin ninguna UI; el handler HTTP lo expone como API JSON.
 """
-import json, os, copy, mimetypes
+import json, os, copy, mimetypes, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from .. import vn
+from ..vnstudio import VNRuntime
 
 UI = os.path.join(os.path.dirname(__file__), "ui.html")
 HIST_MAX = 60
@@ -23,6 +24,7 @@ class Studio:
             self.model = vn.blank_model()
             self.base = os.getcwd()
             self.path = None
+        self.rt = VNRuntime(self.model, self.base)   # render/animación reales
         self.scene = self.model["order"][0]
         self.step = -1
         self.undo, self.redo = [], []
@@ -38,7 +40,8 @@ class Studio:
             self.undo.pop(0)
 
     def _restore(self, saved):
-        self.model = copy.deepcopy(saved)
+        self.model.clear(); self.model.update(copy.deepcopy(saved))   # in-place: rt lo ve
+        self.rt.invalidate()
         if self.scene not in self.model["scenes"]:
             self.scene = self.model["order"][0]
         self.step = min(self.step, len(self.steps()) - 1)
@@ -117,7 +120,42 @@ class Studio:
         elif o == "export":
             p = r.get("path") or os.path.join(self.base, "player.html")
             open(p, "w", encoding="utf-8").write(vn.render_html(self.model, self.base))
+        if o not in ("select", "validate", "save", "export"):
+            self.rt.invalidate()
         return self.state()
+
+    # --- stage para que el browser componga con CSS ------------------------
+    def stage(self, scene, step):
+        """Layout de las capas tras aplicar los pasos 0..step (el render real lo
+        hace el runtime; acá sólo describimos qué dibujar y dónde)."""
+        if scene not in self.model["scenes"]:
+            scene = self.model["order"][0]
+        step = int(step)
+        self.rt.preview_upto(scene, step)
+        url = lambda f: "/api/asset?f=" + urllib.parse.quote(f)
+        bg = {"kind": "solid", "color": "#000000"}
+        for st_ in self.model["scenes"][scene][:step + 1]:
+            if st_["op"] == "bg":
+                sp = st_["spec"]
+                bg = {"kind": "img", "url": url(sp["file"])} if sp.get("kind") == "img" else dict(sp)
+        layers = []
+        for name, l in self.rt.stage.items():
+            if name == "bg" or not l.rows or not l.show:
+                continue
+            c = self.model["characters"].get(name, {})
+            spr = c.get("sprite")
+            layers.append({"id": name, "name": c.get("name", name), "color": c.get("color", "#888888"),
+                           "x": l.x, "y": l.y, "z": l.level, "zoom": l.zoom,
+                           "opacity": l.opacity, "tint": l.tint,
+                           "w": len(l.rows[0]) // 4, "h": len(l.rows),
+                           "url": url(spr) if spr else None})
+        say = None
+        if self.rt.text is not None:
+            cc = self.model["characters"].get(self.rt.speaker, {})
+            say = {"who": self.rt.speaker, "name": cc.get("name", self.rt.speaker or ""),
+                   "color": cc.get("color", "#cccccc"), "text": self.rt.text}
+        return {"w": self.rt.W, "h": self.rt.H, "bg": bg, "layers": layers,
+                "say": say, "choices": self.rt.choices, "bgm": self.rt.bgm}
 
     def _set_props(self, s, props):
         for k, v in props.items():
@@ -177,7 +215,25 @@ class _Handler(BaseHTTPRequestHandler):
             return self._send(200, "text/html; charset=utf-8", body)
         if path == "/api/model":
             return self._json(self.studio.state())
+        q = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
+        if path == "/api/stage":
+            sc = (q.get("scene") or [self.studio.scene])[0]
+            sp = (q.get("step") or ["-1"])[0]
+            return self._json(self.studio.stage(sc, sp))
+        if path == "/api/asset":
+            return self._asset((q.get("f") or [""])[0])
         self._json({"error": "not found"}, 404)
+
+    def _asset(self, f):
+        """Sirve un archivo del proyecto. Bloquea salir del directorio base."""
+        base = os.path.realpath(self.studio.base)
+        full = os.path.realpath(os.path.join(base, f))
+        if full != base and not full.startswith(base + os.sep):
+            return self._json({"error": "prohibido"}, 403)
+        if not os.path.isfile(full):
+            return self._json({"error": "no existe"}, 404)
+        ctype = mimetypes.guess_type(full)[0] or "application/octet-stream"
+        self._send(200, ctype, open(full, "rb").read())
 
     def do_POST(self):
         path = self.path.split("?", 1)[0]
@@ -235,6 +291,19 @@ def demo():
     # escena nueva + rename reapunta gotos
     st.op({"op": "add_scene", "name": "dos"}); assert "dos" in st.model["scenes"]
     st.op({"op": "rename_scene", "name": "final"}); assert "final" in st.model["scenes"]
+    # stage: layout de capas para que el browser componga
+    p2 = os.path.join(d, "s.vn")
+    open(p2, "w", encoding="utf-8").write(
+        'title: T2\ncharacter z "Zoe" color=#88ffdd\nscene s\n  bg grad:#101828,#304060\n'
+        '  show z left\n  z: hola\n  end\n')
+    sg = Studio(p2).stage("s", 2)
+    assert (sg["w"], sg["h"]) == (640, 448)
+    assert sg["bg"]["kind"] == "grad" and sg["bg"]["a"] == "#101828"
+    L = {l["id"]: l for l in sg["layers"]}
+    assert L["z"]["x"] == -180 and L["z"]["url"] is None and L["z"]["color"] == "#88ffdd", L["z"]
+    assert (L["z"]["w"], L["z"]["h"]) == (200, 300)          # placeholder
+    assert sg["say"]["name"] == "Zoe" and sg["say"]["text"] == "hola"
+
     # capa HTTP
     httpd = make_server(st, "127.0.0.1", 0)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
