@@ -55,17 +55,22 @@ class Tween:
 
 
 class Action:
-    """Offset de acción (setActionOffset), aparte de la posición. Tres tipos, con
-    la matemática de los *ActionModule (0001.nut):
-      wave      dx = vibration·sin(2π·now/cycle)                 (continuo)
-      waveonce  dx = vibration·sin(π + 2π·now/cycle)  hasta now≥cycle/2
-      vibrate   cada waitTime: dx=rand(vib)-vib/2, dy=rand(vib)  (sólo hacia abajo)
+    """Offset de acción (setActionOffset), aparte de la posición. Matemática exacta
+    de los *ActionModule (0001.nut):
+      wave      dx = vib·sin(2π·now/cycle)                     (continuo)
+      waveonce  dx = vib·sin(π + 2π·now/cycle)      hasta now≥cycle/2
+      jump      dy = vib·sin(2π·now/cycle) + vib               (continuo, sólo abajo)
+      jumponce  dy = vib·sin(π + 2π·now/cycle) + vib hasta now≥cycle/2
+      fall      dy = -distance + distance·now/fallTime  hasta now≥fallTime (cae de arriba)
+      vibrate   cada waitTime: dx=rand(vib)-vib/2, dy=rand(vib) (sólo hacia abajo)
     """
-    def __init__(self, kind, vibration=0, cycle=0, wait=0):
+    def __init__(self, kind, vibration=0, cycle=0, wait=0, distance=0, falltime=0):
         self.kind = kind
         self.vib = float(vibration)
         self.cycle = max(1.0, float(cycle))
         self.wait = max(1.0, float(wait))
+        self.distance = float(distance)
+        self.falltime = max(1.0, float(falltime))
         self.now = 0.0
         self.next = 0.0
         self.ox = self.oy = 0.0
@@ -75,13 +80,27 @@ class Action:
         if self.done:
             self.ox = self.oy = 0.0; return
         self.now += dt
+        w = math.pi * 2 * self.now / self.cycle
         if self.kind == "wave":
-            self.ox = self.vib * math.sin(math.pi * 2 * self.now / self.cycle); self.oy = 0.0
+            self.ox, self.oy = self.vib * math.sin(w), 0.0
         elif self.kind == "waveonce":
             if self.now >= self.cycle / 2:
                 self.done = True; self.ox = self.oy = 0.0
             else:
-                self.ox = self.vib * math.sin(math.pi + math.pi * 2 * self.now / self.cycle); self.oy = 0.0
+                self.ox, self.oy = self.vib * math.sin(math.pi + w), 0.0
+        elif self.kind == "jump":
+            self.ox, self.oy = 0.0, self.vib * math.sin(w) + self.vib
+        elif self.kind == "jumponce":
+            if self.now >= self.cycle / 2:
+                self.done = True; self.ox = self.oy = 0.0
+            else:
+                self.ox, self.oy = 0.0, self.vib * math.sin(math.pi + w) + self.vib
+        elif self.kind == "fall":
+            if self.now >= self.falltime:
+                self.done = True; self.ox = self.oy = 0.0
+            else:
+                self.ox = 0.0
+                self.oy = -self.distance + self.distance * self.now / self.falltime
         elif self.kind == "vibrate":
             if self.now >= self.next:
                 self.ox = random.random() * self.vib - self.vib / 2
@@ -172,9 +191,12 @@ class Engine:
             l.target("opacity", p["opacity"], p.get("opacityFrom"), p.get("opacityTime", 0))
         if "action" in p:
             kind = {"LayerVibrateActionModule": "vibrate", "LayerWaveActionModule": "wave",
-                    "LayerWaveOnceActionModule": "waveonce"}.get(p["action"])
+                    "LayerWaveOnceActionModule": "waveonce", "LayerJumpActionModule": "jump",
+                    "LayerJumpOnceActionModule": "jumponce", "LayerFallActionModule": "fall"}.get(p["action"])
             if kind:
-                l.action = Action(kind, p.get("vibration", 0), p.get("cycle", 0), p.get("waitTime", 0))
+                l.action = Action(kind, p.get("vibration", 0), p.get("cycle", 0),
+                                  p.get("waitTime", 0), p.get("distance", 0),
+                                  p.get("falltime", p.get("moveTime", 0)))
         if p.get("stop") or p.get("reset"):
             l.action = None
 
@@ -285,6 +307,18 @@ def demo():
     # vibrate: sacude dentro de rango y hacia abajo en y
     av = Action("vibrate", vibration=12, wait=16); av.tick(20)
     assert -6.01 <= av.ox <= 6.01 and 0 <= av.oy <= 12, (av.ox, av.oy)
+    # fall: dy = -distance + distance·now/fallTime  (cae de arriba a 0)
+    af = Action("fall", distance=100, falltime=200); af.tick(50);  assert af.oy == -75.0, af.oy
+    af.tick(50);   assert af.oy == -50.0, af.oy
+    af.tick(100);  assert af.done and af.oy == 0.0
+    # jump: dy = vib·sin(2π·now/cycle) + vib  (en cycle/4 -> 2·vib, siempre ≥0)
+    aj = Action("jump", vibration=10, cycle=400); aj.tick(100)
+    assert 19.9 <= aj.oy <= 20.1 and aj.ox == 0.0, (aj.ox, aj.oy)
+    aj2 = Action("jump", vibration=10, cycle=400); aj2.tick(300)  # 3/4 -> sin=-1 -> 0
+    assert -0.1 <= aj2.oy <= 0.1, aj2.oy
+    # jumponce termina en cycle/2
+    ajo = Action("jumponce", vibration=8, cycle=200); ajo.tick(120)
+    assert ajo.done and ajo.oy == 0.0
 
     # engine con un disc falso: corre una "escena" transpilada de verdad
     class FakeCont:
