@@ -195,8 +195,7 @@ def run_window(disc, scene=None):
     def loop():
         b.tick(dt)
         fb = b.frame()
-        ppm = b"P6\n%d %d\n255\n" % (fb.w, fb.h) + bytes(fb.buf)
-        imgref["i"] = tk.PhotoImage(data=base64.b64encode(ppm))
+        imgref["i"] = tk.PhotoImage(data=base64.b64encode(fb.png_bytes()))
         canvas.itemconfig(item, image=imgref["i"])
         status_var.set(b.status)
         inspector.delete("1.0", "end"); inspector.insert("1.0", "\n".join(b.inspect()))

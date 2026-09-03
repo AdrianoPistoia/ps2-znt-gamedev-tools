@@ -66,7 +66,7 @@ class Framebuffer:
                 self.buf[o+1] = (self.buf[o+1] * ia + cg * a) // 255
                 self.buf[o+2] = (self.buf[o+2] * ia + cb * a) // 255
 
-    def png(self, path):
+    def png_bytes(self):
         raw = bytearray()
         for y in range(self.h):
             raw.append(0)
@@ -74,9 +74,12 @@ class Framebuffer:
         def ch(tag, data):
             c = tag + data
             return struct.pack(">I", len(data)) + c + struct.pack(">I", zlib.crc32(c))
-        open(path, "wb").write(b"\x89PNG\r\n\x1a\n"
-            + ch(b"IHDR", struct.pack(">IIBBBBB", self.w, self.h, 8, 2, 0, 0, 0))
-            + ch(b"IDAT", zlib.compress(bytes(raw), 6)) + ch(b"IEND", b""))
+        return (b"\x89PNG\r\n\x1a\n"
+                + ch(b"IHDR", struct.pack(">IIBBBBB", self.w, self.h, 8, 2, 0, 0, 0))
+                + ch(b"IDAT", zlib.compress(bytes(raw), 6)) + ch(b"IEND", b""))
+
+    def png(self, path):
+        open(path, "wb").write(self.png_bytes())
         return self.w, self.h
 
 

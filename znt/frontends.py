@@ -97,9 +97,7 @@ class TkWindow:
     def _present(self, root, canvas, item):
         import tkinter as tk
         fb = self.e.frame()
-        w, h = fb.w, fb.h
-        ppm = b"P6\n%d %d\n255\n" % (w, h) + bytes(fb.buf)
-        self._img = tk.PhotoImage(data=base64.b64encode(ppm))
+        self._img = tk.PhotoImage(data=base64.b64encode(fb.png_bytes()))
         if self.scale > 1:
             self._img = self._img.zoom(self.scale)
         canvas.itemconfig(item, image=self._img)
