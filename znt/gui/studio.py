@@ -37,7 +37,7 @@ def _default_step(op, model):
 
 def run_editor(path=None):
     import tkinter as tk
-    from tkinter import ttk, filedialog, simpledialog, messagebox
+    from tkinter import ttk, filedialog, simpledialog, messagebox, font as tkfont
 
     if path and os.path.exists(path):
         model = vn._link_choices(vn.parse(open(path, encoding="utf-8").read()))
@@ -55,6 +55,31 @@ def run_editor(path=None):
         except ValueError: return p
 
     root = tk.Tk(); root.title("znt · VN Studio"); root.configure(bg=BG)
+
+    # --- tamaño de fuente de la UI (fuentes con nombre -> reescalado en vivo) ---
+    _style = ttk.Style()
+    _FBASE = {"ui": (9, "normal", "sans"), "ui10": (10, "normal", "sans"),
+              "bold": (11, "bold", "sans"), "big": (12, "normal", "sans"),
+              "mono": (9, "normal", "monospace")}
+    F = {k: tkfont.Font(family=fam, size=sz, weight=wt) for k, (sz, wt, fam) in _FBASE.items()}
+    ui_scale = {"v": 1.0}
+
+    def apply_ui_scale():
+        for k, (sz, wt, fam) in _FBASE.items():
+            F[k].configure(size=max(6, round(sz * ui_scale["v"])))
+        for nm in ("TkDefaultFont", "TkTextFont", "TkFixedFont", "TkMenuFont"):
+            try: tkfont.nametofont(nm).configure(size=max(6, round(9 * ui_scale["v"])))
+            except tk.TclError: pass
+        _style.configure("TCombobox", font=F["ui"])
+        root.option_add("*TCombobox*Listbox.font", F["ui"])
+
+    def bump_ui(d):
+        ui_scale["v"] = min(2.5, max(0.7, round(ui_scale["v"] + d, 2))); apply_ui_scale()
+    apply_ui_scale()
+    root.bind("<Control-plus>", lambda e: bump_ui(0.1))
+    root.bind("<Control-equal>", lambda e: bump_ui(0.1))
+    root.bind("<Control-minus>", lambda e: bump_ui(-0.1))
+    root.bind("<Control-0>", lambda e: (ui_scale.update(v=1.0), apply_ui_scale()))
     tkimg = {}
 
     # ---- layout: stage a la izquierda (se reescala), paneles a la derecha --
@@ -70,31 +95,32 @@ def run_editor(path=None):
         return (e.x - disp["ox"]) / disp["s"], (e.y - disp["oy"]) / disp["s"]
     # cuadro de diálogo (widgets reales -> soporta acentos)
     dbox = tk.Frame(stagef, bg=PANEL, height=90); dbox.pack(fill="x", pady=(6, 0))
-    who_l = tk.Label(dbox, bg=PANEL, fg=ACC, font=("sans", 11, "bold"), anchor="w")
+    who_l = tk.Label(dbox, bg=PANEL, fg=ACC, font=F["bold"], anchor="w")
     who_l.pack(fill="x", padx=10, pady=(6, 0))
-    text_l = tk.Label(dbox, bg=PANEL, fg=INK, font=("sans", 12), anchor="w",
+    text_l = tk.Label(dbox, bg=PANEL, fg=INK, font=F["big"], anchor="w",
                       justify="left", wraplength=rt.W - 24)
     text_l.pack(fill="x", padx=10, pady=(0, 8))
     choicef = tk.Frame(stagef, bg=BG); choicef.pack(fill="x")
-    bgm_l = tk.Label(stagef, bg=BG, fg=MUT, font=("mono", 9), anchor="w")
+    bgm_l = tk.Label(stagef, bg=BG, fg=MUT, font=F["mono"], anchor="w")
     bgm_l.pack(fill="x")
 
     panel = tk.Frame(root, bg=BG); panel.grid(row=0, column=1, padx=8, pady=8, sticky="n")
 
     def lbl(parent, t, **kw):
         return tk.Label(parent, text=t, bg=kw.pop("bg", BG), fg=kw.pop("fg", MUT),
-                        font=("sans", 9), **kw)
+                        font=F["ui"], **kw)
 
     def btn(parent, t, fn, **kw):
         return tk.Button(parent, text=t, command=fn, bg="#1b2440", fg=INK, relief="flat",
-                         font=("sans", 9), activebackground="#26335c", **kw)
+                         font=F["ui"], activebackground="#26335c", **kw)
 
     # ---- toolbar ----------------------------------------------------------
     tb = tk.Frame(panel, bg=BG); tb.pack(fill="x")
     for t, fn in (("Nuevo", lambda: new_project()), ("Abrir", lambda: open_project()),
                   ("▶ Play", lambda: play()), ("↶", lambda: undo()), ("↷", lambda: redo()),
                   ("＋ Personaje", lambda: add_char()), ("Validar", lambda: do_validate()),
-                  ("Guardar .vn", lambda: save()), ("Exportar HTML", lambda: export())):
+                  ("Guardar .vn", lambda: save()), ("Exportar HTML", lambda: export()),
+                  ("A−", lambda: bump_ui(-0.1)), ("A+", lambda: bump_ui(0.1))):
         btn(tb, t, fn).pack(side="left", padx=2)
 
     def _load_model(nm, path, nb):
@@ -125,7 +151,7 @@ def run_editor(path=None):
     # ---- escenas ----------------------------------------------------------
     lbl(panel, "Escenas").pack(anchor="w", pady=(10, 0))
     scenes_lb = tk.Listbox(panel, height=6, width=34, bg=PANEL, fg=INK,
-                           selectbackground="#26335c", highlightthickness=0, font=("mono", 9))
+                           selectbackground="#26335c", highlightthickness=0, font=F["mono"])
     scenes_lb.pack()
     sc_btns = tk.Frame(panel, bg=BG); sc_btns.pack(fill="x")
     btn(sc_btns, "＋ escena", lambda: add_scene()).pack(side="left", padx=2)
@@ -137,7 +163,7 @@ def run_editor(path=None):
     # ---- pasos ------------------------------------------------------------
     lbl(panel, "Pasos de la escena").pack(anchor="w", pady=(10, 0))
     steps_lb = tk.Listbox(panel, height=12, width=44, bg=PANEL, fg=INK,
-                          selectbackground="#26335c", highlightthickness=0, font=("mono", 9))
+                          selectbackground="#26335c", highlightthickness=0, font=F["mono"])
     steps_lb.pack()
     addf = tk.Frame(panel, bg=BG); addf.pack(fill="x", pady=2)
     add_op = tk.StringVar(value="say")
@@ -156,7 +182,7 @@ def run_editor(path=None):
 
     lbl(panel, "Assets del proyecto (doble-click: al show/bg activo)").pack(anchor="w", pady=(10, 0))
     assets_lb = tk.Listbox(panel, height=5, width=44, bg=PANEL, fg=INK,
-                           selectbackground="#26335c", highlightthickness=0, font=("mono", 9))
+                           selectbackground="#26335c", highlightthickness=0, font=F["mono"])
     assets_lb.pack()
 
     # ------------------------------------------------------------------ helpers
@@ -191,7 +217,7 @@ def run_editor(path=None):
         if rt.choices:
             for i, o in enumerate(rt.choices):
                 tk.Button(choicef, text=o["label"], bg="#16244c", fg=INK, relief="flat",
-                          font=("sans", 10), activebackground="#22357a",
+                          font=F["ui10"], activebackground="#22357a",
                           command=lambda i=i: (rt.choose(i), sync_after_play())
                           ).pack(fill="x", pady=2)
 
@@ -346,13 +372,13 @@ def run_editor(path=None):
             if op == "bgm":
                 sv = tk.BooleanVar(value=bool(s.get("stop")))
                 tk.Checkbutton(propf, text="detener bgm", variable=sv, bg=PANEL, fg=MUT,
-                               selectcolor="#0f1525", font=("sans", 9)).pack(anchor="w", padx=6)
+                               selectcolor="#0f1525", font=F["ui"]).pack(anchor="w", padx=6)
                 fields["stop"] = (sv, lambda: sv.get())
         elif op == "goto":
             w, g = combo(s.get("target", model["order"][0]), model["order"]); field("a", w, g)
         elif op == "choice":
             txt = tk.Text(propf, height=4, width=34, bg="#0f1525", fg=INK, insertbackground=INK,
-                          relief="flat", font=("mono", 9))
+                          relief="flat", font=F["mono"])
             txt.insert("1.0", "\n".join(f"{o['label']} -> {o['target']}" for o in s.get("options", [])))
             txt.pack(fill="x", padx=6, pady=2)
             fields["opts"] = (txt, lambda: txt.get("1.0", "end"))
