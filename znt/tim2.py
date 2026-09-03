@@ -49,6 +49,44 @@ def gray(t):
     return rows
 
 
+def _unswizzle_clut(entries):
+    """CLUT de PS2 en 8bpp (CSM1): en cada bloque de 32, los runs [8:16] y
+    [16:24] van intercambiados. Sin esto los colores salen permutados."""
+    out = list(entries)
+    for i in range(0, len(out) - 31, 32):
+        out[i+8:i+16], out[i+16:i+24] = out[i+16:i+24], out[i+8:i+16]
+    return out
+
+
+def rgba(t):
+    """indice -> (r,g,b,a). Devuelve una fila de bytes RGBA por scanline."""
+    w, h, f, pix, pal = t['w'], t['h'], t['fmt'], t['pix'], t['pal']
+    step = 4 if len(pal) >= t['ncol'] * 4 else 3
+    ent = []
+    for i in range(t['ncol']):
+        r, g, b = pal[i*step:i*step+3] if (i+1)*step <= len(pal) else (0, 0, 0)
+        a = pal[i*step+3] if step == 4 and (i+1)*step <= len(pal) else 0x80
+        ent.append((r, g, b, min(255, a * 2)))     # alfa PS2: 0x80 = opaco
+    if f == 5:
+        ent = _unswizzle_clut(ent)
+    lut = [bytes(e) for e in ent]
+    rows = []
+    if f == 4:
+        stride = w // 2
+        for y in range(h):
+            r = bytearray()
+            for x in range(stride):
+                b = pix[y*stride + x]
+                r += lut[b & 0x0F]; r += lut[b >> 4]
+            rows.append(bytes(r))
+    elif f == 5:
+        for y in range(h):
+            rows.append(b"".join(lut[c] for c in pix[y*w:(y+1)*w]))
+    else:
+        raise SystemExit(f"formato {FMT.get(f, f)} no soportado para color")
+    return rows
+
+
 def png(rows, path):
     h = len(rows); w = len(rows[0])
     raw = b"".join(b"\0" + r for r in rows)
@@ -89,6 +127,10 @@ class Texture:
             rs = [r[x:x+w] for r in rs[y:y+h]]
         return rs
 
+    def rgba(self):
+        """Filas de bytes RGBA (4 bytes/pixel)."""
+        return rgba(self._t)
+
     def png(self, path, box=None):
         return png(self.rows(box), path)
 
@@ -106,6 +148,12 @@ def demo():
     assert (t.w, t.h) == (2, 2), (t.w, t.h)
     rs = t.rows()
     assert rs[0][0] == 0 and rs[0][1] == 255, rs[0]
+    rg = t.rgba()
+    assert rg[0][0:4] == bytes([0, 0, 0, 255]), rg[0][:4]          # indice 0 negro opaco
+    assert rg[0][4:8] == bytes([255, 255, 255, 255]), rg[0][4:8]   # indice 1 blanco opaco
+    # des-swizzle: bloque de 32, swap [8:16]<->[16:24]
+    sw = _unswizzle_clut(list(range(32)))
+    assert sw[8:16] == list(range(16, 24)) and sw[16:24] == list(range(8, 16)), sw
     print("demo OK")
 
 
