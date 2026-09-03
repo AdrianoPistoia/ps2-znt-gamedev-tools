@@ -225,3 +225,16 @@ Corre el engine real; edita un proyecto `.vn`:
 
 Lógica de modelo testeable en `vn.py` (`validate`/`rename_character`/
 `duplicate_scene`/`move_scene`/`list_assets`); el runtime `VNRuntime` es headless.
+
+### En el browser (`python -m znt web [proyecto.vn]`)
+
+Mismo editor sin tkinter: el server (stdlib) es la fuente de verdad — corre el
+`VNRuntime` real y describe el layout; el browser lo compone con CSS en % (se
+reescala solo con la ventana) y las animaciones llegan como APNG del engine.
+
+Portado del front tkinter: nuevo/abrir, **Play** (click o espacio avanza, los
+choices saltan de escena, Esc sale), **orden Z** ▲/▼, selectores de sprite,
+fondo y audio con botón **"…"** para elegir un archivo de tu compu (se copia
+junto al `.vn`), y editar id/nombre/color del personaje desde las props.
+
+`znt/web/` es opcional igual que `znt/gui/`: se puede borrar y el core sigue.
