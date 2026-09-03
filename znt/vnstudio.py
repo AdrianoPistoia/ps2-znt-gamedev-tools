@@ -131,7 +131,8 @@ class VNRuntime:
         elif op == "show":
             l = self.stage.setdefault(s["id"], LayerState())
             l.rows = self._sprite_rows(s["id"])
-            l.x = float(POS.get(s.get("pos", "center"), 0)); l.y = 0.0
+            l.x = float(s["x"]) if "x" in s else float(POS.get(s.get("pos", "center"), 0))
+            l.y = float(s.get("y", 0))
             l.level = 10 + len([k for k in self.stage if k != "bg"]); l.show = True
         elif op == "hide":
             if s["id"] in self.stage: self.stage[s["id"]].show = False
@@ -194,16 +195,36 @@ class VNRuntime:
     def animating(self):
         return any(l.animating for l in self.stage.values())
 
+    def _screen(self, l):
+        """(sx, sy, w, h) del blit de una capa. Compartido por frame() y el editor."""
+        w, h = len(l.rows[0]) // 4, len(l.rows)
+        ox, oy = l.offset
+        return int(l.x + ox) + self.W // 2 - w // 2, int(l.y + oy) + self.H - h, w, h
+
+    def layer_rect(self, name):
+        l = self.stage.get(name)
+        return self._screen(l) if l and l.rows and l.show else None
+
+    def place_from_screen(self, name, sx, sy):
+        """Fija x/y de una capa a partir de una posición de pantalla (drag del editor)."""
+        l = self.stage.get(name)
+        if not l or not l.rows:
+            return
+        w, h = len(l.rows[0]) // 4, len(l.rows)
+        l.x = float(sx - (self.W // 2 - w // 2))
+        l.y = float(sy - (self.H - h))
+
+    def invalidate(self):
+        self._asset_cache.clear()
+
     def frame(self):
         fb = render.Framebuffer(self.W, self.H)
         for l in sorted(self.stage.values(), key=lambda s: s.level):   # menor level al fondo
             if not l.rows or not l.show:
                 continue
-            w = len(l.rows[0]) // 4
-            ox, oy = l.offset
+            sx, sy, w, h = self._screen(l)
             ly = render.Layer().loadImage(l.rows)
-            ly.setPos(int(l.x + ox) + self.W // 2 - w // 2, int(l.y + oy) + self.H - len(l.rows))
-            ly.setOpacity(l.opacity); ly.draw(fb)
+            ly.setPos(sx, sy); ly.setOpacity(l.opacity); ly.draw(fb)
         return fb
 
 
@@ -227,6 +248,13 @@ def demo():
     # avanzar: narración y fin
     rt.advance(); assert rt.text == "fin"
     rt.advance(); assert rt.done
+    # posición libre por x/y y round-trip de place_from_screen
+    m2 = vn._link_choices(vn.parse('title: t\ncharacter a "A"\nscene s\n  show a center x=60 y=-20\n  a: h\n  end\n'))
+    r2 = VNRuntime(m2); r2.enter("s")
+    assert r2.stage["a"].x == 60.0 and r2.stage["a"].y == -20.0, (r2.stage["a"].x, r2.stage["a"].y)
+    sx, sy, w, h = r2.layer_rect("a")
+    r2.place_from_screen("a", sx + 10, sy - 5)      # mover 10 a la derecha, 5 arriba
+    assert r2.stage["a"].x == 70.0 and r2.stage["a"].y == -25.0, (r2.stage["a"].x, r2.stage["a"].y)
     print("demo OK")
 
 

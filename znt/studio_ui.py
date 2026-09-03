@@ -43,6 +43,11 @@ def run_editor(path=None):
         model = _fresh(); base = os.getcwd(); cur = {"path": None}
     rt = VNRuntime(model, base)
     st = {"scene": model["order"][0], "step": -1, "play": False}
+    drag = {"name": None, "ox": 0, "oy": 0, "step": None}
+
+    def _rel(p):
+        try: return os.path.relpath(p, base)
+        except ValueError: return p
 
     root = tk.Tk(); root.title("znt · VN Studio"); root.configure(bg=BG)
     tkimg = {}
@@ -180,10 +185,23 @@ def run_editor(path=None):
             cur_arg = (f"grad:{sp['a']},{sp['b']}" if sp["kind"] == "grad"
                        else sp.get("color") if sp["kind"] == "solid" else sp.get("file", ""))
             w, g = entry(cur_arg); field("bg", w, g)
+            def pick_bg(s=s):
+                p = filedialog.askopenfilename(filetypes=[("imagen", "*.png *.jpg *.jpeg *.webp *.gif")])
+                if p:
+                    s["spec"] = {"kind": "img", "file": _rel(p)}; rt.invalidate(); refresh_all()
+            btn(propf, "imagen de fondo…", pick_bg).pack(padx=6, pady=2, anchor="w")
         elif op in ("show", "hide"):
             w, g = combo(s["id"], chars); field("id", w, g)
             if op == "show":
                 w2, g2 = combo(s.get("pos", "center"), list(POS)); field("pos", w2, g2)
+                spr = model["characters"].get(s["id"], {}).get("sprite")
+                lbl(propf, f"sprite: {spr or '(placeholder)'}", bg=PANEL).pack(anchor="w", padx=6)
+                def pick_sprite(cid=s["id"]):
+                    p = filedialog.askopenfilename(filetypes=[("imagen", "*.png *.jpg *.jpeg *.webp *.gif")])
+                    if p:
+                        model["characters"][cid]["sprite"] = _rel(p); rt.invalidate(); refresh_all()
+                btn(propf, "asignar sprite…", pick_sprite).pack(padx=6, pady=2, anchor="w")
+                lbl(propf, "arrastrá el sprite en el escenario para ubicarlo", bg=PANEL).pack(anchor="w", padx=6)
         elif op == "say":
             w, g = combo(s.get("who", "narrator"), chars); field("quién", w, g)
             w2, g2 = entry(s.get("text", "")); field("texto", w2, g2)
@@ -302,20 +320,68 @@ def run_editor(path=None):
         open(p, "w", encoding="utf-8").write(vn.render_html(vn._link_choices(model), base))
         messagebox.showinfo("Export", f"Player HTML escrito:\n{p}")
 
+    # ------------------------------------------------------------------ posicionar (drag)
+    def _hit(mx, my):
+        best, bl = None, -1
+        for name, l in rt.stage.items():
+            if name == "bg" or not l.rows or not l.show:
+                continue
+            r = rt.layer_rect(name)
+            if r and r[0] <= mx < r[0]+r[2] and r[1] <= my < r[1]+r[3] and l.level > bl:
+                best, bl = name, l.level
+        return best
+
+    def _show_step_for(cid):
+        end = st["step"] if st["step"] >= 0 else len(steps()) - 1
+        for i in range(min(end, len(steps())-1), -1, -1):
+            s = steps()[i]
+            if s["op"] == "show" and s["id"] == cid:
+                return s
+        return None
+
+    def play_advance(_=None):
+        if st["play"] and rt.text is not None and not rt.animating() and not rt.choices:
+            rt.advance(); present(); show_dialogue()
+            if rt.done and not rt.choices: stop_play()
+
+    def on_press(e):
+        if st["play"]:                      # en Play, el click avanza el diálogo
+            play_advance(); return
+        name = _hit(e.x, e.y)               # en edición, arrastra el sprite
+        if not name:
+            return
+        s = _show_step_for(name)
+        if not s:
+            return
+        r = rt.layer_rect(name)
+        drag.update(name=name, ox=e.x - r[0], oy=e.y - r[1], step=s)
+
+    def on_motion(e):
+        if st["play"] or not drag["name"]:
+            return
+        rt.place_from_screen(drag["name"], e.x - drag["ox"], e.y - drag["oy"])
+        l = rt.stage[drag["name"]]
+        drag["step"]["x"], drag["step"]["y"] = int(l.x), int(l.y)
+        present()
+
+    def on_release(_):
+        if drag["name"]:
+            drag["name"] = None; refresh_steps(); build_props()
+
+    canvas.bind("<Button-1>", on_press)
+    canvas.bind("<B1-Motion>", on_motion)
+    canvas.bind("<ButtonRelease-1>", on_release)
+
     # ------------------------------------------------------------------ play
     def play():
         st["play"] = True; rt.enter(st["scene"])
         for w in (scenes_lb, steps_lb):
             w.config(state="disabled")
-        def click(_=None):
-            if rt.text is not None and not rt.animating() and not rt.choices:
-                rt.advance()
-        canvas.bind("<Button-1>", click); root.bind("<space>", click)
+        root.bind("<space>", play_advance)
         def loop():
-            if not st["play"]: return
-            rt.tick(33)
-            present()
-            show_dialogue()
+            if not st["play"]:
+                return
+            rt.tick(33); present(); show_dialogue()
             if rt.done and not rt.choices:
                 stop_play(); return
             root.after(33, loop)
@@ -327,7 +393,7 @@ def run_editor(path=None):
 
     def stop_play():
         st["play"] = False
-        canvas.unbind("<Button-1>"); root.unbind("<space>")
+        root.unbind("<space>")
         for w in (scenes_lb, steps_lb):
             w.config(state="normal")
         refresh_all()

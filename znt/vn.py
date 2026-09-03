@@ -74,8 +74,17 @@ def _step(line, chars):
         return {"op": "bg", "spec": _bg(arg)}
     if head == "show":
         parts = arg.split()
-        cid = parts[0]; pos = parts[1] if len(parts) > 1 else "center"
-        return {"op": "show", "id": cid, "pos": pos}
+        cid = parts[0]; pos = "center"; step = {"op": "show", "id": cid}
+        for p in parts[1:]:
+            if "=" in p:                       # x=.. y=.. : posición libre
+                k, v = p.split("=", 1)
+                if k in ("x", "y"):
+                    try: step[k] = int(v)
+                    except ValueError: pass
+            else:
+                pos = p
+        step["pos"] = pos
+        return step
     if head == "sprite":                 # sprite <char> <file.png>: define arte del personaje
         cid, f = arg.split(None, 1)
         chars.setdefault(cid, {"name": cid, "color": "#ccc"})["sprite"] = f.strip()
@@ -173,7 +182,11 @@ def _step_text(s):
         if sp["kind"] == "grad": return f"bg grad:{sp['a']},{sp['b']}"
         if sp["kind"] == "solid": return f"bg {sp['color']}"
         return f"bg {sp.get('file', '?.png')}"          # ver nota en build()
-    if op == "show": return f"show {s['id']} {s.get('pos','center')}"
+    if op == "show":
+        t = f"show {s['id']} {s.get('pos','center')}"
+        if "x" in s: t += f" x={s['x']}"
+        if "y" in s: t += f" y={s['y']}"
+        return t
     if op == "hide": return f"hide {s['id']}"
     if op == "say":
         return f"* {s['text']}" if s["who"] == "narrator" else f"{s['who']}: {s['text']}"

@@ -179,6 +179,10 @@ znt/            el SDK (paquete importable, stdlib)
   engine.py     runtime en vivo headless (animación + corrutina de escena)
   frontends.py  frontends del engine: ventana tkinter + export APNG
   testbench.py  banco de pruebas: corre el engine y anima capas en vivo
+  # framework de creación de VN (sobre el engine)
+  image.py      lector PNG stdlib -> filas RGBA (assets propios)
+  vnstudio.py   VNRuntime: reproduce un modelo autoral con el render/animación real
+  studio_ui.py  VN Studio: editor gráfico tkinter (escenas/pasos/props/stage/Play/export)
   # capa 3 — autoría
   vn.py         DSL .vn -> player HTML
 docs/engine_api.md   catálogo de la API del engine (capa 2b)
