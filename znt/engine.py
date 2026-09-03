@@ -114,6 +114,7 @@ class LayerState:
         self.rows = None
         self.x = self.y = 0.0
         self.opacity = 100.0
+        self.zoom = 100.0            # escala en % (100 = tamaño original)
         self.level = 0
         self.show = True
         self.tw = {}                 # prop -> Tween

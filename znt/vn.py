@@ -78,7 +78,7 @@ def _step(line, chars):
         for p in parts[1:]:
             if "=" in p:                       # x=.. y=.. z=.. : posición libre y orden Z
                 k, v = p.split("=", 1)
-                if k in ("x", "y", "z"):
+                if k in ("x", "y", "z", "zoom"):
                     try: step[k] = int(v)
                     except ValueError: pass
             else:
@@ -187,6 +187,7 @@ def _step_text(s):
         if "x" in s: t += f" x={s['x']}"
         if "y" in s: t += f" y={s['y']}"
         if "z" in s: t += f" z={s['z']}"
+        if "zoom" in s: t += f" zoom={s['zoom']}"
         return t
     if op == "hide": return f"hide {s['id']}"
     if op == "say":

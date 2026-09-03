@@ -235,6 +235,8 @@ def run_editor(path=None):
                 zf = tk.Frame(propf, bg=PANEL); zf.pack(fill="x", padx=6, pady=1)
                 btn(zf, "▲ al frente", lambda: set_z(True)).pack(side="left", padx=2)
                 btn(zf, "▼ al fondo", lambda: set_z(False)).pack(side="left", padx=2)
+                cur_zoom = rt.stage[s["id"]].zoom if s["id"] in rt.stage else s.get("zoom", 100)
+                wzm, gzm = entry(str(int(cur_zoom))); field("zoom%", wzm, gzm)
                 spr = model["characters"].get(s["id"], {}).get("sprite")
                 lbl(propf, f"sprite: {spr or '(placeholder)'}", bg=PANEL).pack(anchor="w", padx=6)
                 def pick_sprite(cid=s["id"]):
@@ -281,6 +283,9 @@ def run_editor(path=None):
                     s["pos"] = g["pos"]
                     if g.get("z", "").strip():
                         try: s["z"] = int(g["z"])
+                        except ValueError: pass
+                    if g.get("zoom%", "").strip():
+                        try: s["zoom"] = int(g["zoom%"])
                         except ValueError: pass
             elif op == "say":
                 s["who"] = g["quién"]; s["text"] = g["texto"]
