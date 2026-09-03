@@ -156,6 +156,8 @@ class Engine:
         self.done = False
         self._next = None
         self._thread = None
+        self._base = None            # composite cacheado de las capas estáticas
+        self._base_sig = None
         self.R = self._root()
 
     # --- recursos ----------------------------------------------------------
@@ -245,17 +247,40 @@ class Engine:
     def animating(self):
         return any(l.animating for l in self.layers.values())
 
+    def _blit(self, fb, l):
+        w = len(l.rows[0]) // 4
+        ox, oy = l.offset
+        ly = render.Layer().loadImage(l.rows)
+        ly.setPos(int(l.x + ox) + self.W // 2 - w // 2, int(l.y + oy))
+        ly.setOpacity(l.opacity)
+        ly.draw(fb)
+
     def frame(self):
-        fb = render.Framebuffer(self.W, self.H)
-        for l in sorted(self.layers.values(), key=lambda s: -s.level):
-            if not l.rows or not l.show:
-                continue
-            w = len(l.rows[0]) // 4
-            ox, oy = l.offset
-            ly = render.Layer().loadImage(l.rows)
-            ly.setPos(int(l.x + ox) + self.W // 2 - w // 2, int(l.y + oy))
-            ly.setOpacity(l.opacity)
-            ly.draw(fb)
+        # mayor level = más al fondo -> se dibuja primero
+        order = sorted((l for l in self.layers.values() if l.show and l.rows),
+                       key=lambda s: -s.level)
+        dyn = [l for l in order if l.animating]
+        # cache válido sólo si todas las capas animadas van al frente (al final)
+        front = not dyn or [order.index(l) for l in dyn] == \
+            list(range(len(order) - len(dyn), len(order)))
+        if front:
+            static = [l for l in order if l not in dyn]
+            sig = tuple((id(l), int(l.x), int(l.y), int(l.opacity), l.level, id(l.rows))
+                        for l in static)
+            if sig != self._base_sig:
+                base = render.Framebuffer(self.W, self.H)
+                for l in static:
+                    self._blit(base, l)
+                self._base, self._base_sig = bytes(base.buf), sig
+            fb = render.Framebuffer(self.W, self.H)
+            fb.buf = bytearray(self._base)          # reusa el fondo cacheado
+            for l in dyn:
+                self._blit(fb, l)
+        else:                                        # z-order mixto: recomponer todo
+            self._base_sig = None
+            fb = render.Framebuffer(self.W, self.H)
+            for l in order:
+                self._blit(fb, l)
         if self.text:
             win = render.MessageWindow(self.font, x=32, y=self.H - 108, h=96)
             win.ShowNamePlate(self.speaker if self.speaker else 0)
