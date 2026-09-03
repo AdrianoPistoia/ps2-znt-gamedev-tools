@@ -35,6 +35,10 @@
       box-shadow:inset 0 0 0 1px #fff3, 0 6px 20px #0007;
       display:flex;align-items:flex-end;justify-content:center;color:#0008;
       font:700 clamp(10px,3vw,28px) var(--ui)}
+  .layer{cursor:grab;touch-action:none}
+  .layer:active{cursor:grabbing}
+  #gv{position:absolute;top:0;bottom:0;border-left:1px dashed #5fd0e0;pointer-events:none}
+  #gh{position:absolute;left:0;right:0;border-top:1px dashed #e8b04b;pointer-events:none}
   #dbox{position:absolute;left:3%;right:3%;bottom:4%;min-height:22%;
         background:linear-gradient(180deg,#141b3aee,#0a0e22f2);
         border:1px solid var(--edge);border-top:2px solid var(--acc);
@@ -63,6 +67,7 @@
     <div id="stage"></div>
     <div id="dbox" hidden><div id="who"></div><div id="text"></div></div>
     <div id="choices" hidden></div>
+    <div id="gv" hidden></div><div id="gh" hidden></div>
   </div>
   <div id="meta"><span id="m-scene"></span><span id="m-bgm"></span><span id="m-path"></span></div>
 </div>
@@ -274,6 +279,53 @@ addEventListener("keydown", e => {
   if (e.ctrlKey && (e.key === "y" || (e.shiftKey && e.key === "Z"))) { e.preventDefault(); op({op:"redo"}); }
   if (e.ctrlKey && e.key === "s") { e.preventDefault(); op({op:"save"}); }
 });
+
+/* ---- arrastrar sprites: 60fps en el cliente, sync al soltar ---- */
+let drag = null;
+const stRect = () => $("#stagewrap").getBoundingClientRect();
+
+function showGuides(gx, gy){
+  const v = $("#gv"), h = $("#gh");
+  v.hidden = gx === null; h.hidden = gy === null;
+  if (gx !== null) v.style.left = (gx / SG.w * 100) + "%";
+  if (gy !== null) h.style.top  = (gy / SG.h * 100) + "%";
+}
+
+$("#stage").addEventListener("pointerdown", e => {
+  const el = e.target.closest(".layer"); if (!el || !SG) return;
+  const l = SG.layers.find(x => x.id === el.dataset.id); if (!l) return;
+  const p = VNS.stageXY(e.clientX, e.clientY, stRect(), SG);
+  const zoom = (l.zoom == null ? 100 : l.zoom) / 100;
+  const left = SG.w/2 + l.x - l.w*zoom/2, top = SG.h - l.h*zoom + l.y;
+  drag = { l, el, gdx: p.x - left, gdy: p.y - top };
+  el.setPointerCapture(e.pointerId);
+  e.preventDefault();
+});
+
+$("#stage").addEventListener("pointermove", e => {
+  if (!drag) return;
+  const p = VNS.stageXY(e.clientX, e.clientY, stRect(), SG);
+  let d = VNS.dragTo(drag.l, SG, drag.gdx, drag.gdy, p.x, p.y);
+  let gx = null, gy = null;
+  if (!e.shiftKey) {                       // Shift = libre, sin imán
+    const t = VNS.snapTargets(SG.layers, drag.l.id);
+    const sx = VNS.snap(d.x, t.xs, 12), sy = VNS.snap(d.y, t.ys, 12);
+    d = { x: sx.v, y: sy.v };
+    if (sx.hit) gx = SG.w/2 + d.x;
+    if (sy.hit) gy = SG.h + d.y;
+  }
+  drag.l.x = d.x; drag.l.y = d.y;
+  Object.assign(drag.el.style, VNS.layerStyle(drag.l, SG));
+  showGuides(gx, gy);
+});
+
+const endDrag = async () => {
+  if (!drag) return;
+  const l = drag.l; drag = null; showGuides(null, null);
+  await op({op:"set_layer_pos", id: l.id, x: Math.round(l.x), y: Math.round(l.y)});
+};
+$("#stage").addEventListener("pointerup", endDrag);
+$("#stage").addEventListener("pointercancel", endDrag);
 
 (async () => {
   S = await api.model();

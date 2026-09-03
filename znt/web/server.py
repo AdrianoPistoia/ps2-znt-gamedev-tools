@@ -105,6 +105,19 @@ class Studio:
                                                  "color": r.get("color") or "#7cc4ff"}
         elif o == "rename_char":
             self._snapshot(); vn.rename_character(self.model, r.get("old"), r.get("new"))
+        elif o == "set_layer_pos":
+            # el drag mueve una CAPA: escribe x/y en el último `show` de ese
+            # personaje en o antes del paso seleccionado.
+            cid, steps = r.get("id"), self.steps()
+            end = self.step if self.step >= 0 else len(steps) - 1
+            tgt = None
+            for i in range(min(end, len(steps) - 1), -1, -1):
+                if steps[i]["op"] == "show" and steps[i].get("id") == cid:
+                    tgt = steps[i]; break
+            if tgt is not None:
+                self._snapshot()
+                tgt["x"] = int(round(float(r.get("x", tgt.get("x", 0)))))
+                tgt["y"] = int(round(float(r.get("y", tgt.get("y", 0)))))
         elif o == "undo":
             if self.undo:
                 self.redo.append(copy.deepcopy(self.model)); self._restore(self.undo.pop())
@@ -309,6 +322,17 @@ def demo():
     assert L["z"]["x"] == -180 and L["z"]["url"] is None and L["z"]["color"] == "#88ffdd", L["z"]
     assert (L["z"]["w"], L["z"]["h"]) == (200, 300)          # placeholder
     assert sg["say"]["name"] == "Zoe" and sg["say"]["text"] == "hola"
+
+    # drag: set_layer_pos escribe x/y en el último `show` de ese personaje
+    p3 = os.path.join(d, "g.vn")
+    open(p3, "w", encoding="utf-8").write(
+        'title: T3\ncharacter z "Zoe"\nscene s\n  show z left\n  z: hola\n  end\n')
+    s3 = Studio(p3)
+    s3.op({"op": "select", "scene": "s", "step": 1})
+    s3.op({"op": "set_layer_pos", "id": "z", "x": 42.4, "y": -7.6})
+    sh = s3.model["scenes"]["s"][0]
+    assert sh["op"] == "show" and sh["x"] == 42 and sh["y"] == -8, sh
+    assert s3.state()["can_undo"], "el drag debe entrar en el historial"
 
     # capa HTTP
     httpd = make_server(st, "127.0.0.1", 0)
