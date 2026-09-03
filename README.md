@@ -232,9 +232,19 @@ Mismo editor sin tkinter: el server (stdlib) es la fuente de verdad — corre el
 `VNRuntime` real y describe el layout; el browser lo compone con CSS en % (se
 reescala solo con la ventana) y las animaciones llegan como APNG del engine.
 
-Portado del front tkinter: nuevo/abrir, **Play** (click o espacio avanza, los
-choices saltan de escena, Esc sale), **orden Z** ▲/▼, selectores de sprite,
-fondo y audio con botón **"…"** para elegir un archivo de tu compu (se copia
-junto al `.vn`), y editar id/nombre/color del personaje desde las props.
+Layout de app de edición: barra de herramientas, **outliner** (escenas + capas
+del paso, al frente primero), **viewport** centrado con letterbox, marco de
+selección con handles (arrastrar una esquina = zoom) y guías (centro / tercios /
+zona segura), **inspector** con secciones plegables y campos numéricos que se
+arrastran (Shift = fino), **timeline** con una pista por tipo de paso, regla,
+playhead, scrub y reordenar arrastrando (Ctrl+rueda = zoom), y barra de estado.
+Los tres paneles se redimensionan y el tamaño queda guardado.
+
+Atajos: Espacio (Play/avanzar), Esc, ←/→, Supr, G (guías), Ctrl+Z/Y/S, **?**
+(lista completa). Nuevo/abrir/personaje/escena usan diálogos propios.
+
+Funciones: **Play** (los choices saltan de escena), **orden Z**, selectores de
+sprite, fondo y audio con botón **"…"** para elegir un archivo de tu compu (se
+copia junto al `.vn`), y editar id/nombre/color del personaje.
 
 `znt/web/` es opcional igual que `znt/gui/`: se puede borrar y el core sigue.
