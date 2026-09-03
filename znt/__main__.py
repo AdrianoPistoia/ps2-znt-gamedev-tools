@@ -62,6 +62,8 @@ def main(argv):
         return sqrun.cli(rest)
     if group == "vn":
         return vn.cli(rest)
+    if group == "iso":
+        return vniso.cli(rest)
     if group == "record":
         return frontends.record_cli(*rest)
     if group in ("play", "testbench", "studio"):    # front interactivo (opcional)

@@ -247,6 +247,42 @@ def _read_step(r, S):
     return {"op": op}
 
 
+def build(vn_path, out, elf=None, name="VN"):
+    """Compila una .vn a blob; si se da un ELF, masteriza el .iso booteable.
+    Sin ELF, escribe sólo el blob .vnp (para probar el pipeline)."""
+    text = open(vn_path, encoding="utf-8").read()
+    model = vn._link_choices(vn.parse(text))
+    blob = compile_blob(model, os.path.dirname(os.path.abspath(vn_path)))
+    if elf:
+        tmp = out + ".vnp.tmp"
+        open(tmp, "wb").write(blob)
+        try:
+            build_iso(elf, tmp, out, name=name)
+        finally:
+            os.remove(tmp)
+        print(f"ISO booteable -> {out}  ({len(blob)} bytes de datos, ELF {os.path.basename(elf)})")
+    else:
+        vnp = out if out.endswith(".vnp") else out + ".vnp"
+        open(vnp, "wb").write(blob)
+        print(f"blob -> {vnp} ({len(blob)} bytes). Pasá --elf <player.elf> para masterizar el .iso.")
+    return out
+
+
+def cli(argv):
+    if not argv or argv[0] == "demo":
+        return demo()
+    if argv[0] == "build":
+        a = argv[1:]; elf = name = None
+        pos = []
+        it = iter(a)
+        for x in it:
+            if x == "--elf": elf = next(it)
+            elif x == "--name": name = next(it)
+            else: pos.append(x)
+        return build(pos[0], pos[1], elf=elf, name=name or "VN")
+    print(__doc__)
+
+
 def demo():
     m = vn._link_choices(vn.parse(
         'title: T\ncharacter a "Ana" color=#e79ab0\n'
@@ -281,4 +317,5 @@ def demo():
 
 
 if __name__ == "__main__":
-    demo()
+    import sys
+    cli(sys.argv[1:])
