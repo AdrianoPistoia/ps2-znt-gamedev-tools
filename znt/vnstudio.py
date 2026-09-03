@@ -87,6 +87,8 @@ class VNRuntime:
         self.stage = {}          # name -> LayerState
         self.speaker = self.text = None
         self.choices = []
+        self.bgm = None          # archivo de música actual (estado)
+        self.last_se = None      # último efecto disparado
         self.scene_id = None
         self.done = False
         self.ip = 0
@@ -157,6 +159,10 @@ class VNRuntime:
             if s["id"] in self.stage: self.stage[s["id"]].show = False
         elif op == "animate":
             self._animate(s)
+        elif op == "bgm":
+            self.bgm = None if s.get("stop") else s.get("file")
+        elif op == "se":
+            self.last_se = s.get("file")
         elif op == "say":
             self.speaker, self.text = s.get("who"), s.get("text", ""); return True
         elif op == "choice":
@@ -315,6 +321,12 @@ def demo():
     assert "x" in r5.stage["a"].tw and r5.stage["a"].x == 0.0     # viva, sin arrancar
     r5.preview_upto("s", 1)                                       # settle=True: resuelta
     assert "x" not in r5.stage["a"].tw and r5.stage["a"].x == 200.0
+    # audio: el runtime trackea bgm/se como estado
+    m6 = vn._link_choices(vn.parse('title: t\ncharacter a "A"\nscene s\n'
+                                   '  bgm tema.ogg\n  a: hola\n  se golpe.wav\n  bgm stop\n  end\n'))
+    r6 = VNRuntime(m6); r6.enter("s")
+    assert r6.bgm == "tema.ogg" and r6.last_se is None            # tras el primer talk
+    r6.advance(); assert r6.last_se == "golpe.wav" and r6.bgm is None   # se + bgm stop
     print("demo OK")
 
 

@@ -8,7 +8,8 @@ from . import vn
 from .vnstudio import VNRuntime, POS, ACTIONS
 from .engine import CURVES
 
-STEP_OPS = ["bg", "show", "hide", "say", "animate", "choice", "goto", "end"]
+STEP_OPS = ["bg", "show", "hide", "say", "animate", "bgm", "se", "choice", "goto", "end"]
+AUDIO_EXTS = (".ogg", ".mp3", ".wav", ".m4a")
 BG = "#0e1220"; PANEL = "#141a2c"; INK = "#dfe7f5"; MUT = "#8493b5"; ACC = "#e8b04b"
 
 
@@ -26,6 +27,8 @@ def _default_step(op, model):
         "hide": {"op": "hide", "id": chars[0]},
         "say": {"op": "say", "who": chars[0], "text": "..."},
         "animate": {"op": "animate", "id": chars[0], "kind": "jump", "params": {"vib": 18, "cycle": 340}},
+        "bgm": {"op": "bgm", "file": ""},
+        "se": {"op": "se", "file": ""},
         "choice": {"op": "choice", "options": []},
         "goto": {"op": "goto", "target": model["order"][0]},
         "end": {"op": "end"},
@@ -68,6 +71,8 @@ def run_editor(path=None):
                       justify="left", wraplength=rt.W - 24)
     text_l.pack(fill="x", padx=10, pady=(0, 8))
     choicef = tk.Frame(stagef, bg=BG); choicef.pack(fill="x")
+    bgm_l = tk.Label(stagef, bg=BG, fg=MUT, font=("mono", 9), anchor="w")
+    bgm_l.pack(fill="x")
 
     panel = tk.Frame(root, bg=BG); panel.grid(row=0, column=1, padx=8, pady=8, sticky="n")
 
@@ -164,6 +169,7 @@ def run_editor(path=None):
         color = model["characters"].get(who, {}).get("color", ACC) if who else ACC
         who_l.config(text=name or "", fg=color)
         text_l.config(text=rt.text or "")
+        bgm_l.config(text=f"♪ {rt.bgm}" + (f"   se: {rt.last_se}" if rt.last_se else "") if rt.bgm else "")
         for w in choicef.winfo_children():
             w.destroy()
         if rt.choices:
@@ -314,6 +320,18 @@ def run_editor(path=None):
             w2, g2 = combo(s["kind"], list(CURVES) + list(ACTIONS) + ["move"]); field("tipo", w2, g2)
             kv = " ".join(f"{k}={v}" for k, v in s.get("params", {}).items())
             w3, g3 = entry(kv); field("params", w3, g3)
+        elif op in ("bgm", "se"):
+            w, g = entry(s.get("file", "")); field("archivo", w, g)
+            def pick_audio(s=s):
+                p = filedialog.askopenfilename(filetypes=[("audio", "*.ogg *.mp3 *.wav *.m4a")])
+                if p:
+                    snapshot(); s["file"] = _rel(p); s.pop("stop", None); refresh_all()
+            btn(propf, "elegir sonido…", pick_audio).pack(padx=6, pady=2, anchor="w")
+            if op == "bgm":
+                sv = tk.BooleanVar(value=bool(s.get("stop")))
+                tk.Checkbutton(propf, text="detener bgm", variable=sv, bg=PANEL, fg=MUT,
+                               selectcolor="#0f1525", font=("sans", 9)).pack(anchor="w", padx=6)
+                fields["stop"] = (sv, lambda: sv.get())
         elif op == "goto":
             w, g = combo(s.get("target", model["order"][0]), model["order"]); field("a", w, g)
         elif op == "choice":
@@ -358,6 +376,13 @@ def run_editor(path=None):
             elif op == "animate":
                 s["id"] = g["id"]; s["kind"] = g["tipo"]
                 s["params"] = _parse_kv(g["params"])
+            elif op == "bgm":
+                if g.get("stop"):
+                    s.clear(); s["op"] = "bgm"; s["stop"] = True
+                else:
+                    s.pop("stop", None); s["file"] = g["archivo"].strip()
+            elif op == "se":
+                s["file"] = g["archivo"].strip()
             elif op == "goto":
                 s["target"] = g["a"]
             elif op == "choice":

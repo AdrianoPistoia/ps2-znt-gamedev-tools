@@ -103,6 +103,10 @@ def _step(line, chars):
                     try: params[k] = float(v)
                     except ValueError: params[k] = v
         return {"op": "animate", "id": target, "kind": kind, "params": params}
+    if head == "bgm":
+        return {"op": "bgm", "stop": True} if arg.strip() == "stop" else {"op": "bgm", "file": arg.strip()}
+    if head == "se":
+        return {"op": "se", "file": arg.strip()}
     if head == "hide":
         return {"op": "hide", "id": arg}
     if head == "goto":
@@ -139,7 +143,8 @@ def _asset(fname, base_dir):
         data = f.read()
     ext = fname.rsplit(".", 1)[-1].lower()
     mime = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
-            "webp": "image/webp", "gif": "image/gif"}.get(ext, "application/octet-stream")
+            "webp": "image/webp", "gif": "image/gif", "ogg": "audio/ogg",
+            "mp3": "audio/mpeg", "wav": "audio/wav", "m4a": "audio/mp4"}.get(ext, "application/octet-stream")
     return f"data:{mime};base64," + base64.b64encode(data).decode()
 
 
@@ -205,6 +210,9 @@ def validate(model, base=None):
             if base and op == "bg" and s["spec"].get("kind") == "img":
                 if not os.path.exists(os.path.join(base, s["spec"]["file"])):
                     probs.append(f"escena {sid}: falta el fondo '{s['spec']['file']}'")
+            if base and op in ("bgm", "se") and s.get("file"):
+                if not os.path.exists(os.path.join(base, s["file"])):
+                    probs.append(f"escena {sid}: falta el audio '{s['file']}'")
         if not has_exit:
             probs.append(f"escena {sid}: sin salida (end/goto/choice)")
     if base:
@@ -300,6 +308,8 @@ def _step_text(s):
     if op == "choice":
         return "choice\n" + "\n".join(f"    - {o['label']} -> {o['target']}"
                                       for o in s.get("options", []))
+    if op == "bgm": return "bgm stop" if s.get("stop") else f"bgm {s['file']}"
+    if op == "se": return f"se {s['file']}"
     if op == "goto": return f"goto {s['target']}"
     if op == "end": return "end"
     return f"# ? {op}"
@@ -309,13 +319,18 @@ def _embed(model, base_dir):
     """Copia el modelo con los assets embebidos como data URI (para el HTML)."""
     import copy
     m = copy.deepcopy(model)
+    def dat(f):
+        try: return _asset(f, base_dir)
+        except OSError: return None
     for c in m["characters"].values():
         if c.get("sprite"):
-            c["spriteData"] = _asset(c["sprite"], base_dir)
+            c["spriteData"] = dat(c["sprite"])
     for steps in m["scenes"].values():
         for s in steps:
             if s["op"] == "bg" and s["spec"].get("kind") == "img":
-                s["spec"]["data"] = _asset(s["spec"]["file"], base_dir)
+                s["spec"]["data"] = dat(s["spec"]["file"])
+            elif s["op"] in ("bgm", "se") and s.get("file"):
+                s["data"] = dat(s["file"])
     return m
 
 
@@ -415,6 +430,7 @@ _TEMPLATE = r"""<!doctype html><html lang="es"><head><meta charset="utf-8">
   <div id="choices" hidden></div>
   <div id="end" hidden></div>
   <div id="hint">click / espacio</div>
+  <audio id="bgm" loop></audio>
 </div>
 <script>
 const M = /*DATA*/;
@@ -440,6 +456,11 @@ function show(id,pos){
   el.style.opacity=1; el.style.animation="";
 }
 function hide(id){ if(sprites[id]) sprites[id].style.opacity=0; }
+function playBgm(s){
+  const a=$("#bgm");
+  if(s.stop){ a.pause(); return; }
+  if(s.data){ a.src=s.data; a.play().catch(()=>{}); }
+}
 function animate(id,kind){        // aproximación CSS de las acciones del engine
   const el = sprites[id]; if(!el) return;
   const css = {jump:"vn-jump .5s 2", jumponce:"vn-jump .5s 1", vibrate:"vn-shake .4s 3",
@@ -457,6 +478,8 @@ function step(){
     if(s.op==="show"){ show(s.id,s.pos); continue; }
     if(s.op==="animate"){ animate(s.id,s.kind); continue; }
     if(s.op==="hide"){ hide(s.id); continue; }
+    if(s.op==="bgm"){ playBgm(s); continue; }
+    if(s.op==="se"){ if(s.data){ try{ new Audio(s.data).play().catch(()=>{});}catch(e){} } continue; }
     if(s.op==="goto"){ return enter(s.target); }
     if(s.op==="end"){ return theEnd(); }
     if(s.op==="say"){ return say(s); }
@@ -576,6 +599,16 @@ def _ops_selfcheck():
     assert "narrator" in bm["characters"]
     assert validate(bm) == []                          # arranca sin problemas
     assert list(_link_choices(parse(to_text(bm)))["scenes"]) == bm["order"]
+    # audio: bgm/se en el .vn + round-trip
+    au = _link_choices(parse('title: t\ncharacter a "A"\nscene s\n'
+                             '  bgm tema.ogg\n  a: hola\n  se golpe.wav\n  bgm stop\n  end\n'))
+    sts = au["scenes"]["s"]
+    assert sts[0] == {"op": "bgm", "file": "tema.ogg"}, sts[0]
+    assert sts[2] == {"op": "se", "file": "golpe.wav"}, sts[2]
+    assert sts[3].get("stop") is True, sts[3]
+    txt = to_text(au)
+    assert "bgm tema.ogg" in txt and "se golpe.wav" in txt and "bgm stop" in txt, txt
+    assert _link_choices(parse(txt))["scenes"]["s"][3].get("stop") is True
 
 
 def demo():
