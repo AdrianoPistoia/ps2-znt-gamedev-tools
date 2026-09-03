@@ -85,7 +85,7 @@ function renderLists(){
     li.innerHTML = `<span>${id}</span><span class="grow"></span><span class="n">${S.model.scenes[id].length}</span>`;
     li.style.cssText = "display:flex";
     if (id === S.scene) li.className = "sel";
-    li.onclick = () => op({op:"select", scene:id, step:-1});
+    li.onclick = () => op({op:"select", scene:id, step:0});
     sc.appendChild(li);
   });
   renderTimeline(); renderLayers();
@@ -200,6 +200,12 @@ function renderTimeline(){
     `width:${Math.max(steps.length + 1, 8) * TLV.cw}px"></div></div>`;
   const inner = $("#tlbody .tl-inner");
 
+  VNS.LANES.forEach((_, i) => {
+    const ln = document.createElement("div");
+    ln.className = "lane" + (i % 2 ? " odd" : "");
+    ln.style.top = (TLV.ruler + i * TLV.lh) + "px"; ln.style.height = TLV.lh + "px";
+    inner.appendChild(ln);
+  });
   const ruler = document.createElement("div");
   ruler.className = "tl-ruler"; ruler.style.width = "100%";
   steps.forEach((_, i) => {
@@ -350,27 +356,89 @@ function charFields(cid){
   return w;
 }
 
+/* secciones plegables (recuerdan si quedaron abiertas) */
+function sect(title, open){
+  const d = document.createElement("details"), k = "vnssec:" + title;
+  try { const v = localStorage.getItem(k); if (v !== null) open = v === "1"; } catch (e) {}
+  d.open = open;
+  d.addEventListener("toggle", () => { try { localStorage.setItem(k, d.open ? "1" : "0"); } catch (e) {} });
+  const sm = document.createElement("summary"); sm.textContent = title;
+  d.appendChild(sm);
+  d.add = el => { d.appendChild(el); return d; };
+  return d;
+}
+/* campo numérico: se escribe o se arrastra la etiqueta (Shift = fino) */
+function num(label, v, opts, commit){
+  const el = input(v), row = field(label, el), lab = row.querySelector("label");
+  lab.className = "scrub"; lab.title = "arrastrá para cambiar (Shift = fino)";
+  lab.addEventListener("pointerdown", e => {
+    const x0 = e.clientX, v0 = el.value;
+    lab.setPointerCapture(e.pointerId);
+    const move = ev => {
+      el.value = VNS.scrubValue(v0, ev.clientX - x0, Object.assign({fine: ev.shiftKey}, opts));
+      commit(+el.value, true);
+    };
+    const up = () => { lab.removeEventListener("pointermove", move);
+                       lab.removeEventListener("pointerup", up); commit(+el.value, false); };
+    lab.addEventListener("pointermove", move); lab.addEventListener("pointerup", up);
+    e.preventDefault();
+  });
+  el.onchange = () => { if (el.value !== "") commit(+el.value, false); };
+  return row;
+}
+/* mientras se arrastra se ve en el escenario; al soltar se guarda en el `show` */
+function liveLayer(id, key){
+  return (v, dragging) => {
+    const l = SG.layers.find(x => x.id === id);
+    if (l) {
+      l[key] = v;
+      const el = document.querySelector(`#stage .layer[data-id="${id}"]`);
+      if (el) Object.assign(el.style, VNS.layerStyle(l, SG));
+      markSelection();
+    }
+    if (!dragging) op({op:"set_layer", id, props:{[key]: v}});
+  };
+}
+
 function renderProps(){
   const box = $("#props"); box.innerHTML = "";
   const steps = S.model.scenes[S.scene] || [];
-  if (!(S.step >= 0 && S.step < steps.length)) { box.innerHTML = '<div class="hint">(elegí un paso en el timeline)</div>'; return; }
+  if (!(S.step >= 0 && S.step < steps.length)) {
+    box.innerHTML = '<div class="hint">(elegí un paso en el timeline)</div>'; return; }
   const s = steps[S.step], chars = Object.keys(S.model.characters), f = {};
-  const add = (k, label, el) => { f[k] = el; box.appendChild(field(label, el)); };
+  const paso = sect("Paso", true); box.appendChild(paso);
+  const add = (k, label, el) => { f[k] = el; paso.add(field(label, el)); };
 
   if (s.op === "bg") {
     const p = s.spec||{};
     add("bg","fondo", input(p.kind==="grad" ? `grad:${p.a},${p.b}` : p.kind==="solid" ? p.color : (p.file||"")));
-    box.appendChild(field("imagen", picker(p.file || "", ASSETS,
+    paso.add(field("imagen", picker(p.file || "", ASSETS,
       v => op({op:"set_props", props:{bg: v || "#000000"}}), "bg", "image/*")));
-    box.insertAdjacentHTML("beforeend", '<div class="hint">grad:#a,#b · #rrggbb · archivo.png</div>');
+    paso.insertAdjacentHTML("beforeend", '<div class="hint">grad:#a,#b · #rrggbb · archivo.png</div>');
   } else if (s.op === "show" || s.op === "hide") {
     add("id","personaje", select(s.id, chars));
-    const cf = charFields(s.id); if (cf) box.appendChild(cf);
     if (s.op === "show") {
       add("pos","pos", select(s.pos||"center", ["left","center","right"]));
-      add("z","z", input(s.z)); add("zoom","zoom %", input(s.zoom));
-      add("opacity","opac %", input(s.opacity)); add("tint","tinte", input(s.tint));
+      const tr = sect("Transformar", true); box.appendChild(tr);
+      tr.add(num("x", s.x, {def:0}, liveLayer(s.id, "x")));
+      tr.add(num("y", s.y, {def:0}, liveLayer(s.id, "y")));
+      tr.add(num("z", s.z, {def:10, min:1}, liveLayer(s.id, "z")));
+      tr.add(num("zoom %", s.zoom, {def:100, min:10, max:400}, liveLayer(s.id, "zoom")));
+      tr.add(num("opac %", s.opacity, {def:100, min:0, max:100}, liveLayer(s.id, "opacity")));
+      const tint = input(s.tint || "");
+      tint.placeholder = "#rrggbb";
+      tint.onchange = () => op({op:"set_layer", id:s.id, props:{tint: tint.value.trim()}});
+      tr.add(field("tinte", tint));
+      const zf = document.createElement("div");
+      zf.style.cssText = "display:flex;gap:4px;flex:1";
+      [["▲ al frente", true], ["▼ al fondo", false]].forEach(([t, front]) => {
+        const b = document.createElement("button"); b.textContent = t;
+        b.onclick = () => op({op:"set_z", id: s.id, front}); zf.appendChild(b);
+      });
+      tr.add(field("orden", zf));
+
       /* el sprite es del PERSONAJE (no del paso): se aplica al instante */
+      const sp = sect("Sprite", true); box.appendChild(sp);
       const cur = (S.model.characters[s.id] || {}).sprite || "";
       const sel = select(cur, [""].concat(ASSETS));
       sel.querySelector('option[value=""]').textContent = "(placeholder)";
@@ -382,26 +450,26 @@ function renderProps(){
       const wrap = document.createElement("div");
       wrap.style.cssText = "display:flex;gap:4px;flex:1";
       wrap.append(sel, pick);
-      box.appendChild(field("sprite", wrap));
-      const zf = document.createElement("div");
-      zf.style.cssText = "display:flex;gap:4px;flex:1";
-      [["▲ al frente", true], ["▼ al fondo", false]].forEach(([t, front]) => {
-        const b = document.createElement("button"); b.textContent = t;
-        b.onclick = () => op({op:"set_z", id: s.id, front}); zf.appendChild(b);
-      });
-      box.appendChild(field("orden", zf));
-      box.insertAdjacentHTML("beforeend",
-        '<div class="hint">la imagen elegida se copia junto al .vn · arrastrá el sprite en el escenario</div>');
+      sp.add(field("imagen", wrap));
+      sp.insertAdjacentHTML("beforeend",
+        '<div class="hint">la imagen se copia junto al .vn · arrastrá el sprite o sus esquinas en el escenario</div>');
     }
+    const cf = charFields(s.id);
+    if (cf) box.appendChild(sect("Personaje", false).add(cf));
   } else if (s.op === "say") {
-    add("who","quién", select(s.who, chars)); add("text","texto", input(s.text));
-    const cf = charFields(s.who); if (cf) box.appendChild(cf);
+    add("who","quién", select(s.who, chars));
+    const t = document.createElement("textarea"); t.rows = 3; t.value = s.text || "";
+    f.text = t; paso.add(field("texto", t));
+    const cf = charFields(s.who);
+    if (cf) box.appendChild(sect("Personaje", false).add(cf));
   } else if (s.op === "animate") {
     add("id","personaje", select(s.id, chars.filter(c=>c!=="narrator")));
     add("kind","tipo", select(s.kind, ["linear","accel","decel","move","wave","waveonce","jump","jumponce","fall","vibrate"]));
     add("params","params", input(Object.entries(s.params||{}).map(([k,v])=>`${k}=${v}`).join(" ")));
+    paso.insertAdjacentHTML("beforeend",
+      '<div class="hint">doble click en el timeline (o ▶ Probar paso) para verla</div>');
   } else if (s.op === "bgm" || s.op === "se") {
-    box.appendChild(field("archivo", picker(s.file || "", AUDIO,
+    paso.add(field("archivo", picker(s.file || "", AUDIO,
       v => op({op:"set_props", props:{file: v}}), "file", "audio/*")));
     if (s.op === "bgm") { const c = document.createElement("input"); c.type="checkbox"; c.checked=!!s.stop;
                           c.style.width="auto"; add("stop","detener", c); }
@@ -411,11 +479,11 @@ function renderProps(){
     const t = document.createElement("textarea"); t.rows = 4;
     t.value = (s.options||[]).map(o=>`${o.label} -> ${o.target}`).join("\n");
     add("options","opciones", t);
-    box.insertAdjacentHTML("beforeend", '<div class="hint">etiqueta -&gt; escena (una por línea)</div>');
-  } else { box.innerHTML = '<div class="hint">(sin propiedades)</div>'; return; }
+    paso.insertAdjacentHTML("beforeend", '<div class="hint">etiqueta -&gt; escena (una por línea)</div>');
+  } else { paso.insertAdjacentHTML("beforeend", '<div class="hint">(sin propiedades)</div>'); return; }
 
   const b = document.createElement("button"); b.textContent = "Aplicar";
-  b.style.marginTop = "8px";
+  b.style.margin = "8px 0 4px";
   b.onclick = () => {
     const props = {};
     for (const [k, el] of Object.entries(f)) {
@@ -424,12 +492,11 @@ function renderProps(){
             .map(x => ({label:x.split("->")[0].trim(), target:x.split("->")[1].trim()}));
       else if (k === "params") { const o={}; v.split(/\s+/).filter(Boolean).forEach(kv=>{
             const [a,bb]=kv.split("="); const n=Number(bb); o[a]= isNaN(n)?bb:n; }); v=o; }
-      else if (["z","zoom","opacity","x","y"].includes(k)) { if (v==="") continue; v = parseInt(v,10); }
       props[k] = v;
     }
     op({op:"set_props", props});
   };
-  box.appendChild(b);
+  paso.add(b);
 }
 
 async function refresh(){
@@ -541,6 +608,8 @@ $("#stage").addEventListener("pointercancel", endDrag);
 
 (async () => {
   S = await api.model();
+  if (S.step < 0 && (S.model.scenes[S.scene] || []).length)
+    S = await api.op({op:"select", scene:S.scene, step:0});
   $("#newop").innerHTML = S.step_ops.map(o => `<option>${o}</option>`).join("");
   $("#newop").value = "say";
   await refresh();

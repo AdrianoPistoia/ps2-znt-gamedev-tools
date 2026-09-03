@@ -52,6 +52,8 @@ def parse(text):
             if "color=" in rest:
                 pre, color = rest.rsplit("color=", 1)
                 name = pre.strip(); color = color.strip()
+            elif rest.rstrip().rsplit(None, 1)[-1].startswith("#"):   # color suelto al final
+                name, color = rest.rstrip().rsplit(None, 1)
             chars[cid] = {"name": name.strip().strip('"'), "color": color}
             continue
         if line.startswith("sprite "):                # arte del personaje (top-level)

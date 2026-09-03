@@ -8,7 +8,7 @@
     --acc:#f0a92e; --acc2:#5fd0e0; --edge:#282d3a; --sel:#2e3648; --selink:#ffffff;
     --ui: system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     --mono: ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;
-    --outw: 240px; --insw: 300px; --tlh: 170px;
+    --outw: 240px; --insw: 300px; --tlh: 214px;
     color-scheme: dark;
   }
   *{box-sizing:border-box}
@@ -74,25 +74,25 @@
       box-shadow:inset 0 0 0 1px #fff3, 0 6px 20px #0007;
       display:flex;align-items:flex-end;justify-content:center;color:#0008;
       font:700 clamp(10px,3vw,28px) var(--ui)}
-  #anim{position:absolute;inset:0;width:100%;height:100%;object-fit:fill;
+  #anim{position:absolute;inset:0;z-index:999;width:100%;height:100%;object-fit:fill;
         background:#05060f;cursor:pointer}
-  #guides{position:absolute;inset:0;pointer-events:none}
+  #guides{position:absolute;inset:0;pointer-events:none;z-index:800}
   #guides .g{position:absolute;background:#ffffff26}
   #guides .safe{position:absolute;border:1px dashed #ffffff40}
-  #frame{position:absolute;outline:1px solid var(--acc2);pointer-events:none}
+  #frame{position:absolute;outline:1px solid var(--acc2);pointer-events:none;z-index:990}
   #frame .hnd{position:absolute;width:8px;height:8px;background:var(--acc2);
               border-radius:2px;pointer-events:auto;cursor:nwse-resize}
   #flabel{position:absolute;left:0;top:-17px;color:#04121a;background:var(--acc2);
           font:10px/1 var(--mono);padding:2px 4px;border-radius:2px;white-space:nowrap}
   #gv{position:absolute;top:0;bottom:0;border-left:1px dashed var(--acc2);pointer-events:none}
   #gh{position:absolute;left:0;right:0;border-top:1px dashed var(--acc);pointer-events:none}
-  #dbox{position:absolute;left:3%;right:3%;bottom:4%;min-height:22%;
+  #dbox{position:absolute;z-index:900;left:3%;right:3%;bottom:4%;min-height:22%;
         background:linear-gradient(180deg,#141b3aee,#0a0e22f2);
         border:1px solid var(--edge);border-top:2px solid var(--acc);
         border-radius:3px 3px 8px 8px;padding:12px 14px}
   #who{font-weight:700;color:var(--acc);margin-bottom:3px}
   #text{white-space:pre-wrap;user-select:text}
-  #choices{position:absolute;inset:0;display:flex;flex-direction:column;gap:8px;
+  #choices{position:absolute;inset:0;z-index:950;display:flex;flex-direction:column;gap:8px;
            align-items:center;justify-content:center;background:#0009}
   #choices button{min-width:46%;padding:7px 12px}
   #vpbar{position:absolute;top:8px;left:8px;right:8px;display:flex;gap:5px;align-items:center;
@@ -102,7 +102,20 @@
          background:#171a22cc;padding:2px 7px;border-radius:4px}
 
   /* ---------- inspector ---------- */
-  #props{padding:6px 8px}
+  #props details{border-bottom:1px solid var(--edge)}
+  #props summary{cursor:pointer;padding:5px 8px;font:600 10px/1.7 var(--ui);
+       letter-spacing:.11em;text-transform:uppercase;color:var(--mut);
+       display:flex;align-items:center;gap:6px;list-style:none}
+  #props summary::-webkit-details-marker{display:none}
+  #props summary::before{content:"▸";font-size:9px}
+  #props details[open] summary::before{content:"▾"}
+  #props summary:hover{color:var(--ink);background:#222736}
+  #props details > *:not(summary){margin:0 8px}
+  #props details > *:last-child{margin-bottom:8px}
+  #props label.scrub{cursor:ew-resize;color:var(--acc2);
+       text-decoration:underline dotted var(--edge)}
+  #props .hint{margin:6px 8px 2px}
+  #props textarea{resize:vertical}
   .row{display:flex;gap:6px;align-items:center;margin:3px 0}
   .row label{color:var(--mut);min-width:64px;font-size:11.5px}
   .hint{color:var(--mut);font-size:11px;margin:6px 0 2px;line-height:1.4}
@@ -117,6 +130,8 @@
   .tl-labels div{height:22px;display:flex;align-items:center;padding:0 8px;color:var(--mut);
                  font:10px/1 var(--ui);letter-spacing:.06em;text-transform:uppercase}
   .tl-track{position:relative;overflow:auto}
+  .lane{position:absolute;left:0;right:0}
+  .lane.odd{background:#ffffff0d}
   .tl-inner{position:relative;min-width:100%}
   .tl-ruler{position:absolute;top:0;left:0;height:18px;border-bottom:1px solid var(--edge)}
   .tl-tick{position:absolute;top:0;height:18px;border-left:1px solid var(--edge);
@@ -160,7 +175,7 @@
   <div id="body">
     <aside class="pane" id="outliner">
       <div class="phead">Escenas<span class="grow"></span><span id="m-count"></span></div>
-      <div class="pbody"><ul class="list" id="scenes"></ul></div>
+      <div class="pbody" style="flex:0 1 auto;max-height:32%"><ul class="list" id="scenes"></ul></div>
       <div class="bar">
         <button id="b-scene-add" class="ico" title="Nueva escena">＋</button>
         <button id="b-scene-dup" class="ico" title="Duplicar">⧉</button>

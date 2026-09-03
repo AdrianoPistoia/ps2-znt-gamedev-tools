@@ -60,6 +60,18 @@
              y: (fy - grabDY) - st.h + h };
   }
 
+  /* --- inspector --- */
+
+  /* Campo numérico arrastrable: dx en píxeles -> valor. */
+  function scrubValue(v, dx, o) {
+    o = o || {};
+    const base = (v == null || v === "" || isNaN(v)) ? (o.def == null ? 0 : o.def) : +v;
+    let n = Math.round(base + dx * (o.step == null ? 1 : o.step) * (o.fine ? 0.25 : 1));
+    if (o.min != null) n = Math.max(o.min, n);
+    if (o.max != null) n = Math.min(o.max, n);
+    return n;
+  }
+
   /* --- viewport --- */
 
   /* Arrastrar un handle de esquina (dir: 1 der, -1 izq). La capa está centrada
@@ -138,5 +150,5 @@
   }
 
   return { layerStyle, bgStyle, stageXY, snap, snapTargets, dragTo, POS,
-           clampPane, fitRect, resizeZoom, guides, nextGuide, GUIDES, outlineRows, showStepIndex, LANES, laneOf, clipRect, dropIndex };
+           clampPane, fitRect, scrubValue, resizeZoom, guides, nextGuide, GUIDES, outlineRows, showStepIndex, LANES, laneOf, clipRect, dropIndex };
 });
