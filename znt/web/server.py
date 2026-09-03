@@ -5,7 +5,7 @@ selección, historial) sin ninguna UI; el handler HTTP lo expone como API JSON.
 import json, os, copy, mimetypes, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from .. import vn
+from .. import vn, frontends
 from ..vnstudio import VNRuntime
 
 UI = os.path.join(os.path.dirname(__file__), "ui.html")
@@ -137,6 +137,30 @@ class Studio:
             self.rt.invalidate()
         return self.state()
 
+    def anim(self, scene, step, ms=1200, fps=15, shrink=2):
+        """Preview AUTORITATIVO: renderiza la transición con el engine real
+        (curvas y acciones de Python) y la empaqueta como APNG para que el
+        browser la reproduzca nativamente."""
+        import tempfile
+        if scene not in self.model["scenes"]:
+            scene = self.model["order"][0]
+        ms = max(200, min(int(ms), 3000))
+        dt = max(1, 1000 // int(fps))
+        self.rt.preview_upto(scene, int(step), settle=False)   # animación viva desde t=0
+        frames = []
+        for _ in range(max(2, ms // dt)):
+            frames.append(bytes(self.rt.frame().buf))
+            self.rt.tick(dt)
+        w, h = self.rt.W, self.rt.H
+        sh = [frontends._shrink(f, w, h, int(shrink)) for f in frames]
+        tmp = tempfile.mktemp(suffix=".apng")
+        try:
+            frontends.write_apng([x[0] for x in sh], sh[0][1], sh[0][2], tmp, delay_ms=dt)
+            return open(tmp, "rb").read()
+        finally:
+            try: os.remove(tmp)
+            except OSError: pass
+
     # --- stage para que el browser componga con CSS ------------------------
     def stage(self, scene, step):
         """Layout de las capas tras aplicar los pasos 0..step (el render real lo
@@ -239,6 +263,11 @@ class _Handler(BaseHTTPRequestHandler):
             sc = (q.get("scene") or [self.studio.scene])[0]
             sp = (q.get("step") or ["-1"])[0]
             return self._json(self.studio.stage(sc, sp))
+        if path == "/api/anim":
+            sc = (q.get("scene") or [self.studio.scene])[0]
+            sp = (q.get("step") or ["-1"])[0]
+            ms = (q.get("ms") or ["1200"])[0]
+            return self._send(200, "image/apng", self.studio.anim(sc, sp, ms))
         if path == "/api/asset":
             return self._asset((q.get("f") or [""])[0])
         self._json({"error": "not found"}, 404)
@@ -333,6 +362,10 @@ def demo():
     sh = s3.model["scenes"]["s"][0]
     assert sh["op"] == "show" and sh["x"] == 42 and sh["y"] == -8, sh
     assert s3.state()["can_undo"], "el drag debe entrar en el historial"
+
+    # preview autoritativo: APNG renderizado con el engine real
+    ap = Studio(p2).anim("s", 2, ms=200)
+    assert ap[:8] == b"\x89PNG\r\n\x1a\n" and b"acTL" in ap, "el preview debe ser un APNG"
 
     # capa HTTP
     httpd = make_server(st, "127.0.0.1", 0)

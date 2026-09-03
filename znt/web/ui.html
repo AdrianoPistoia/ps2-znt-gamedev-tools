@@ -37,6 +37,8 @@
       font:700 clamp(10px,3vw,28px) var(--ui)}
   .layer{cursor:grab;touch-action:none}
   .layer:active{cursor:grabbing}
+  #anim{position:absolute;inset:0;width:100%;height:100%;object-fit:fill;
+        background:#05060f;cursor:pointer}
   #gv{position:absolute;top:0;bottom:0;border-left:1px dashed #5fd0e0;pointer-events:none}
   #gh{position:absolute;left:0;right:0;border-top:1px dashed #e8b04b;pointer-events:none}
   #dbox{position:absolute;left:3%;right:3%;bottom:4%;min-height:22%;
@@ -68,6 +70,7 @@
     <div id="dbox" hidden><div id="who"></div><div id="text"></div></div>
     <div id="choices" hidden></div>
     <div id="gv" hidden></div><div id="gh" hidden></div>
+    <img id="anim" hidden alt="">
   </div>
   <div id="meta"><span id="m-scene"></span><span id="m-bgm"></span><span id="m-path"></span></div>
 </div>
@@ -97,6 +100,7 @@
     <button id="b-step-add">＋</button><button id="b-step-dup">dup</button>
     <button id="b-step-up">↑</button><button id="b-step-dn">↓</button>
     <button id="b-step-del">borrar</button>
+    <button id="b-probar">▶ probar</button>
   </div>
 
   <h2>Propiedades</h2>
@@ -274,6 +278,13 @@ $("#b-step-dup").onclick = () => op({op:"dup_step"});
 $("#b-step-up").onclick = () => op({op:"move_step", delta:-1});
 $("#b-step-dn").onclick = () => op({op:"move_step", delta:1});
 $("#b-step-del").onclick = () => op({op:"del_step"});
+/* preview AUTORITATIVO: lo renderiza Python con el engine real y llega como APNG */
+$("#b-probar").onclick = () => {
+  const a = $("#anim");
+  a.src = `/api/anim?scene=${encodeURIComponent(S.scene)}&step=${S.step}&ms=1200&_=${Date.now()}`;
+  a.hidden = false;
+};
+$("#anim").onclick = () => { $("#anim").hidden = true; $("#anim").removeAttribute("src"); };
 addEventListener("keydown", e => {
   if (e.ctrlKey && e.key === "z") { e.preventDefault(); op({op:"undo"}); }
   if (e.ctrlKey && (e.key === "y" || (e.shiftKey && e.key === "Z"))) { e.preventDefault(); op({op:"redo"}); }

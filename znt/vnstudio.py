@@ -81,6 +81,7 @@ class VNRuntime:
     def __init__(self, model, base_dir=".", w=640, h=448):
         self.model, self.base, self.W, self.H = model, base_dir, w, h
         self._asset_cache = {}
+        self._base = None; self._base_sig = None; self._base_builds = 0
         self.reset_state()
 
     def reset_state(self):
@@ -256,18 +257,37 @@ class VNRuntime:
     def invalidate(self):
         self._asset_cache.clear()
 
+    def _blit(self, fb, l):
+        rows = self._drawn(l)
+        sx, sy, w, h = self._screen(l, rows)
+        ly = render.Layer().loadImage(rows)
+        ly.setPos(sx, sy); ly.setOpacity(l.opacity)
+        if l.tint:
+            ly.setColor(*(c * 100 // 255 for c in _hex(l.tint)))   # tinte multiplicativo
+        ly.draw(fb)
+
+    @staticmethod
+    def _sig(layers):
+        return tuple((id(l), int(l.x), int(l.y), int(l.opacity), l.level,
+                      int(l.zoom), l.tint, id(l.rows)) for l in layers)
+
     def frame(self):
+        """Compone el frame. Cachea lo que va DETRÁS de la primera capa animada
+        (el fondo, que es lo caro) y por frame sólo re-blitea de ahí en adelante."""
+        order = [l for l in sorted(self.stage.values(), key=lambda s: s.level)
+                 if l.rows and l.show]                      # menor level al fondo
+        k = next((i for i, l in enumerate(order) if l.animating), len(order))
+        sig = self._sig(order[:k])
+        if sig != self._base_sig:
+            base = render.Framebuffer(self.W, self.H)
+            for l in order[:k]:
+                self._blit(base, l)
+            self._base, self._base_sig = bytes(base.buf), sig
+            self._base_builds += 1
         fb = render.Framebuffer(self.W, self.H)
-        for l in sorted(self.stage.values(), key=lambda s: s.level):   # menor level al fondo
-            if not l.rows or not l.show:
-                continue
-            rows = self._drawn(l)
-            sx, sy, w, h = self._screen(l, rows)
-            ly = render.Layer().loadImage(rows)
-            ly.setPos(sx, sy); ly.setOpacity(l.opacity)
-            if l.tint:
-                ly.setColor(*(c * 100 // 255 for c in _hex(l.tint)))   # tinte multiplicativo
-            ly.draw(fb)
+        fb.buf = bytearray(self._base)
+        for l in order[k:]:
+            self._blit(fb, l)
         return fb
 
 
