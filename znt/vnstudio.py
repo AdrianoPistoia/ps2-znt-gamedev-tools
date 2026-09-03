@@ -169,13 +169,16 @@ class VNRuntime:
             return True
         return False
 
-    def preview_upto(self, scene_id, k):
-        """Estado estático tras ejecutar los pasos 0..k de una escena (para el editor)."""
+    def preview_upto(self, scene_id, k, settle=True):
+        """Estado tras ejecutar los pasos 0..k de una escena (para el editor).
+        settle=True deja las animaciones resueltas (estático); settle=False las deja
+        vivas desde t=0 para previsualizar la transición."""
         self.reset_state(); self.scene_id = scene_id
         self.speaker = self.text = None; self.choices = []
         for s in self._steps()[:k+1]:
             self._exec(s, navigate=False)
-        self.settle()
+        if settle:
+            self.settle()
 
     def _animate(self, s):
         l = self.stage.get(s["id"])
@@ -304,6 +307,14 @@ def demo():
     o = ((rw[1] + rw[3]//2) * fb4.w + rw[0] + rw[2]//2) * 3
     cw = tuple(fb4.buf[o:o+3])
     assert cw[0] == 0 and cw[1] == 0 and cw[2] > 0, ("tinte azul", cw)   # R,G a 0; B queda
+    # previsualización de transición: settle=False la deja viva desde t=0
+    m5 = vn._link_choices(vn.parse('title: t\ncharacter a "A"\nscene s\n  show a center x=0\n'
+                                   '  animate a move x=200 curve=linear time=400\n  a: h\n  end\n'))
+    r5 = VNRuntime(m5)
+    r5.preview_upto("s", 1, settle=False)
+    assert "x" in r5.stage["a"].tw and r5.stage["a"].x == 0.0     # viva, sin arrancar
+    r5.preview_upto("s", 1)                                       # settle=True: resuelta
+    assert "x" not in r5.stage["a"].tw and r5.stage["a"].x == 200.0
     print("demo OK")
 
 

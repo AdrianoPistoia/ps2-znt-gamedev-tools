@@ -107,6 +107,7 @@ def run_editor(path=None):
     btn(addf, "↑", lambda: move_step(-1)).pack(side="left")
     btn(addf, "↓", lambda: move_step(1)).pack(side="left")
     btn(addf, "borrar", lambda: del_step()).pack(side="left", padx=2)
+    btn(addf, "▶ probar", lambda: preview_transition()).pack(side="left", padx=2)
 
     # ---- propiedades del paso --------------------------------------------
     lbl(panel, "Propiedades").pack(anchor="w", pady=(10, 0))
@@ -468,6 +469,22 @@ def run_editor(path=None):
     canvas.bind("<Button-1>", on_press)
     canvas.bind("<B1-Motion>", on_motion)
     canvas.bind("<ButtonRelease-1>", on_release)
+
+    # ------------------------------------------------------------------ probar transición
+    def preview_transition():
+        if st["play"] or st["step"] < 0:
+            return
+        rt.preview_upto(st["scene"], st["step"], settle=False)   # transición viva desde t=0
+        st["preview"] = [0]
+        def loop():
+            p = st.get("preview")
+            if not p:
+                return
+            rt.tick(33); present(); p[0] += 1
+            if not rt.animating() or p[0] > 90:                 # fin, o tope ~3s (acciones continuas)
+                st["preview"] = None; refresh_preview(); return
+            root.after(33, loop)
+        loop()
 
     # ------------------------------------------------------------------ play
     def play():
