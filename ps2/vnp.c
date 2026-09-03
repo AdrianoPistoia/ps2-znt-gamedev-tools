@@ -36,9 +36,19 @@ int vnp_open(VnpDoc *d, const uint8_t *buf, uint32_t size)
         uint32_t stride = (d->font_w + 7) / 8;
         p += d->font_n * d->font_h * stride;
     }
+    /* audio */
+    d->n_audio = rd32(p); p += 4; d->p_audio = p;
+    for (uint32_t i = 0; i < d->n_audio; i++) { p += 4; uint32_t len = rd32(p); p += 4 + len; }
     /* scenes */
     d->n_scenes = rd32(p); p += 4; d->p_scenes = p;
     return 0;
+}
+
+void vnp_audio(const VnpDoc *d, uint32_t i, VnpAudio *out)
+{
+    const uint8_t *p = d->p_audio;
+    for (uint32_t k = 0; k < i; k++) { p += 4; uint32_t len = rd32(p); p += 4 + len; }
+    out->name = rd32(p); out->len = rd32(p + 4); out->data = p + 8;
 }
 
 const uint8_t *vnp_glyph(const VnpDoc *d, uint32_t cp)
@@ -119,9 +129,9 @@ int vnp_step(VnpScene *sc, VnpStep *o)
         o->an_vib = (int16_t)rd16(p); p += 2; o->an_cycle = rd16(p); p += 2;
         o->an_dist = (int16_t)rd16(p); p += 2; break;
     case OP_BGM:
-        o->bgm_stop = *p++; o->file = rd32(p); p += 4; break;
+        o->bgm_stop = *p++; o->audio = rd16(p); p += 2; break;
     case OP_SE:
-        o->file = rd32(p); p += 4; break;
+        o->audio = rd16(p); p += 2; break;
     case OP_CHOICE:
         o->n_opts = *p++;
         for (uint8_t i = 0; i < o->n_opts && i < 16; i++) {

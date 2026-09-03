@@ -2,7 +2,7 @@
 # Salida: ZNTVN.ELF  (probar en PCSX2 con Run ELF, o meter en un .iso con `znt iso build --elf`).
 EE_BIN = ZNTVN.ELF
 EE_OBJS = main.o vnp.o
-EE_LIBS = -lgskit -ldmakit -lpad -lpatches -lc -lkernel
+EE_LIBS = -lgskit -ldmakit -lpad -laudsrv -lpatches -lc -lkernel
 EE_INCS += -I$(PS2SDK)/ports/include
 EE_LDFLAGS += -L$(PS2SDK)/ports/lib
 

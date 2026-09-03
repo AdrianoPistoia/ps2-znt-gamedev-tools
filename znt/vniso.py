@@ -119,8 +119,22 @@ def compile_blob(model, base=".", font=None):
     for c in chars:
         c["_spr"] = IMG(c.get("sprite"))
 
+    # --- audio (bgm/se): embebe los archivos que existen ---
+    aud_idx = {}
+    audios = []
+    def AUD(fname):
+        if not fname:
+            return NONE16
+        if fname not in aud_idx:
+            try:
+                data = open(f"{base}/{fname}", "rb").read()
+            except OSError:
+                aud_idx[fname] = NONE16; return NONE16     # falta: sin audio
+            aud_idx[fname] = len(audios); audios.append((S(fname), data))  # nombre al pool
+        return aud_idx[fname]
+
     w = _W()
-    w.b += MAGIC; w.u16(2); w.u16(scene_idx.get(model.get("start", order[0]), 0))
+    w.b += MAGIC; w.u16(3); w.u16(scene_idx.get(model.get("start", order[0]), 0))
     S(model["title"])                                    # reservar título como string 0
 
     # cuerpo de escenas primero (llena el pool), luego se serializa el pool al final…
@@ -133,7 +147,7 @@ def compile_blob(model, base=".", font=None):
         sw = _W(); steps = model["scenes"][sid]
         sw.u32(len(steps))
         for s in steps:
-            _emit_step(sw, s, S, char_idx, scene_idx, IMG)
+            _emit_step(sw, s, S, char_idx, scene_idx, IMG, AUD)
         scene_bytes.append(bytes(sw.b))
 
     # --- string pool ---
@@ -158,6 +172,10 @@ def compile_blob(model, base=".", font=None):
         w.b += fdata
     else:
         w.u8(0)
+    # --- audio ---
+    w.u32(len(audios))
+    for name_str, data in audios:
+        w.u32(name_str); w.blob(data)
     # --- scenes ---
     w.u32(len(order))
     for sb in scene_bytes:
@@ -184,7 +202,7 @@ def build_iso(elf_path, blob_path, out_iso, name="VN", vmode="NTSC"):
     return out_iso
 
 
-def _emit_step(w, s, S, char_idx, scene_idx, IMG):
+def _emit_step(w, s, S, char_idx, scene_idx, IMG, AUD):
     op = s["op"]
     w.u8(OP["anim"] if op == "animate" else OP[op])
     if op == "bg":
@@ -212,9 +230,9 @@ def _emit_step(w, s, S, char_idx, scene_idx, IMG):
         w.i16(p.get("vib", p.get("vibration", 0))); w.u16(int(p.get("cycle", 0)))
         w.i16(p.get("dist", p.get("distance", 0)))
     elif op == "bgm":
-        w.u8(1 if s.get("stop") else 0); w.u32(S(s.get("file")) if s.get("file") else NONE32)
+        w.u8(1 if s.get("stop") else 0); w.u16(AUD(s.get("file")))
     elif op == "se":
-        w.u32(S(s.get("file")) if s.get("file") else NONE32)
+        w.u16(AUD(s.get("file")))
     elif op == "choice":
         opts = s.get("options", []); w.u8(len(opts))
         for o in opts:
@@ -256,12 +274,15 @@ def read_blob(data):
         stride = (cw + 7) // 8
         r.take(n * ch * stride)
         font = {"cell": (cw, ch), "cps": cps}
+    audios = []
+    for _ in range(r.u32()):
+        nm = S(r.u32()); alen = r.u32(); r.take(alen); audios.append((nm, alen))
     scenes = []
     for _ in range(r.u32()):
         steps = [_read_step(r, S) for _ in range(r.u32())]
         scenes.append(steps)
     return dict(version=version, start=start, title=pool[0] if pool else None,
-                characters=chars, images=images, font=font, scenes=scenes)
+                characters=chars, images=images, font=font, audios=audios, scenes=scenes)
 
 
 def _read_step(r, S):
@@ -283,9 +304,9 @@ def _read_step(r, S):
         return {"op": "animate", "kind": kind, "curve": curve, "x": r.i16(),
                 "time": r.u16(), "vib": r.i16(), "cycle": r.u16(), "dist": r.i16()}
     if op == "bgm":
-        return {"op": "bgm", "stop": r.u8(), "file": S(r.u32())}
+        return {"op": "bgm", "stop": r.u8(), "audio": r.u16()}
     if op == "se":
-        return {"op": "se", "file": S(r.u32())}
+        return {"op": "se", "audio": r.u16()}
     if op == "choice":
         n = r.u8()
         return {"op": "choice", "options": [{"label": S(r.u32()), "target": r.u16()} for _ in range(n)]}
@@ -365,7 +386,15 @@ def demo():
                                    '  h: hi\n  end\n'))
     r2 = read_blob(compile_blob(m2, d))
     assert r2["images"] == [(2, 2)], r2["images"]
-    assert r2["version"] == 2 and r2["font"] is None      # sin fuente -> sección vacía
+    assert r2["version"] == 3 and r2["font"] is None      # sin fuente -> sección vacía
+    # audio: bgm embebe el archivo; el paso guarda el índice
+    open(f"{d}/tema.wav", "wb").write(b"RIFF....WAVEfake" * 4)
+    m4 = vn._link_choices(vn.parse('title: t\ncharacter a "A"\nscene s\n  bgm tema.wav\n  a: h\n'
+                                   '  bgm stop\n  end\n'))
+    r4 = read_blob(compile_blob(m4, d))
+    assert len(r4["audios"]) == 1 and r4["audios"][0][0] == "tema.wav", r4["audios"]
+    assert r4["scenes"][0][0]["op"] == "bgm" and r4["scenes"][0][0]["audio"] == 0
+    assert r4["scenes"][0][2]["stop"] == 1 and r4["scenes"][0][2]["audio"] == 0xFFFF
     an = r2["scenes"][0][1]
     assert an["op"] == "animate" and an["kind"] == "move" and an["curve"] == "accel" and an["x"] == 200
     # horneado de fuente (si hay una PSF de sistema)

@@ -36,7 +36,7 @@ typedef struct {
     /* say */
     uint16_t who; uint32_t text;
     /* bgm/se */
-    uint8_t  bgm_stop; uint32_t file;
+    uint8_t  bgm_stop; uint16_t audio;   /* índice en la tabla de audio (0xFFFF none) */
     /* choice */
     uint8_t  n_opts; uint32_t opt_label[16]; uint16_t opt_target[16];
     /* goto */
@@ -54,6 +54,8 @@ typedef struct {
     uint8_t  has_font; uint16_t font_w, font_h; uint32_t font_n;
     const uint8_t *font_cps;   /* font_n * u32 (codepoints ascendentes) */
     const uint8_t *font_bmp;   /* font_n * font_h * ceil(font_w/8) bytes 1bpp */
+    /* audio */
+    uint32_t n_audio; const uint8_t *p_audio;
     /* índices calculados en vnp_open (offsets a cada sección) */
     const uint8_t *p_strings, *p_chars, *p_images, *p_scenes;
 } VnpDoc;
@@ -72,6 +74,10 @@ void vnp_image(const VnpDoc *d, uint32_t i, VnpImage *out);
 
 /* Bitmap 1bpp del glifo de un codepoint (font_h * ceil(font_w/8) bytes), o NULL. */
 const uint8_t *vnp_glyph(const VnpDoc *d, uint32_t codepoint);
+
+/* Datos de un audio embebido (bytes del archivo original: wav/ogg/...). */
+typedef struct { uint32_t name; const uint8_t *data; uint32_t len; } VnpAudio;
+void vnp_audio(const VnpDoc *d, uint32_t i, VnpAudio *out);
 
 /* Itera los pasos de una escena: vnp_scene_begin + vnp_step hasta que devuelva 0. */
 typedef struct { const uint8_t *p; uint32_t left; } VnpScene;

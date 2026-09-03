@@ -19,6 +19,7 @@
 #include <libpad.h>
 #include <sifrpc.h>
 #include <loadfile.h>
+#include <audsrv.h>
 #include "vnp.h"
 
 #define SCR_W 640
@@ -38,6 +39,61 @@ static uint8_t *load_blob(uint32_t *size)
         fclose(f); free(b);
     }
     return 0;
+}
+
+/* --- AUDIO (audsrv). PARTE MÁS CRUDA / SIN TESTEAR: verificar al build. -----
+ * BGM: se reproduce WAV/PCM en un thread, en loop. SE: TODO (audsrv es un solo
+ * stream PCM; un SE simultáneo necesita canal ADPCM/VAG en la SPU2). La carga del
+ * módulo audsrv.irx depende de tu entorno (ver README). */
+static const uint8_t *g_bgm_pcm; static int g_bgm_len, g_bgm_play;
+static u32 le32(const uint8_t *p){ return p[0]|(p[1]<<8)|(p[2]<<16)|((u32)p[3]<<24); }
+
+/* parsea un WAV PCM: devuelve ptr/len de los samples y el formato. 0 si no es WAV. */
+static int wav_parse(const uint8_t *d, int n, const uint8_t **pcm, int *plen,
+                     int *freq, int *bits, int *ch)
+{
+    if (n < 44 || memcmp(d, "RIFF", 4) || memcmp(d + 8, "WAVE", 4)) return 0;
+    int i = 12;
+    while (i + 8 <= n) {
+        u32 sz = le32(d + i + 4);
+        if (!memcmp(d + i, "fmt ", 4)) { *ch = d[i+10]|(d[i+11]<<8); *freq = le32(d+i+12); *bits = d[i+22]|(d[i+23]<<8); }
+        else if (!memcmp(d + i, "data", 4)) { *pcm = d + i + 8; *plen = (int)sz; return 1; }
+        i += 8 + sz + (sz & 1);
+    }
+    return 0;
+}
+
+static void audio_set_bgm(uint16_t idx)
+{
+    if (idx == VNP_NONE16) { g_bgm_play = 0; return; }
+    VnpAudio a; vnp_audio(&doc, idx, &a);
+    const uint8_t *pcm; int plen, freq, bits, ch;
+    if (!wav_parse(a.data, a.len, &pcm, &plen, &freq, &bits, &ch)) return;  /* sólo WAV por ahora */
+    struct audsrv_fmt_t f; f.freq = freq; f.bits = bits; f.channels = ch;
+    audsrv_set_format(&f);                              /*AUDIO*/
+    g_bgm_pcm = pcm; g_bgm_len = plen; g_bgm_play = 1;
+}
+
+static char g_bgm_stack[16 * 1024] __attribute__((aligned(16)));
+static void bgm_thread(void *arg)
+{
+    (void)arg;
+    while (1) {
+        if (g_bgm_play && g_bgm_pcm)
+            audsrv_play_audio((char *)g_bgm_pcm, g_bgm_len);   /*AUDIO: bloquea hasta consumir -> loop*/
+        else
+            DelayThread(50 * 1000);
+    }
+}
+
+static void audio_init(void)
+{
+    /* NOTA: cargar freesd.irx + audsrv.irx acá (SifLoadModule) según tu entorno. */
+    if (audsrv_init() != 0) return;                    /*AUDIO*/
+    ee_thread_t t; memset(&t, 0, sizeof(t));
+    t.func = bgm_thread; t.stack = g_bgm_stack; t.stack_size = sizeof(g_bgm_stack);
+    t.gp_reg = &_gp; t.initial_priority = 0x40;
+    int id = CreateThread(&t); if (id >= 0) StartThread(id, 0);
 }
 
 /* --- fuente: atlas de glifos construido del blob --- */
@@ -252,9 +308,11 @@ static Block advance(GSGLOBAL *gs)
             }
             break;
         }
+        case OP_BGM:   audio_set_bgm(s.bgm_stop ? VNP_NONE16 : s.audio); break;
+        case OP_SE:    /* TODO: SE necesita un canal ADPCM/VAG en la SPU2 */ break;
         case OP_GOTO:  return enter_scene(gs, s.target);
         case OP_END:   blk.kind = 3; return blk;
-        default: break; /* bgm/se: abajo */
+        default: break;
         }
     }
     blk.kind = 3; return blk;
@@ -326,6 +384,7 @@ int main(void)
     gsKit_init_screen(gs); gsKit_mode_switch(gs, GS_ONESHOT);
     gsKit_TexManager_init(gs);
     build_font_atlas(gs);
+    audio_init();
 
     /* pad */
     SifLoadModule("rom0:SIO2MAN", 0, 0); SifLoadModule("rom0:PADMAN", 0, 0);

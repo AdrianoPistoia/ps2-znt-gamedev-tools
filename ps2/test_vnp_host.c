@@ -19,7 +19,7 @@ int main(int argc, char **argv) {
 
     VnpDoc d;
     CHECK(vnp_open(&d, buf, n) == 0);
-    CHECK(d.version == 2);
+    CHECK(d.version == 3);
     CHECK(d.start == 0);
     CHECK(d.n_scenes == 2);
     CHECK(d.n_chars == 1);
@@ -39,7 +39,12 @@ int main(int argc, char **argv) {
 
     CHECK(vnp_scene_begin(&d, 1, &sc) == 0);
     CHECK(vnp_step(&sc, &s) && s.op == OP_SAY && s.who == VNP_NONE16 && streq(&d, s.text, "chau"));
+    CHECK(vnp_step(&sc, &s) && s.op == OP_BGM && s.bgm_stop == 0 && s.audio == 0);
     CHECK(vnp_step(&sc, &s) && s.op == OP_END);
+
+    /* audio embebido */
+    CHECK(d.n_audio == 1);
+    { VnpAudio au; vnp_audio(&d, 0, &au); CHECK(streq(&d, au.name, "t.wav") && au.len > 0); }
 
     /* fuente horneada: glifos presentes y ausentes */
     CHECK(d.has_font && d.font_w == 8 && d.font_h == 16);

@@ -12,7 +12,15 @@ en el SDK Python.
   (solid/grad/img), sprites (Z, zoom, opacidad), caja de diálogo, **texto con fuente
   (nombre + diálogo + opciones, UTF-8, acentos)** desde el atlas horneado en el blob,
   avance y choices con el pad. Los puntos `/*GSKIT*/` pueden necesitar ajustes según
-  tu versión de gsKit. **Falta:** animación por tiempo (curvas/acciones) y audio (SPU2).
+  tu versión de gsKit, **animación por tiempo** (tween con curvas + los 6
+  action-offsets, math portada de `engine.py`) y **audio BGM** (WAV/PCM por audsrv
+  en un thread, en loop).
+
+  **Audio — lo más crudo/sin testear.** Sólo BGM WAV/PCM por ahora (los `.vnp`
+  embeben el archivo tal cual; para PS2 conviene WAV PCM: ogg/mp3 no se decodifican
+  en consola). **SE** queda como TODO (necesita un canal ADPCM/VAG en la SPU2, no el
+  stream PCM de audsrv). Cargá `freesd.irx` + `audsrv.irx` en `audio_init()` según
+  tu entorno (`SifLoadModule`), y verificá los puntos `/*AUDIO*/` y `/*GSKIT*/`.
 
 La **fuente** se hornea en el blob desde un `.psf` de consola (`znt iso build` la
 autodetecta; `--font ruta.psf` para elegirla, `--no-font` para omitirla). Solo se
