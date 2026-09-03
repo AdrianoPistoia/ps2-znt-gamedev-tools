@@ -356,17 +356,46 @@ def run_editor(path=None):
         r = rt.layer_rect(name)
         drag.update(name=name, ox=e.x - r[0], oy=e.y - r[1], step=s)
 
+    SNAP = 12   # px de imán
+
+    def _nearest(v, targets):
+        best, bd = None, SNAP + 1
+        for t in targets:
+            d = abs(v - t)
+            if d < bd:
+                best, bd = t, d
+        return (best, True) if best is not None and bd <= SNAP else (v, False)
+
     def on_motion(e):
         if st["play"] or not drag["name"]:
             return
-        rt.place_from_screen(drag["name"], e.x - drag["ox"], e.y - drag["oy"])
-        l = rt.stage[drag["name"]]
-        drag["step"]["x"], drag["step"]["y"] = int(l.x), int(l.y)
+        name = drag["name"]; l = rt.stage[name]
+        w, h = len(l.rows[0]) // 4, len(l.rows)
+        raw_x = (e.x - drag["ox"]) - (rt.W // 2 - w // 2)
+        raw_y = (e.y - drag["oy"]) - (rt.H - h)
+        canvas.delete("guide")
+        if e.state & 0x0001:                      # Shift = arrastre libre (sin snap)
+            nx, ny = raw_x, raw_y
+        else:
+            others = [o for k, o in rt.stage.items()
+                      if k not in (name, "bg") and o.rows and o.show]
+            xt = [0.0, float(POS["left"]), float(POS["right"])] + [o.x for o in others]
+            yt = [0.0] + [o.y for o in others]     # 0 = apoyado en el piso
+            nx, sx = _nearest(raw_x, xt)
+            ny, sy = _nearest(raw_y, yt)
+            if sx:                                 # guía vertical (centro alineado)
+                gx = int(nx) + rt.W // 2
+                canvas.create_line(gx, 0, gx, rt.H, fill="#5fd0e0", dash=(4, 3), tags="guide")
+            if sy:                                 # guía horizontal (misma base)
+                gy = int(ny) + rt.H
+                canvas.create_line(0, gy, rt.W, gy, fill="#e8b04b", dash=(4, 3), tags="guide")
+        l.x, l.y = float(nx), float(ny)
+        drag["step"]["x"], drag["step"]["y"] = int(nx), int(ny)
         present()
 
     def on_release(_):
         if drag["name"]:
-            drag["name"] = None; refresh_steps(); build_props()
+            drag["name"] = None; canvas.delete("guide"); refresh_steps(); build_props()
 
     canvas.bind("<Button-1>", on_press)
     canvas.bind("<B1-Motion>", on_motion)
