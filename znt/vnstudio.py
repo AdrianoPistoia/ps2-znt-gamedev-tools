@@ -88,6 +88,7 @@ class VNRuntime:
         self.stage = {}          # name -> LayerState
         self.speaker = self.text = None
         self.choices = []
+        self.bg_spec = None      # último fondo aplicado (para el frontend)
         self.bgm = None          # archivo de música actual (estado)
         self.last_se = None      # último efecto disparado
         self.scene_id = None
@@ -147,6 +148,7 @@ class VNRuntime:
         if op == "bg":
             l = self.stage.setdefault("bg", LayerState()); l.level = 0
             l.rows = self._bg_rows(s["spec"]); l.x = l.y = 0.0
+            self.bg_spec = s["spec"]
         elif op == "show":
             l = self.stage.setdefault(s["id"], LayerState())
             l.rows = self._sprite_rows(s["id"])

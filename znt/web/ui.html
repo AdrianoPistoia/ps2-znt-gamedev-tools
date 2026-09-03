@@ -78,6 +78,7 @@
 <div id="right">
   <div class="bar">
     <button id="b-new">Nuevo</button><button id="b-open">Abrir</button>
+    <button id="b-play">▶ Play</button>
     <button id="b-undo">↶</button><button id="b-redo">↷</button>
     <button id="b-validate">Validar</button>
     <button id="b-save">Guardar .vn</button>
@@ -162,7 +163,9 @@ function renderLists(){
   });
   $("#b-undo").disabled = !S.can_undo; $("#b-redo").disabled = !S.can_redo;
   $("#probs").textContent = (S.problems||[]).join("\n");
-  $("#m-scene").textContent = `escena ${S.scene} · paso ${S.step}`;
+  $("#m-scene").textContent = S.play
+    ? `▶ reproduciendo ${S.scene}${S.play.done ? " · fin" : ""} — Esc para salir`
+    : `escena ${S.scene} · paso ${S.step}`;
   $("#m-path").textContent = S.path || "(sin guardar)";
 }
 
@@ -183,8 +186,10 @@ function renderStage(){
             $("#text").textContent = say.text; }
   const ch = $("#choices"); ch.hidden = !(SG.choices && SG.choices.length);
   ch.innerHTML = "";
-  (SG.choices||[]).forEach(o => {
-    const b = document.createElement("button"); b.textContent = o.label; ch.appendChild(b);
+  (SG.choices||[]).forEach((o, i) => {
+    const b = document.createElement("button"); b.textContent = o.label;
+    if (S.play) b.onclick = () => op({op:"play_choose", i});
+    ch.appendChild(b);
   });
   $("#m-bgm").textContent = SG.bgm ? `♪ ${SG.bgm}` : "";
 }
@@ -265,7 +270,7 @@ function renderProps(){
 }
 
 async function refresh(){
-  SG = await api.stage(S.scene, S.step);
+  SG = S.play ? S.play : await api.stage(S.scene, S.step);
   ASSETS = (await api.assets()).assets;
   renderLists(); renderStage(); renderProps();
 }
@@ -274,6 +279,7 @@ async function refresh(){
 const ask = (msg, def="") => { const v = prompt(msg, def); return v && v.trim() ? v.trim() : null; };
 $("#b-new").onclick = () => { if (confirm("¿Descartar el proyecto actual?")) op({op:"new_project"}); };
 $("#b-open").onclick = () => { const p = ask("ruta del .vn a abrir:", S.path || ""); if (p) op({op:"open_project", path:p}); };
+$("#b-play").onclick = () => op({op:"play", scene:S.scene});
 $("#b-undo").onclick = () => op({op:"undo"});
 $("#b-redo").onclick = () => op({op:"redo"});
 $("#b-validate").onclick = () => op({op:"validate"});
@@ -299,6 +305,9 @@ $("#b-probar").onclick = () => {
 };
 $("#anim").onclick = () => { $("#anim").hidden = true; $("#anim").removeAttribute("src"); };
 addEventListener("keydown", e => {
+  if (e.key === "Escape" && S.play) { op({op:"play_stop"}); return; }
+  if (S.play && (e.key === " " || e.key === "Enter") && !(SG.choices||[]).length && !SG.done) {
+    e.preventDefault(); op({op:"play_advance"}); return; }
   if (e.ctrlKey && e.key === "z") { e.preventDefault(); op({op:"undo"}); }
   if (e.ctrlKey && (e.key === "y" || (e.shiftKey && e.key === "Z"))) { e.preventDefault(); op({op:"redo"}); }
   if (e.ctrlKey && e.key === "s") { e.preventDefault(); op({op:"save"}); }
@@ -316,6 +325,10 @@ function showGuides(gx, gy){
 }
 
 $("#stage").addEventListener("pointerdown", e => {
+  if (S.play) {                            // en Play el click avanza el diálogo
+    if (!SG.done && !(SG.choices||[]).length) op({op:"play_advance"});
+    return;
+  }
   const el = e.target.closest(".layer"); if (!el || !SG) return;
   const l = SG.layers.find(x => x.id === el.dataset.id); if (!l) return;
   const p = VNS.stageXY(e.clientX, e.clientY, stRect(), SG);

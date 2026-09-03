@@ -27,6 +27,7 @@ class Studio:
         self.rt = VNRuntime(self.model, self.base)   # render/animación reales
         self.scene = self.model["order"][0]
         self.step = -1
+        self.prt = None                              # runtime de reproducción (Play)
         self.undo, self.redo = [], []
         self.problems = []
 
@@ -48,6 +49,7 @@ class Studio:
 
     def state(self):
         return {"model": self.model, "scene": self.scene, "step": self.step,
+                "play": self.play_state() if self.prt else None,
                 "path": self.path, "base": self.base, "problems": self.problems,
                 "step_ops": vn.STEP_OPS,
                 "can_undo": bool(self.undo), "can_redo": bool(self.redo)}
@@ -125,6 +127,15 @@ class Studio:
                 self._snapshot()
                 tgt["x"] = int(round(float(r.get("x", tgt.get("x", 0)))))
                 tgt["y"] = int(round(float(r.get("y", tgt.get("y", 0)))))
+        elif o == "play":
+            self.prt = VNRuntime(self.model, self.base)
+            self.prt.enter(r.get("scene") or self.scene)
+        elif o == "play_advance":
+            if self.prt: self.prt.advance()
+        elif o == "play_choose":
+            if self.prt: self.prt.choose(int(r.get("i", 0)))
+        elif o == "play_stop":
+            self.prt = None
         elif o == "open_project":
             path = r.get("path")
             if path and os.path.exists(path):
@@ -177,20 +188,24 @@ class Studio:
 
     # --- stage para que el browser componga con CSS ------------------------
     def stage(self, scene, step):
-        """Layout de las capas tras aplicar los pasos 0..step (el render real lo
-        hace el runtime; acá sólo describimos qué dibujar y dónde)."""
+        """Layout tras aplicar los pasos 0..step (para el editor)."""
         if scene not in self.model["scenes"]:
             scene = self.model["order"][0]
-        step = int(step)
-        self.rt.preview_upto(scene, step)
+        self.rt.preview_upto(scene, int(step))
+        return self._stage_from(self.rt)
+
+    def play_state(self):
+        st = self._stage_from(self.prt)
+        st["playing"] = True; st["done"] = self.prt.done
+        return st
+
+    def _stage_from(self, rt):
+        """Describe qué dibujar y dónde; el browser lo compone con CSS."""
         url = lambda f: "/api/asset?f=" + urllib.parse.quote(f)
-        bg = {"kind": "solid", "color": "#000000"}
-        for st_ in self.model["scenes"][scene][:step + 1]:
-            if st_["op"] == "bg":
-                sp = st_["spec"]
-                bg = {"kind": "img", "url": url(sp["file"])} if sp.get("kind") == "img" else dict(sp)
+        sp = rt.bg_spec or {"kind": "solid", "color": "#000000"}
+        bg = {"kind": "img", "url": url(sp["file"])} if sp.get("kind") == "img" else dict(sp)
         layers = []
-        for name, l in self.rt.stage.items():
+        for name, l in rt.stage.items():
             if name == "bg" or not l.rows or not l.show:
                 continue
             c = self.model["characters"].get(name, {})
@@ -201,12 +216,13 @@ class Studio:
                            "w": len(l.rows[0]) // 4, "h": len(l.rows),
                            "url": url(spr) if spr else None})
         say = None
-        if self.rt.text is not None:
-            cc = self.model["characters"].get(self.rt.speaker, {})
-            say = {"who": self.rt.speaker, "name": cc.get("name", self.rt.speaker or ""),
-                   "color": cc.get("color", "#cccccc"), "text": self.rt.text}
-        return {"w": self.rt.W, "h": self.rt.H, "bg": bg, "layers": layers,
-                "say": say, "choices": self.rt.choices, "bgm": self.rt.bgm}
+        if rt.text is not None:
+            cc = self.model["characters"].get(rt.speaker, {})
+            say = {"who": rt.speaker, "name": cc.get("name", rt.speaker or ""),
+                   "color": cc.get("color", "#cccccc"), "text": rt.text}
+        return {"w": rt.W, "h": rt.H, "bg": bg, "layers": layers,
+                "say": say, "choices": rt.choices, "bgm": rt.bgm}
+
 
     def _load(self, m, path, base):
         """Reemplaza el proyecto IN-PLACE (el runtime comparte la referencia)."""
