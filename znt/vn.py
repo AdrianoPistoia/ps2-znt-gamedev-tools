@@ -167,6 +167,27 @@ def _link_choices(model):
     return model
 
 
+STEP_OPS = ["bg", "show", "hide", "say", "animate", "bgm", "se", "choice", "goto", "end"]
+
+
+def default_step(op, model):
+    """Paso nuevo con valores por defecto (compartido por los frontends)."""
+    chars = [c for c in model["characters"] if c != "narrator"] or ["narrator"]
+    return {
+        "bg": {"op": "bg", "spec": {"kind": "grad", "a": "#101828", "b": "#304060"}},
+        "show": {"op": "show", "id": chars[0], "pos": "center"},
+        "hide": {"op": "hide", "id": chars[0]},
+        "say": {"op": "say", "who": chars[0], "text": "..."},
+        "animate": {"op": "animate", "id": chars[0], "kind": "jump",
+                    "params": {"vib": 18, "cycle": 340}},
+        "bgm": {"op": "bgm", "file": ""},
+        "se": {"op": "se", "file": ""},
+        "choice": {"op": "choice", "options": []},
+        "goto": {"op": "goto", "target": model["order"][0]},
+        "end": {"op": "end"},
+    }[op]
+
+
 def blank_model(title="Nueva VN"):
     """Proyecto mínimo válido para arrancar en el editor."""
     return {"title": title,

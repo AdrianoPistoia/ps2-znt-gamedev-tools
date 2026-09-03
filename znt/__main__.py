@@ -37,11 +37,12 @@ def demo(*a):
               sqtranspile, sqrun, vn, engine, frontends, image, vnstudio, psf, vniso):
         print(f"{m.__name__}:", end=" ")
         m.demo()
-    try:                                  # el front es opcional
-        from . import gui
-        print("znt.gui:", end=" "); gui.demo()
-    except ImportError:
-        print("znt.gui: (ausente — core headless OK)")
+    for name, mod in (("znt.gui", "gui"), ("znt.web", "web")):   # fronts opcionales
+        try:
+            m = __import__(f"znt.{mod}", fromlist=["demo"])
+            print(f"{name}:", end=" "); m.demo()
+        except ImportError:
+            print(f"{name}: (ausente — core headless OK)")
 
 
 def main(argv):
@@ -66,6 +67,12 @@ def main(argv):
         return vniso.cli(rest)
     if group == "record":
         return frontends.record_cli(*rest)
+    if group == "web":                             # front web (opcional)
+        try:
+            from .web import server as websrv
+        except ImportError:
+            sys.exit("El front web (znt.web) no está disponible en esta distribución.")
+        return websrv.serve(rest[0] if rest else None)
     if group in ("play", "testbench", "studio"):    # front interactivo (opcional)
         try:
             from . import gui
