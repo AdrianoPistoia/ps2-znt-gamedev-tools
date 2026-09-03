@@ -186,20 +186,28 @@ znt/            el SDK (paquete importable, stdlib)
   sqrt.py       runtime del código transpilado (objetos, corrutinas)
   sqrun.py      corre una escena real y saca frames
   engine.py     runtime en vivo headless (animación + corrutina de escena)
-  frontends.py  frontends del engine: ventana tkinter + export APNG
-  testbench.py  banco de pruebas: corre el engine y anima capas en vivo
-  # framework de creación de VN (sobre el engine)
+  frontends.py  frontend headless del engine: export APNG
+  # framework de creación de VN (headless)
   image.py      lector PNG stdlib -> filas RGBA (assets propios)
   vnstudio.py   VNRuntime: reproduce un modelo autoral con el render/animación real
-  studio_ui.py  VN Studio: editor gráfico tkinter (escenas/pasos/props/stage/Play/export)
   # capa 3 — autoría
-  vn.py         DSL .vn -> player HTML
+  vn.py         DSL .vn -> player HTML + ops de modelo (validate/rename/...)
+  gui/          FRONT INTERACTIVO (tkinter) — opcional, borrable, no lo importa el core
+    studio.py     VN Studio: editor gráfico
+    testbench.py  banco de pruebas (inyecta animación en vivo)
+    window.py     ventana en vivo (play)
 docs/engine_api.md   catálogo de la API del engine (capa 2b)
 docs/authoring.md    formato .vn para crear una VN (capa 3)
 research/codec_search.py   búsqueda automatizada del codec (resultado negativo)
 ```
 
 Un self-check por módulo, sin depender del juego: `python3 -m znt demo` (16/16).
+
+**Core headless separable.** Todo el paquete `znt` es headless salvo `znt/gui/`
+(el front tkinter). Se puede **borrar `znt/gui/` entero** y el core sigue: acceso a
+datos, codec, render, transpilador, runtime, `record` a APNG y el `VNRuntime` de VN.
+`znt demo` lo reporta y los comandos `play`/`testbench`/`studio` avisan si el front
+no está. Ningún módulo del core importa `gui` ni `tkinter`.
 
 ## VN Studio — editor gráfico (`python -m znt studio [proyecto.vn]`)
 
