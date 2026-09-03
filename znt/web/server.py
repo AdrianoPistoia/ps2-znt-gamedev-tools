@@ -2,7 +2,7 @@
 """Servidor del editor web (stdlib). `Studio` es el estado del editor (modelo,
 selección, historial) sin ninguna UI; el handler HTTP lo expone como API JSON.
 """
-import json, os, copy, mimetypes, urllib.parse
+import json, os, copy, base64, mimetypes, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from .. import vn, frontends
@@ -114,15 +114,27 @@ class Studio:
                 else: c.pop("sprite", None)      # sin archivo -> vuelve al placeholder
         elif o == "rename_char":
             self._snapshot(); vn.rename_character(self.model, r.get("old"), r.get("new"))
+        elif o == "upload_sprite":
+            # el browser no ve el disco del server: manda la imagen elegida en base64.
+            cid, name = r.get("id"), os.path.basename(r.get("name") or "")
+            c = self.model["characters"].get(cid)
+            if c is not None and name:
+                open(os.path.join(self.base or ".", name), "wb").write(
+                    base64.b64decode(r.get("data") or ""))
+                self._snapshot(); c["sprite"] = name
+                self.rt.invalidate()
+        elif o == "set_z":
+            # ▲/▼: el orden Z vive en el `show`, como x/y.
+            tgt = self._show_of(r.get("id"))
+            if tgt is not None:
+                others = [l.level for k, l in self.rt.stage.items()
+                          if k not in ("bg", tgt["id"])]
+                self._snapshot()
+                tgt["z"] = ((max(others) + 1) if others else 10) if r.get("front") \
+                    else (max(1, min(others) - 1) if others else 10)
         elif o == "set_layer_pos":
-            # el drag mueve una CAPA: escribe x/y en el último `show` de ese
-            # personaje en o antes del paso seleccionado.
-            cid, steps = r.get("id"), self.steps()
-            end = self.step if self.step >= 0 else len(steps) - 1
-            tgt = None
-            for i in range(min(end, len(steps) - 1), -1, -1):
-                if steps[i]["op"] == "show" and steps[i].get("id") == cid:
-                    tgt = steps[i]; break
+            # el drag mueve una CAPA: escribe x/y en el `show` de ese personaje.
+            tgt = self._show_of(r.get("id"))
             if tgt is not None:
                 self._snapshot()
                 tgt["x"] = int(round(float(r.get("x", tgt.get("x", 0)))))
@@ -224,6 +236,18 @@ class Studio:
                 "say": say, "choices": rt.choices, "bgm": rt.bgm}
 
 
+    def assets(self):
+        return vn.list_assets(self.base)
+
+    def _show_of(self, cid):
+        """El último `show` de ese personaje en o antes del paso seleccionado."""
+        steps = self.steps()
+        end = self.step if self.step >= 0 else len(steps) - 1
+        for i in range(min(end, len(steps) - 1), -1, -1):
+            if steps[i]["op"] == "show" and steps[i].get("id") == cid:
+                return steps[i]
+        return None
+
     def _load(self, m, path, base):
         """Reemplaza el proyecto IN-PLACE (el runtime comparte la referencia)."""
         self.model.clear(); self.model.update(m)
@@ -303,7 +327,7 @@ class _Handler(BaseHTTPRequestHandler):
             sp = (q.get("step") or ["-1"])[0]
             return self._json(self.studio.stage(sc, sp))
         if path == "/api/assets":
-            return self._json({"assets": vn.list_assets(self.studio.base)})
+            return self._json({"assets": self.studio.assets()})
         if path == "/api/anim":
             sc = (q.get("scene") or [self.studio.scene])[0]
             sp = (q.get("step") or ["-1"])[0]

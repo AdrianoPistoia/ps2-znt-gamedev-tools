@@ -207,6 +207,18 @@ function select(v, opts){
                       if (o === v) x.selected = true; e.appendChild(x); });
   return e;
 }
+function upload(id){
+  const f = document.createElement("input");
+  f.type = "file"; f.accept = "image/png,image/jpeg,image/*";
+  f.onchange = () => {
+    const file = f.files[0]; if (!file) return;
+    const rd = new FileReader();
+    rd.onload = () => op({op:"upload_sprite", id, name: file.name,
+                          data: rd.result.split(",")[1]});   // saca el data: URI
+    rd.readAsDataURL(file);
+  };
+  f.click();
+}
 function renderProps(){
   const box = $("#props"); box.innerHTML = "";
   const steps = S.model.scenes[S.scene] || [];
@@ -229,9 +241,23 @@ function renderProps(){
       const sel = select(cur, [""].concat(ASSETS));
       sel.querySelector('option[value=""]').textContent = "(placeholder)";
       sel.onchange = () => op({op:"set_sprite", id: s.id, file: sel.value});
-      box.appendChild(field("sprite", sel));
+      const pick = document.createElement("button");           // elegir del sistema
+      pick.textContent = "…"; pick.title = "elegir una imagen de tu compu";
+      pick.style.flex = "0 0 auto";
+      pick.onclick = () => upload(s.id);
+      const wrap = document.createElement("div");
+      wrap.style.cssText = "display:flex;gap:4px;flex:1";
+      wrap.append(sel, pick);
+      box.appendChild(field("sprite", wrap));
+      const zf = document.createElement("div");
+      zf.style.cssText = "display:flex;gap:4px;flex:1";
+      [["▲ al frente", true], ["▼ al fondo", false]].forEach(([t, front]) => {
+        const b = document.createElement("button"); b.textContent = t;
+        b.onclick = () => op({op:"set_z", id: s.id, front}); zf.appendChild(b);
+      });
+      box.appendChild(field("orden", zf));
       box.insertAdjacentHTML("beforeend",
-        '<div class="hint">imágenes: poné el PNG en la carpeta del .vn · arrastrá el sprite en el escenario</div>');
+        '<div class="hint">la imagen elegida se copia junto al .vn · arrastrá el sprite en el escenario</div>');
     }
   } else if (s.op === "say") {
     add("who","quién", select(s.who, chars)); add("text","texto", input(s.text));
