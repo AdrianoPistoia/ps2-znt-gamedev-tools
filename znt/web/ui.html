@@ -67,6 +67,8 @@
   #stage{position:absolute;inset:0}
   .layer{position:absolute;cursor:grab;touch-action:none}
   .layer:active{cursor:grabbing}
+  .layer.sel{outline:1px solid var(--acc2);outline-offset:2px}
+  .chip{width:9px;height:9px;border-radius:2px;flex:0 0 auto;box-shadow:inset 0 0 0 1px #0006}
   .layer img{width:100%;height:100%;object-fit:fill;display:block;pointer-events:none}
   .ph{width:100%;height:100%;border-radius:14% 14% 4% 4%;
       box-shadow:inset 0 0 0 1px #fff3, 0 6px 20px #0007;
@@ -159,6 +161,8 @@
         <button id="b-scene-up" class="ico" title="Subir">↑</button>
         <button id="b-scene-dn" class="ico" title="Bajar">↓</button>
       </div>
+      <div class="phead">Capas<span class="grow"></span><span id="m-layers"></span></div>
+      <div class="pbody"><ul class="list" id="layers"></ul></div>
     </aside>
 
     <div class="vsplit" data-pane="out"></div>

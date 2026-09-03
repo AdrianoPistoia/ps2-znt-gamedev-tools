@@ -60,6 +60,24 @@
              y: (fy - grabDY) - st.h + h };
   }
 
+  /* --- outliner --- */
+
+  /* Capas del escenario, al frente primero. */
+  function outlineRows(layers) {
+    return layers.slice()
+      .sort((a, b) => (b.z - a.z) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+      .map(l => ({ id: l.id, name: l.name || l.id, z: l.z, color: l.color,
+                   sprite: !!l.url }));
+  }
+
+  /* Índice del `show` que puso esa capa (el último en o antes de `upto`). */
+  function showStepIndex(steps, id, upto) {
+    const end = upto >= 0 ? Math.min(upto, steps.length - 1) : steps.length - 1;
+    for (let i = end; i >= 0; i--)
+      if (steps[i].op === "show" && steps[i].id === id) return i;
+    return -1;
+  }
+
   /* --- timeline: los pasos como clips, en pistas por tipo --- */
 
   const LANES = [
@@ -101,5 +119,5 @@
   }
 
   return { layerStyle, bgStyle, stageXY, snap, snapTargets, dragTo, POS,
-           clampPane, fitRect, LANES, laneOf, clipRect, dropIndex };
+           clampPane, fitRect, outlineRows, showStepIndex, LANES, laneOf, clipRect, dropIndex };
 });

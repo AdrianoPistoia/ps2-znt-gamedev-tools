@@ -6,6 +6,7 @@ const $ = s => document.querySelector(s);
 let S = null;              // estado del servidor
 let SG = null;             // stage actual (layout que manda Python)
 let ASSETS = [], AUDIO = [];
+let SEL = null;            // capa seleccionada (sólo del cliente)
 
 const api = {
   model: () => fetch("/api/model").then(r => r.json()),
@@ -85,7 +86,7 @@ function renderLists(){
     li.onclick = () => op({op:"select", scene:id, step:-1});
     sc.appendChild(li);
   });
-  renderTimeline();
+  renderTimeline(); renderLayers();
   const steps = S.model.scenes[S.scene] || [];
   $("#b-undo").disabled = !S.can_undo; $("#b-redo").disabled = !S.can_redo;
   $("#probs").textContent = (S.problems||[]).join("\n");
@@ -96,6 +97,37 @@ function renderLists(){
   $("#m-op").textContent = S.step >= 0 && steps[S.step] ? steps[S.step].op : "";
   $("#m-path").textContent = S.path || "(sin guardar)";
   $("#b-play").classList.toggle("on", !!S.play);
+}
+
+/* ---------- capas del escenario ---------- */
+function selectLayer(id){
+  SEL = SEL === id ? null : id;
+  renderLayers(); markSelection();
+}
+function markSelection(){
+  document.querySelectorAll("#stage .layer").forEach(
+    el => el.classList.toggle("sel", el.dataset.id === SEL));
+  $("#m-sel").textContent = SEL ? `⬚ ${SEL}` : "";
+}
+function renderLayers(){
+  const ul = $("#layers"); ul.innerHTML = "";
+  const rows = SG ? VNS.outlineRows(SG.layers) : [];
+  if (SEL && !rows.some(r => r.id === SEL)) SEL = null;    // ya no está en escena
+  rows.forEach(r => {
+    const li = document.createElement("li");
+    li.innerHTML = `<span class="chip" style="background:${r.color}"></span>` +
+      `<span>${r.name}</span><span class="grow"></span>` +
+      `<span class="n">${r.sprite ? "🖼" : "●"} z${r.z}</span>`;
+    if (r.id === SEL) li.className = "sel";
+    li.title = "click: seleccionar · doble click: ir al paso que la muestra";
+    li.onclick = () => selectLayer(r.id);
+    li.ondblclick = () => {
+      const i = VNS.showStepIndex(S.model.scenes[S.scene] || [], r.id, S.step);
+      if (i >= 0) op({op:"select", scene:S.scene, step:i});
+    };
+    ul.appendChild(li);
+  });
+  $("#m-layers").textContent = rows.length || "";
 }
 
 /* ---------- timeline: los pasos como clips en pistas ---------- */
@@ -209,6 +241,7 @@ function renderStage(){
   });
   $("#m-bgm").textContent = SG.bgm ? `♪ ${SG.bgm}` : "";
   $("#vptag").textContent = S.play ? "PLAY" : "";
+  markSelection();
   layoutStage();
 }
 
@@ -419,6 +452,7 @@ $("#stage").addEventListener("pointerdown", e => {
   }
   const el = e.target.closest(".layer"); if (!el || !SG) return;
   const l = SG.layers.find(x => x.id === el.dataset.id); if (!l) return;
+  if (SEL !== l.id) { SEL = l.id; renderLayers(); markSelection(); }
   const p = VNS.stageXY(e.clientX, e.clientY, stRect(), SG);
   const zoom = (l.zoom == null ? 100 : l.zoom) / 100;
   const left = SG.w/2 + l.x - l.w*zoom/2, top = SG.h - l.h*zoom + l.y;
