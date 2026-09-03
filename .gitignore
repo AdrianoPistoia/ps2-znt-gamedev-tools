@@ -18,3 +18,8 @@ work/
 *.egg-info/
 build/
 dist/
+
+# build C (PS2)
+ps2/*.o
+ps2/*.ELF
+ps2/test_vnp
