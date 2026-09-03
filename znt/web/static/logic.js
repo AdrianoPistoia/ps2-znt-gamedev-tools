@@ -60,6 +60,16 @@
              y: (fy - grabDY) - st.h + h };
   }
 
+  /* --- estado --- */
+
+  /* Respuesta del server -> estado nuevo + error a mostrar. Una respuesta rota
+     (400/500 o fetch fallido) no puede dejar a la UI sin modelo. */
+  function mergeState(prev, res) {
+    if (!res) return { state: prev, error: "no hubo respuesta del server" };
+    if (!res.model) return { state: prev, error: res.error || "respuesta inesperada" };
+    return { state: res, error: res.error || null };
+  }
+
   /* --- atajos --- */
 
   /* Un solo lugar: de acá salen el dispatch y el overlay de ayuda. */
@@ -186,5 +196,5 @@
   }
 
   return { layerStyle, bgStyle, stageXY, snap, snapTargets, dragTo, POS,
-           clampPane, fitRect, KEYMAP, resolveKey, scrubValue, resizeZoom, guides, nextGuide, GUIDES, outlineRows, showStepIndex, LANES, laneOf, clipRect, dropIndex };
+           clampPane, fitRect, mergeState, KEYMAP, resolveKey, scrubValue, resizeZoom, guides, nextGuide, GUIDES, outlineRows, showStepIndex, LANES, laneOf, clipRect, dropIndex };
 });

@@ -17,7 +17,21 @@ const api = {
   stage: (sc, st) => fetch(`/api/stage?scene=${encodeURIComponent(sc)}&step=${st}`).then(r => r.json()),
   assets: () => fetch("/api/assets").then(r => r.json()),
 };
-async function op(o){ S = await api.op(o); await refresh(); }
+let toastT = null;
+function toast(msg, bad){
+  const t = $("#toast");
+  t.textContent = msg; t.classList.toggle("bad", !!bad); t.hidden = false;
+  clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, bad ? 7000 : 3000);
+}
+async function op(o){
+  let res = null;
+  try { res = await api.op(o); }
+  catch (e) { res = { error: String(e) }; }         // el server se cayó / red
+  const m = VNS.mergeState(S, res);
+  S = m.state;
+  if (m.error) toast(m.error, true);
+  await refresh();
+}
 
 /* ---------- paneles: splitters con memoria ---------- */
 const PANES = {
@@ -91,7 +105,7 @@ function renderLists(){
   renderTimeline(); renderLayers();
   const steps = S.model.scenes[S.scene] || [];
   $("#b-undo").disabled = !S.can_undo; $("#b-redo").disabled = !S.can_redo;
-  $("#probs").textContent = (S.problems||[]).join("\n");
+  $("#probs").textContent = (S.problems||[]).concat((SG && SG.warnings) || []).join("\n");
   $("#m-count").textContent = S.model.order.length;
   $("#m-scene").textContent = S.play
     ? `▶ ${S.scene}${S.play.done ? " · fin" : ""} — Esc para salir`
@@ -320,9 +334,12 @@ function upload(req, accept){
   f.type = "file"; f.accept = accept || "image/*";
   f.onchange = () => {
     const file = f.files[0]; if (!file) return;
+    if (file.size > 12 << 20) return toast(`${file.name} pesa demasiado (máx 12 MB)`, true);
+    toast(`subiendo ${file.name}…`);
     const rd = new FileReader();
     rd.onload = () => op(Object.assign({name: file.name,
                                         data: rd.result.split(",")[1]}, req));  // sin data: URI
+    rd.onerror = () => toast("no se pudo leer el archivo: " + file.name, true);
     rd.readAsDataURL(file);
   };
   f.click();
@@ -500,9 +517,12 @@ function renderProps(){
 }
 
 async function refresh(){
-  SG = S.play ? S.play : await api.stage(S.scene, S.step);
-  const as = await api.assets(); ASSETS = as.assets; AUDIO = as.audio;
+  try {
+    SG = S.play ? S.play : await api.stage(S.scene, S.step);
+    const as = await api.assets(); ASSETS = as.assets; AUDIO = as.audio;
+  } catch (e) { toast("no se pudo dibujar el escenario: " + e, true); return; }
   renderLists(); renderStage(); renderProps();
+  if ((SG.warnings || []).length) toast(SG.warnings.join("\n"), true);
 }
 
 /* ---------- diálogos propios (nada de prompt/confirm del browser) ---------- */

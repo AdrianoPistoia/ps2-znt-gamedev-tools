@@ -2,11 +2,11 @@
 """Lector mínimo de PNG a filas RGBA (solo stdlib), para cargar assets propios en
 el runtime de VN. Complementa el escritor de `render`/`tim2`.
 
-Soporta profundidad 8 bits, color types 0/2/3/6 (gris, RGB, paleta, RGBA) y los
-5 filtros. Devuelve `(w, h, rows)` donde cada fila son `w*4` bytes RGBA — el mismo
-formato que consume `render.Layer.loadImage`.
+Soporta color types 0/2/3/4/6 (gris, RGB, paleta, gris+alfa, RGBA), profundidades
+1/2/4/8/16 y los 5 filtros. Devuelve `(w, h, rows)` donde cada fila son `w*4`
+bytes RGBA — el mismo formato que consume `render.Layer.loadImage`.
 
-ponytail: 8bpp nomás; agregar 16bpp/interlaced sólo si algún asset lo pide.
+ponytail: no hacemos Adam7 (entrelazado); se avisa con un mensaje claro.
 """
 import struct, zlib
 
@@ -28,14 +28,16 @@ def load_png(data):
         ln = struct.unpack(">I", data[i:i+4])[0]
         tag = data[i+4:i+8]; body = data[i+8:i+8+ln]; i += 12 + ln
         if tag == b"IHDR":
-            w, h, depth, ctype = struct.unpack(">IIBB", body[:10])
+            w, h, depth, ctype, _, _, interlace = struct.unpack(">IIBBBBB", body[:13])
         elif tag == b"PLTE": plte = body
         elif tag == b"tRNS": trns = body
         elif tag == b"IDAT": idat += body
         elif tag == b"IEND": break
-    assert depth == 8, f"solo 8bpp (vino {depth})"
-    ch = CHANNELS[ctype]
-    stride = w * ch
+    assert depth in (1, 2, 4, 8, 16), f"profundidad no soportada: {depth}"
+    assert not interlace, "PNG entrelazado (Adam7): volvé a guardarlo sin entrelazar"
+    nch = CHANNELS[ctype]
+    ch = max(1, nch * depth // 8)        # offset del filtro, en bytes
+    stride = (w * nch * depth + 7) // 8
     raw = zlib.decompress(bytes(idat))
     # des-filtrado por scanline
     out = bytearray(); prev = bytearray(stride)
@@ -56,6 +58,23 @@ def load_png(data):
                 c = prev[x-ch] if x >= ch else 0
                 line[x] = (line[x] + _paeth(a, prev[x], c)) & 255
         out += line; prev = line
+    # todo a 8 bits por muestra (16 -> byte alto; 1/2/4 -> se expande)
+    if depth == 16:
+        out = out[0::2]; stride //= 2
+    elif depth < 8:
+        per, mask = 8 // depth, (1 << depth) - 1
+        mul = 255 // mask                       # gris 1/2/4 bits -> 0..255
+        wide = bytearray()
+        for y in range(h):
+            line = out[y*stride:(y+1)*stride]
+            px = bytearray()
+            for b in line:
+                for k in range(per - 1, -1, -1):
+                    px.append((b >> (k * depth)) & mask)
+            wide += px[:w * nch]
+        out, stride = bytes(wide), w * nch
+        if ctype != 3:                          # la paleta usa el índice tal cual
+            out = bytes(v * mul for v in out)
     # a RGBA
     rows = []
     for y in range(h):

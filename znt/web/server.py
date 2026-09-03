@@ -194,6 +194,9 @@ class Studio:
         elif o == "export":
             p = r.get("path") or os.path.join(self.base, "player.html")
             open(p, "w", encoding="utf-8").write(vn.render_html(self.model, self.base))
+        else:
+            st = self.state(); st["error"] = f"op desconocida: {o}"
+            return st
         if o not in ("select", "validate", "save", "export"):
             self.rt.invalidate()
         return self.state()
@@ -257,7 +260,8 @@ class Studio:
             say = {"who": rt.speaker, "name": cc.get("name", rt.speaker or ""),
                    "color": cc.get("color", "#cccccc"), "text": rt.text}
         return {"w": rt.W, "h": rt.H, "bg": bg, "layers": layers,
-                "say": say, "choices": rt.choices, "bgm": rt.bgm}
+                "say": say, "choices": rt.choices, "bgm": rt.bgm,
+                "warnings": rt.warnings()}
 
 
     def assets(self, kind="img"):

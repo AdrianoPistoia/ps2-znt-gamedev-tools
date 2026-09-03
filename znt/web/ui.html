@@ -151,6 +151,11 @@
           border-top:1px solid var(--edge);color:var(--mut);font:11px var(--mono);
           white-space:nowrap;overflow:hidden}
   #status .grow{flex:1}
+  #toast{position:fixed;right:14px;bottom:34px;z-index:9999;max-width:44ch;
+         background:var(--panel);border:1px solid var(--edge);border-left:3px solid var(--acc2);
+         border-radius:5px;padding:8px 12px;box-shadow:0 8px 30px #000a;font-size:12px}
+  #toast.bad{border-left-color:#e2586a;color:#ffd7dc}
+
   /* ---------- diálogos ---------- */
   dialog{border:1px solid var(--edge);border-radius:8px;background:var(--panel);
          color:var(--ink);padding:0;min-width:320px;box-shadow:0 20px 60px #000a}
@@ -260,6 +265,8 @@
     <span id="m-bgm"></span><span id="m-sel"></span><span id="m-zoom"></span>
   </footer>
 </div>
+
+<div id="toast" hidden></div>
 
 <dialog id="dlg"><form method="dialog">
   <h3 id="dlg-title"></h3>

@@ -81,6 +81,7 @@ class VNRuntime:
     def __init__(self, model, base_dir=".", w=640, h=448):
         self.model, self.base, self.W, self.H = model, base_dir, w, h
         self._asset_cache = {}
+        self._bad = {}
         self._base = None; self._base_sig = None; self._base_builds = 0
         self.reset_state()
 
@@ -102,10 +103,15 @@ class VNRuntime:
         rows = None
         try:
             _, _, rows = image.load_png_file(os.path.join(self.base, fname))
-        except Exception:
-            rows = None
+        except Exception as e:                      # se dibuja el placeholder,
+            self._bad[fname] = str(e) or type(e).__name__   # pero se avisa por qué
         self._asset_cache[fname] = rows
         return rows
+
+    def warnings(self):
+        """Assets que no se pudieron leer (el escenario los reemplaza por el
+        placeholder, pero el editor tiene que poder decir qué pasó)."""
+        return [f"no se pudo leer {f}: {why}" for f, why in sorted(self._bad.items())]
 
     def _bg_rows(self, spec):
         if spec["kind"] == "solid":
@@ -257,7 +263,7 @@ class VNRuntime:
         l.y = float(sy - (self.H - h))
 
     def invalidate(self):
-        self._asset_cache.clear()
+        self._asset_cache.clear(); self._bad.clear()
 
     def _blit(self, fb, l):
         rows = self._drawn(l)
