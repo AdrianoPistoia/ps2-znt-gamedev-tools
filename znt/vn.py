@@ -1,0 +1,359 @@
+#!/usr/bin/env python3
+"""Capa 3 — autoría: un formato de VN simple (.vn) y un player HTML autocontenido.
+
+El autor escribe escenas en texto y assets PNG propios; `build` compila a un
+player HTML de una sola pieza (JSON de escenas + un motorcito JS + assets
+embebidos como data URI), que se juega en el browser: click para avanzar,
+botones para elegir. Reusa el modelo de escena de la capa 1 (fondo + sprites +
+cuadro de diálogo), pero corre en el browser para ser compartible sin deps.
+
+Formato (línea por línea):
+
+    title: Mi Historia
+    character saito "Saito" color=#6cd
+    character louise "Louise" color=#e79
+
+    scene intro
+      bg grad:#1a2340,#3a5a8a          # o  bg fondo.png  o  bg #223
+      show saito right
+      saito: Hola. Soy Saito.
+      louise: ¡Silencio, perro!
+      * Un silencio incómodo llenó la sala.
+      choice
+        - Disculparse -> paz
+        - Contestar   -> pelea
+
+    scene paz
+      narrator: Hiciste las paces.
+      end
+
+  python -m znt vn build historia.vn player.html
+  python -m znt vn demo
+"""
+import sys, os, json, base64, html
+
+
+def parse(text, base_dir="."):
+    title = "Visual Novel"
+    chars = {"narrator": {"name": "", "color": "#cccccc"}}
+    scenes = {}          # id -> lista de pasos
+    order = []
+    cur = None
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("title:"):
+            title = line[6:].strip(); continue
+        if line.startswith("character "):
+            _, rest = line.split(" ", 1)
+            cid, rest = rest.split(" ", 1)
+            name, color = rest, "#cccccc"
+            if "color=" in rest:
+                pre, color = rest.rsplit("color=", 1)
+                name = pre.strip(); color = color.strip()
+            chars[cid] = {"name": name.strip().strip('"'), "color": color}
+            continue
+        if line.startswith("scene "):
+            cur = line[6:].strip(); scenes[cur] = []; order.append(cur); continue
+        if cur is None:
+            raise SyntaxError(f"paso fuera de una escena: {line!r}")
+        step = _step(line, chars, base_dir)
+        if step:
+            scenes[cur].append(step)
+    if not scenes:
+        raise SyntaxError("no hay escenas")
+    return {"title": title, "characters": chars, "scenes": scenes,
+            "start": order[0], "order": order}
+
+
+def _step(line, chars, base_dir):
+    head = line.split(" ", 1)[0]
+    arg = line[len(head):].strip()
+    if head == "bg":
+        return {"op": "bg", "spec": _bg(arg, base_dir)}
+    if head == "show":
+        parts = arg.split()
+        cid = parts[0]; pos = parts[1] if len(parts) > 1 else "center"
+        img = _asset(chars.get(cid, {}).get("sprite"), base_dir)
+        return {"op": "show", "id": cid, "pos": pos, "img": img}
+    if head == "sprite":                 # sprite <char> <file.png>: define arte del personaje
+        cid, f = arg.split(None, 1)
+        chars.setdefault(cid, {"name": cid, "color": "#ccc"})["sprite"] = f.strip()
+        return None
+    if head == "hide":
+        return {"op": "hide", "id": arg}
+    if head == "goto":
+        return {"op": "goto", "target": arg}
+    if head == "end":
+        return {"op": "end"}
+    if head == "choice":
+        return {"op": "choice", "options": []}
+    if line.startswith("- "):            # opción de un choice previo (se enlaza al armar)
+        label, target = line[2:].rsplit("->", 1)
+        return {"op": "_option", "label": label.strip(), "target": target.strip()}
+    if head == "*":
+        return {"op": "say", "who": "narrator", "text": arg}
+    if head.endswith(":") or (":" in line and line.split(":", 1)[0].strip() in chars):
+        who, text = line.split(":", 1)
+        return {"op": "say", "who": who.strip(), "text": text.strip()}
+    raise SyntaxError(f"paso no reconocido: {line!r}")
+
+
+def _bg(arg, base_dir):
+    if arg.startswith("grad:"):
+        a, b = (arg[5:].split(",") + ["#000"])[:2]
+        return {"kind": "grad", "a": a.strip(), "b": b.strip()}
+    if arg.startswith("#"):
+        return {"kind": "solid", "color": arg}
+    return {"kind": "img", "data": _asset(arg, base_dir)}
+
+
+def _asset(fname, base_dir):
+    if not fname:
+        return None
+    path = os.path.join(base_dir, fname)
+    with open(path, "rb") as f:
+        data = f.read()
+    ext = fname.rsplit(".", 1)[-1].lower()
+    mime = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
+            "webp": "image/webp", "gif": "image/gif"}.get(ext, "application/octet-stream")
+    return f"data:{mime};base64," + base64.b64encode(data).decode()
+
+
+def _link_choices(model):
+    """Une cada '- opción' al 'choice' inmediatamente anterior y las saca del flujo."""
+    for sid, steps in model["scenes"].items():
+        out = []
+        for s in steps:
+            if s["op"] == "_option":
+                if not out or out[-1]["op"] != "choice":
+                    raise SyntaxError(f"opción sin choice en escena {sid}")
+                out[-1]["options"].append({"label": s["label"], "target": s["target"]})
+            else:
+                out.append(s)
+        model["scenes"][sid] = out
+    return model
+
+
+def build(vn_path, out_html):
+    text = open(vn_path, encoding="utf-8").read()
+    model = _link_choices(parse(text, os.path.dirname(os.path.abspath(vn_path))))
+    open(out_html, "w", encoding="utf-8").write(render_html(model))
+    n = sum(len(v) for v in model["scenes"].values())
+    print(f"{len(model['scenes'])} escenas, {n} pasos -> {out_html}")
+    return out_html
+
+
+def render_html(model):
+    data = json.dumps(model, ensure_ascii=False)
+    return _TEMPLATE.replace("/*DATA*/", data).replace("__TITLE__", html.escape(model["title"]))
+
+
+_TEMPLATE = r"""<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>__TITLE__</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<style>
+  /* Mundo oscuro comprometido (juego): noche indigo + candil ambar. Un solo tema. */
+  :root{
+    --ground:#0b0e1c; --stage:#05060f;
+    --box-a:#141b3aee; --box-b:#0a0e22f2;
+    --edge:#31406e; --amber:#e8b04b; --amber-soft:#f0c579;
+    --ink:#eef1fb; --muted:#9aa6c8; --rose:#e58aa8;
+    --disp:"Cinzel",Georgia,serif;
+    --body:"Zen Kaku Gothic New","Hiragino Kaku Gothic ProN",system-ui,sans-serif;
+    color-scheme:dark;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:
+        radial-gradient(120% 90% at 50% 0%,#141a33 0%,var(--ground) 60%,#05060d 100%);
+       font:16px/1.6 var(--body);color:var(--ink);
+       display:flex;min-height:100vh;align-items:center;justify-content:center;padding:16px}
+  #stage{position:relative;width:min(96vw,912px);aspect-ratio:640/448;
+         background:var(--stage);border-radius:12px;overflow:hidden;user-select:none;
+         box-shadow:0 24px 70px #000c,0 0 0 1px #ffffff10 inset}
+  #bg{position:absolute;inset:0;background-size:cover;background-position:center;
+      transition:opacity .4s,background .4s}
+  #vignette{position:absolute;inset:0;pointer-events:none;
+      background:radial-gradient(130% 100% at 50% 38%,transparent 55%,#000 140%)}
+  .sprite{position:absolute;bottom:0;height:90%;display:flex;align-items:flex-end;
+          justify-content:center;transition:opacity .3s ease,transform .3s ease}
+  .sprite img{height:100%;filter:drop-shadow(0 6px 16px #000a)}
+  .ph{width:min(44%,240px);height:96%;border-radius:120px 120px 18px 18px;
+      display:flex;align-items:center;justify-content:center;font-family:var(--disp);
+      font-size:min(10vw,72px);font-weight:700;color:#fff2d8;
+      background:linear-gradient(180deg,#ffffff2a,#0000006a);
+      box-shadow:0 0 0 1px #ffffff22 inset,0 10px 30px #0007}
+  .left{left:3%}.center{left:50%;transform:translateX(-50%)}.right{right:3%}
+  #box{position:absolute;left:3.5%;right:3.5%;bottom:4%;min-height:25%;
+       background:linear-gradient(180deg,var(--box-a),var(--box-b));
+       border:1px solid var(--edge);border-top:2px solid var(--amber);
+       border-radius:4px 4px 10px 10px;padding:26px 26px 20px;
+       box-shadow:0 14px 40px #0008,0 0 0 1px #00000060}
+  #who{position:absolute;top:-17px;left:20px;font-family:var(--disp);font-weight:700;
+       font-size:.95rem;letter-spacing:.08em;padding:4px 16px;color:#0b0e1c;
+       background:linear-gradient(180deg,var(--amber-soft),var(--amber));
+       border-radius:3px;box-shadow:0 3px 10px #0007;min-height:1px}
+  #who:empty{opacity:0}
+  #text{white-space:pre-wrap;text-wrap:pretty;font-size:clamp(15px,2.3vw,20px);max-width:64ch}
+  #cursor{position:absolute;right:18px;bottom:12px;color:var(--amber);
+          opacity:.85;animation:blink 1.1s steps(2,start) infinite}
+  @keyframes blink{50%{opacity:0}}
+  #choices{position:absolute;inset:0;display:flex;flex-direction:column;gap:12px;
+           align-items:center;justify-content:center;
+           background:radial-gradient(80% 80% at 50% 50%,#0a0e22cc,#02030acc)}
+  #choices button{font:500 1rem/1.3 var(--body);color:var(--ink);cursor:pointer;
+           background:linear-gradient(180deg,#1a2450,#111a3c);
+           border:1px solid var(--edge);border-left:3px solid var(--amber);
+           padding:14px 26px;border-radius:6px;min-width:min(70%,420px);text-align:left;
+           transition:background .15s,transform .1s}
+  #choices button:hover,#choices button:focus-visible{background:#223066;transform:translateX(3px)}
+  #choices button:focus-visible{outline:2px solid var(--amber-soft);outline-offset:2px}
+  #end{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+       font-family:var(--disp);font-weight:700;letter-spacing:.12em;font-size:2rem;
+       color:var(--amber-soft);background:#03040acc}
+  #hint{position:absolute;top:10px;right:14px;font-size:.7rem;letter-spacing:.1em;
+        text-transform:uppercase;color:var(--muted);opacity:.55}
+  @media (prefers-reduced-motion:reduce){#cursor{animation:none}*{transition:none!important}}
+</style></head><body>
+<div id="stage">
+  <div id="bg"></div>
+  <div id="sprites"></div>
+  <div id="box"><div id="who"></div><div id="text"></div><div id="cursor">▼</div></div>
+  <div id="choices" hidden></div>
+  <div id="end" hidden></div>
+  <div id="hint">click / espacio</div>
+</div>
+<script>
+const M = /*DATA*/;
+const $ = s => document.querySelector(s);
+const sprites = {};   // id -> elemento
+let scene, ip;
+
+function setBg(spec){
+  const bg = $("#bg");
+  if(spec.kind==="img"){ bg.style.background = `center/cover url(${spec.data})`; }
+  else if(spec.kind==="grad"){ bg.style.background = `linear-gradient(160deg,${spec.a},${spec.b})`; }
+  else { bg.style.background = spec.color; }
+}
+function charColor(id){ return (M.characters[id]||{}).color || "#ccc"; }
+function show(id,pos,img){
+  let el = sprites[id];
+  if(!el){ el = document.createElement("div"); el.className="sprite"; $("#sprites").appendChild(el); sprites[id]=el; }
+  el.className = "sprite "+(pos||"center");
+  if(img){ el.innerHTML = `<img src="${img}">`; }
+  else { const nm=(M.characters[id]||{}).name||id;
+         el.innerHTML = `<div class="ph" style="background:${charColor(id)}">${(nm[0]||"?").toUpperCase()}</div>`; }
+  el.style.opacity=1;
+}
+function hide(id){ if(sprites[id]) sprites[id].style.opacity=0; }
+
+function enter(id){ scene = M.scenes[id]; ip = 0; step(); }
+
+function step(){
+  $("#choices").hidden = true;
+  while(ip < scene.length){
+    const s = scene[ip++];
+    if(s.op==="bg"){ setBg(s.spec); continue; }
+    if(s.op==="show"){ show(s.id,s.pos,s.img); continue; }
+    if(s.op==="hide"){ hide(s.id); continue; }
+    if(s.op==="goto"){ return enter(s.target); }
+    if(s.op==="end"){ return theEnd(); }
+    if(s.op==="say"){ return say(s); }
+    if(s.op==="choice"){ return choose(s); }
+  }
+  theEnd();
+}
+
+let typing=null, full="";
+function say(s){
+  const c = M.characters[s.who]||{name:s.who,color:"#ccc"};
+  $("#who").textContent = c.name; $("#who").style.color = c.color;
+  full = s.text; const t=$("#text"); t.textContent="";
+  clearInterval(typing); let i=0;
+  typing = setInterval(()=>{ t.textContent = full.slice(0,++i); if(i>=full.length) clearInterval(typing); }, 18);
+  $("#cursor").hidden=false;
+}
+function finishType(){ if(typing){ clearInterval(typing); typing=null; $("#text").textContent=full; return true; } return false; }
+
+function choose(s){
+  const box=$("#choices"); box.innerHTML=""; box.hidden=false; $("#cursor").hidden=true;
+  s.options.forEach(o=>{ const b=document.createElement("button"); b.textContent=o.label;
+    b.onclick=()=>{ box.hidden=true; enter(o.target); }; box.appendChild(b); });
+}
+function theEnd(){ $("#end").hidden=false; $("#end").textContent="Fin"; $("#cursor").hidden=true; }
+
+function advance(){
+  if(!$("#choices").hidden || !$("#end").hidden) return;
+  if(finishType()) return;   // primer click completa el texto, el segundo avanza
+  step();
+}
+$("#stage").addEventListener("click", advance);
+addEventListener("keydown", e=>{ if(e.key===" "||e.key==="Enter"){ e.preventDefault(); advance(); } });
+enter(M.start);
+</script></body></html>"""
+
+
+DEMO_VN = """\
+title: El Familiar de Cero — Demo SDK
+character saito "Saito" color=#7cc4ff
+character louise "Louise" color=#ff9ec2
+
+scene intro
+  bg grad:#101830,#2a4a80
+  * Una torre de la Academia de Magia. Media noche.
+  show louise left
+  louise: ¿Otra vez despierto, perro?
+  show saito right
+  saito: No podía dormir. ¿Y vos?
+  louise: ...eso no es asunto tuyo.
+  choice
+    - Insistir con cuidado -> acerca
+    - Cambiar de tema -> tema
+
+scene acerca
+  louise: ...Extraño mi casa. ¿Contento?
+  saito: Gracias por contarme.
+  goto fin
+
+scene tema
+  saito: Linda noche, ¿no?
+  louise: Hmpf.
+  goto fin
+
+scene fin
+  * Afuera, la brisa movió las cortinas.
+  end
+"""
+
+
+def demo():
+    import tempfile
+    model = _link_choices(parse(DEMO_VN))
+    assert model["start"] == "intro"
+    assert model["characters"]["louise"]["color"] == "#ff9ec2"
+    ch = [s for s in model["scenes"]["intro"] if s["op"] == "choice"][0]
+    assert len(ch["options"]) == 2 and ch["options"][0]["target"] == "acerca"
+    says = [s for s in model["scenes"]["intro"] if s["op"] == "say"]
+    assert says[0]["who"] == "narrator" and says[1]["who"] == "louise"
+    h = render_html(model)
+    assert "<title>" in h and "M.start" in h and "El Familiar de Cero" in h
+    assert "/*DATA*/" not in h        # el JSON se inyectó
+    print("demo OK")
+
+
+def cli(argv):
+    if not argv or argv[0] == "demo":
+        return demo()
+    if argv[0] == "build":
+        return build(argv[1], argv[2])
+    if argv[0] == "demo-build":       # genera el player de ejemplo
+        open("_demo.vn", "w", encoding="utf-8").write(DEMO_VN)
+        return build("_demo.vn", argv[1] if len(argv) > 1 else "vn_demo.html")
+    print(__doc__)
+
+
+if __name__ == "__main__":
+    cli(sys.argv[1:])

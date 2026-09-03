@@ -20,7 +20,7 @@ El engine se saca en tres capas apiladas. Este repo cubre la **2** y la **2b**.
 
 ```
 ┌───────────────────────────────────────────────┐
-│  3. Autoría   crear una VN nueva sobre el engine│  (pendiente)
+│  3. Autoría   crear una VN nueva (player PC)     │  ✅ DSL .vn -> player HTML
 ├───────────────────────────────────────────────┤
 │  1. Runtime   correr las escenas en la PC       │  ✅ MVP: escena real
 │     VM Squirrel + render TIM2/fuente            │     transpilada y dibujada
@@ -46,6 +46,14 @@ El engine se saca en tres capas apiladas. Este repo cubre la **2** y la **2b**.
 
   Falta para runtime completo: animación (módulos Layer), audio, flujo entre
   escenas por corrutina, entrada y ventana en vivo. El núcleo está probado.
+- **Capa 3** — autoría de una VN nueva. Formato de texto `.vn` (personajes,
+  escenas, `bg`/`show`/`say`/`choice`/`goto`) que `vn` compila a un player HTML
+  autocontenido y compartible. Ver [`docs/authoring.md`](docs/authoring.md).
+
+  ```sh
+  python3 -m znt vn build historia.vn player.html
+  python3 -m znt vn demo-build player.html      # genera un ejemplo jugable
+  ```
 
 ## Uso como librería
 
@@ -135,13 +143,25 @@ biblioteca de animación que corre script-side. Ver el catálogo completo.
 
 ```
 znt/            el SDK (paquete importable, stdlib)
+  # capa 2 — acceso a datos
   container.py  par .HD/.BIN  + clase Container (repack)
   codec.py      decompress (del ELF) + compress_store
-  tim2.py       lector TIM2 -> PNG   + clase Texture
+  tim2.py       lector TIM2 -> PNG/RGBA + clase Texture (des-swizzle CLUT)
   font.py       atlas BMP + mapeo    + clase Font
-  scriptscan.py escaner de la API Squirrel del engine
+  scriptscan.py escaner de la API Squirrel del engine (capa 2b)
   __init__.py   znt.open() -> Disc.scenes / .textures / .font
-  __main__.py   CLI unificada
+  __main__.py   CLI unificada (python -m znt <grupo> ...)
+  # capa 1 — runtime off-console
+  render.py     Layer/MessageWindow + compositor a PNG
+  sqparse.py    tokenizer + parser Pratt de Squirrel
+  sqtranspile.py  AST Squirrel -> Python
+  sqrt.py       runtime del código transpilado (objetos, corrutinas)
+  sqrun.py      corre una escena real y saca frames
+  # capa 3 — autoría
+  vn.py         DSL .vn -> player HTML
 docs/engine_api.md   catálogo de la API del engine (capa 2b)
+docs/authoring.md    formato .vn para crear una VN (capa 3)
 research/codec_search.py   búsqueda automatizada del codec (resultado negativo)
 ```
+
+Un self-check por módulo, sin depender del juego: `python3 -m znt demo` (11/11).

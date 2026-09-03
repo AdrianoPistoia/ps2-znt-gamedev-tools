@@ -1,0 +1,29 @@
+title: El Familiar de Cero — Demo SDK
+character saito "Saito" color=#7cc4ff
+character louise "Louise" color=#ff9ec2
+
+scene intro
+  bg grad:#101830,#2a4a80
+  * Una torre de la Academia de Magia. Media noche.
+  show louise left
+  louise: ¿Otra vez despierto, perro?
+  show saito right
+  saito: No podía dormir. ¿Y vos?
+  louise: ...eso no es asunto tuyo.
+  choice
+    - Insistir con cuidado -> acerca
+    - Cambiar de tema -> tema
+
+scene acerca
+  louise: ...Extraño mi casa. ¿Contento?
+  saito: Gracias por contarme.
+  goto fin
+
+scene tema
+  saito: Linda noche, ¿no?
+  louise: Hmpf.
+  goto fin
+
+scene fin
+  * Afuera, la brisa movió las cortinas.
+  end
