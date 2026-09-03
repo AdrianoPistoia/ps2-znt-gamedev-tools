@@ -232,6 +232,21 @@ function picker(cur, list, onpick, apply, accept){
   w.style.cssText = "display:flex;gap:4px;flex:1"; w.append(sel, b);
   return w;
 }
+/* editar el personaje del paso: id (renombra y reapunta), nombre y color */
+function charFields(cid){
+  const c = S.model.characters[cid]; if (!c) return null;
+  const w = document.createElement("div");
+  const nid = input(cid), nm = input(c.name), col = input(c.color || "#7cc4ff");
+  col.type = "color"; col.style.padding = "0";
+  const b = document.createElement("button"); b.textContent = "Aplicar personaje";
+  b.onclick = async () => {
+    const id = nid.value.trim() || cid;
+    if (id !== cid) await op({op:"rename_char", old: cid, new: id});
+    op({op:"set_char", id, name: nm.value, color: col.value});
+  };
+  w.append(field("id", nid), field("nombre", nm), field("color", col), b);
+  return w;
+}
 function renderProps(){
   const box = $("#props"); box.innerHTML = "";
   const steps = S.model.scenes[S.scene] || [];
@@ -247,6 +262,7 @@ function renderProps(){
     box.insertAdjacentHTML("beforeend", '<div class="hint">grad:#a,#b · #rrggbb · archivo.png</div>');
   } else if (s.op === "show" || s.op === "hide") {
     add("id","personaje", select(s.id, chars));
+    const cf = charFields(s.id); if (cf) box.appendChild(cf);
     if (s.op === "show") {
       add("pos","pos", select(s.pos||"center", ["left","center","right"]));
       add("z","z", input(s.z)); add("zoom","zoom %", input(s.zoom));
@@ -276,6 +292,7 @@ function renderProps(){
     }
   } else if (s.op === "say") {
     add("who","quién", select(s.who, chars)); add("text","texto", input(s.text));
+    const cf = charFields(s.who); if (cf) box.appendChild(cf);
   } else if (s.op === "animate") {
     add("id","personaje", select(s.id, chars.filter(c=>c!=="narrator")));
     add("kind","tipo", select(s.kind, ["linear","accel","decel","move","wave","waveonce","jump","jumponce","fall","vibrate"]));

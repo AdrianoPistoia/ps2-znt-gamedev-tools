@@ -112,6 +112,13 @@ class Studio:
                 self._snapshot()
                 if f: c["sprite"] = f
                 else: c.pop("sprite", None)      # sin archivo -> vuelve al placeholder
+        elif o == "set_char":
+            c = self.model["characters"].get(r.get("id"))
+            if c is not None:
+                self._snapshot()
+                for k in ("name", "color"):
+                    if r.get(k): c[k] = r[k]
+                self.rt.invalidate()
         elif o == "rename_char":
             self._snapshot(); vn.rename_character(self.model, r.get("old"), r.get("new"))
         elif o == "upload_sprite":
