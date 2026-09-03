@@ -223,6 +223,18 @@ def run_editor(path=None):
             w, g = combo(s["id"], chars); field("id", w, g)
             if op == "show":
                 w2, g2 = combo(s.get("pos", "center"), list(POS)); field("pos", w2, g2)
+                cur_z = rt.stage[s["id"]].level if s["id"] in rt.stage else s.get("z", 10)
+                wz, gz = entry(str(cur_z)); field("z", wz, gz)
+                def set_z(front, s=s):
+                    snapshot()
+                    others = [o.level for k, o in rt.stage.items()
+                              if k not in (s["id"], "bg") and o.rows and o.show]
+                    s["z"] = ((max(others) + 1) if others else 10) if front else \
+                             (max(1, min(others) - 1) if others else 10)
+                    refresh_all()
+                zf = tk.Frame(propf, bg=PANEL); zf.pack(fill="x", padx=6, pady=1)
+                btn(zf, "▲ al frente", lambda: set_z(True)).pack(side="left", padx=2)
+                btn(zf, "▼ al fondo", lambda: set_z(False)).pack(side="left", padx=2)
                 spr = model["characters"].get(s["id"], {}).get("sprite")
                 lbl(propf, f"sprite: {spr or '(placeholder)'}", bg=PANEL).pack(anchor="w", padx=6)
                 def pick_sprite(cid=s["id"]):
@@ -265,7 +277,11 @@ def run_editor(path=None):
                 s["spec"] = vn._bg(g["bg"].strip())
             elif op in ("show", "hide"):
                 s["id"] = g["id"]
-                if op == "show": s["pos"] = g["pos"]
+                if op == "show":
+                    s["pos"] = g["pos"]
+                    if g.get("z", "").strip():
+                        try: s["z"] = int(g["z"])
+                        except ValueError: pass
             elif op == "say":
                 s["who"] = g["quién"]; s["text"] = g["texto"]
             elif op == "animate":

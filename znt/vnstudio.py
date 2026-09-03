@@ -133,7 +133,8 @@ class VNRuntime:
             l.rows = self._sprite_rows(s["id"])
             l.x = float(s["x"]) if "x" in s else float(POS.get(s.get("pos", "center"), 0))
             l.y = float(s.get("y", 0))
-            l.level = 10 + len([k for k in self.stage if k != "bg"]); l.show = True
+            l.level = int(s["z"]) if "z" in s else 10 + len([k for k in self.stage if k != "bg"])
+            l.show = True
         elif op == "hide":
             if s["id"] in self.stage: self.stage[s["id"]].show = False
         elif op == "animate":
