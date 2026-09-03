@@ -194,6 +194,21 @@ def validate(model, base=None):
     return probs
 
 
+def rename_character(model, old, new):
+    """Renombra un personaje y reapunta todas sus referencias. False si no aplica."""
+    chars = model["characters"]
+    if old not in chars or new in chars or old == "narrator" or not new:
+        return False
+    chars[new] = chars.pop(old)
+    for steps in model["scenes"].values():
+        for s in steps:
+            if s["op"] in ("show", "hide", "animate") and s.get("id") == old:
+                s["id"] = new
+            elif s["op"] == "say" and s.get("who") == old:
+                s["who"] = new
+    return True
+
+
 def to_text(model):
     """Serializa un modelo (el que devuelve parse) de vuelta a texto .vn."""
     out = [f"title: {model['title']}"]
@@ -476,6 +491,14 @@ def _ops_selfcheck():
     assert any("'b'" in p for p in probs), probs
     assert any("dos" in p and "salida" in p for p in probs), probs
     assert validate(_link_choices(parse(DEMO_VN))) == []
+    # rename_character: mueve y reapunta referencias
+    mm = _link_choices(parse('title: t\ncharacter x "X"\nscene s\n  show x left\n'
+                             '  x: hola\n  animate x jump\n  end\n'))
+    assert rename_character(mm, "x", "y") is True
+    assert "y" in mm["characters"] and "x" not in mm["characters"]
+    stp = mm["scenes"]["s"]
+    assert stp[0]["id"] == "y" and stp[1]["who"] == "y" and stp[2]["id"] == "y", stp
+    assert rename_character(mm, "nope", "z") is False and rename_character(mm, "y", "y") is False
 
 
 def demo():

@@ -254,10 +254,13 @@ def run_editor(path=None):
                         snapshot()
                         model["characters"][cid]["sprite"] = _rel(p); rt.invalidate(); refresh_all()
                 btn(propf, "asignar sprite…", pick_sprite).pack(padx=6, pady=2, anchor="w")
+                btn(propf, "renombrar personaje…", lambda cid=s["id"]: rename_char_ui(cid)).pack(padx=6, pady=2, anchor="w")
                 lbl(propf, "arrastrá el sprite en el escenario para ubicarlo", bg=PANEL).pack(anchor="w", padx=6)
         elif op == "say":
             w, g = combo(s.get("who", "narrator"), chars); field("quién", w, g)
             w2, g2 = entry(s.get("text", "")); field("texto", w2, g2)
+            if s.get("who", "narrator") != "narrator":
+                btn(propf, "renombrar personaje…", lambda cid=s["who"]: rename_char_ui(cid)).pack(padx=6, pady=2, anchor="w")
         elif op == "animate":
             w, g = combo(s["id"], [c for c in chars if c != "narrator"]); field("id", w, g)
             w2, g2 = combo(s["kind"], list(CURVES) + list(ACTIONS) + ["move"]); field("tipo", w2, g2)
@@ -351,6 +354,16 @@ def run_editor(path=None):
                         for o in s["options"]:
                             if o["target"] == old: o["target"] = name
             st["scene"] = name; refresh_all()
+
+    def rename_char_ui(cid):
+        new = simpledialog.askstring("Renombrar personaje", f"nuevo id para '{cid}':",
+                                     initialvalue=cid, parent=root)
+        if new and new != cid:
+            snapshot()
+            if vn.rename_character(model, cid, new):
+                refresh_all()
+            else:
+                messagebox.showerror("Error", "id en uso o inexistente")
 
     def add_char():
         cid = simpledialog.askstring("Personaje", "id (ej: saito):", parent=root)
