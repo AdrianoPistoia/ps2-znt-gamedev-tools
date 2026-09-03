@@ -33,7 +33,7 @@ Formato (línea por línea):
 import sys, os, json, base64, html
 
 
-def parse(text, base_dir="."):
+def parse(text):
     title = "Visual Novel"
     chars = {"narrator": {"name": "", "color": "#cccccc"}}
     scenes = {}          # id -> lista de pasos
@@ -58,7 +58,7 @@ def parse(text, base_dir="."):
             cur = line[6:].strip(); scenes[cur] = []; order.append(cur); continue
         if cur is None:
             raise SyntaxError(f"paso fuera de una escena: {line!r}")
-        step = _step(line, chars, base_dir)
+        step = _step(line, chars)
         if step:
             scenes[cur].append(step)
     if not scenes:
@@ -67,20 +67,46 @@ def parse(text, base_dir="."):
             "start": order[0], "order": order}
 
 
-def _step(line, chars, base_dir):
+def _step(line, chars):
     head = line.split(" ", 1)[0]
     arg = line[len(head):].strip()
     if head == "bg":
-        return {"op": "bg", "spec": _bg(arg, base_dir)}
+        return {"op": "bg", "spec": _bg(arg)}
     if head == "show":
         parts = arg.split()
-        cid = parts[0]; pos = parts[1] if len(parts) > 1 else "center"
-        img = _asset(chars.get(cid, {}).get("sprite"), base_dir)
-        return {"op": "show", "id": cid, "pos": pos, "img": img}
+        cid = parts[0]; pos = "center"; step = {"op": "show", "id": cid}
+        for p in parts[1:]:
+            if "=" in p:                       # x/y/z/zoom/opacity + tint : capa
+                k, v = p.split("=", 1)
+                if k in ("x", "y", "z", "zoom", "opacity"):
+                    try: step[k] = int(v)
+                    except ValueError: pass
+                elif k == "tint":
+                    step["tint"] = v
+            else:
+                pos = p
+        step["pos"] = pos
+        return step
     if head == "sprite":                 # sprite <char> <file.png>: define arte del personaje
         cid, f = arg.split(None, 1)
         chars.setdefault(cid, {"name": cid, "color": "#ccc"})["sprite"] = f.strip()
         return None
+    if head == "animate":
+        parts = arg.split()
+        target, kind = parts[0], parts[1]
+        params = {}
+        for kv in parts[2:]:
+            if "=" in kv:
+                k, v = kv.split("=", 1)
+                try: params[k] = int(v)
+                except ValueError:
+                    try: params[k] = float(v)
+                    except ValueError: params[k] = v
+        return {"op": "animate", "id": target, "kind": kind, "params": params}
+    if head == "bgm":
+        return {"op": "bgm", "stop": True} if arg.strip() == "stop" else {"op": "bgm", "file": arg.strip()}
+    if head == "se":
+        return {"op": "se", "file": arg.strip()}
     if head == "hide":
         return {"op": "hide", "id": arg}
     if head == "goto":
@@ -100,13 +126,13 @@ def _step(line, chars, base_dir):
     raise SyntaxError(f"paso no reconocido: {line!r}")
 
 
-def _bg(arg, base_dir):
+def _bg(arg):
     if arg.startswith("grad:"):
         a, b = (arg[5:].split(",") + ["#000"])[:2]
         return {"kind": "grad", "a": a.strip(), "b": b.strip()}
     if arg.startswith("#"):
         return {"kind": "solid", "color": arg}
-    return {"kind": "img", "data": _asset(arg, base_dir)}
+    return {"kind": "img", "file": arg}          # se embebe al exportar (render_html)
 
 
 def _asset(fname, base_dir):
@@ -117,7 +143,8 @@ def _asset(fname, base_dir):
         data = f.read()
     ext = fname.rsplit(".", 1)[-1].lower()
     mime = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
-            "webp": "image/webp", "gif": "image/gif"}.get(ext, "application/octet-stream")
+            "webp": "image/webp", "gif": "image/gif", "ogg": "audio/ogg",
+            "mp3": "audio/mpeg", "wav": "audio/wav", "m4a": "audio/mp4"}.get(ext, "application/octet-stream")
     return f"data:{mime};base64," + base64.b64encode(data).decode()
 
 
@@ -136,17 +163,189 @@ def _link_choices(model):
     return model
 
 
+def blank_model(title="Nueva VN"):
+    """Proyecto mínimo válido para arrancar en el editor."""
+    return {"title": title,
+            "characters": {"narrator": {"name": "", "color": "#cccccc"}},
+            "scenes": {"inicio": [{"op": "end"}]},
+            "order": ["inicio"], "start": "inicio"}
+
+
+_IMG_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}
+
+
+def list_assets(base):
+    """Imágenes en el directorio del proyecto, ordenadas ([] si no existe)."""
+    try:
+        names = os.listdir(base)
+    except OSError:
+        return []
+    return sorted(f for f in names if os.path.splitext(f)[1].lower() in _IMG_EXTS)
+
+
+def validate(model, base=None):
+    """Lista de problemas del proyecto (vacía = OK): referencias a escenas o
+    personajes inexistentes, escenas sin salida, y (si se da `base`) assets faltantes."""
+    probs = []
+    scenes, chars = model["scenes"], model["characters"]
+    for sid in model.get("order", scenes):
+        has_exit = False
+        for s in scenes[sid]:
+            op = s["op"]
+            if op in ("show", "hide", "animate") and s.get("id") not in chars:
+                probs.append(f"escena {sid}: personaje '{s.get('id')}' no existe")
+            if op == "say" and s.get("who") not in chars:
+                probs.append(f"escena {sid}: personaje '{s.get('who')}' no existe")
+            if op == "goto":
+                has_exit = True
+                if s["target"] not in scenes:
+                    probs.append(f"escena {sid}: goto a '{s['target']}' inexistente")
+            if op == "end":
+                has_exit = True
+            if op == "choice":
+                has_exit = True
+                for o in s.get("options", []):
+                    if o["target"] not in scenes:
+                        probs.append(f"escena {sid}: opción a '{o['target']}' inexistente")
+            if base and op == "bg" and s["spec"].get("kind") == "img":
+                if not os.path.exists(os.path.join(base, s["spec"]["file"])):
+                    probs.append(f"escena {sid}: falta el fondo '{s['spec']['file']}'")
+            if base and op in ("bgm", "se") and s.get("file"):
+                if not os.path.exists(os.path.join(base, s["file"])):
+                    probs.append(f"escena {sid}: falta el audio '{s['file']}'")
+        if not has_exit:
+            probs.append(f"escena {sid}: sin salida (end/goto/choice)")
+    if base:
+        for cid, c in chars.items():
+            if c.get("sprite") and not os.path.exists(os.path.join(base, c["sprite"])):
+                probs.append(f"personaje {cid}: falta el sprite '{c['sprite']}'")
+    return probs
+
+
+def duplicate_scene(model, sid):
+    """Duplica una escena (contenido deep-copy) con id único, tras la original."""
+    import copy
+    scenes = model["scenes"]
+    base = f"{sid}_copia"; new = base; i = 2
+    while new in scenes:
+        new = f"{base}{i}"; i += 1
+    scenes[new] = copy.deepcopy(scenes[sid])
+    model["order"].insert(model["order"].index(sid) + 1, new)
+    return new
+
+
+def duplicate_step(steps, i):
+    """Inserta una copia del paso i justo después."""
+    import copy
+    steps.insert(i + 1, copy.deepcopy(steps[i]))
+
+
+def move_scene(model, sid, delta):
+    """Mueve una escena en el orden. False si queda fuera de rango."""
+    o = model["order"]; i = o.index(sid); j = i + delta
+    if 0 <= j < len(o):
+        o[i], o[j] = o[j], o[i]
+        return True
+    return False
+
+
+def rename_character(model, old, new):
+    """Renombra un personaje y reapunta todas sus referencias. False si no aplica."""
+    chars = model["characters"]
+    if old not in chars or new in chars or old == "narrator" or not new:
+        return False
+    chars[new] = chars.pop(old)
+    for steps in model["scenes"].values():
+        for s in steps:
+            if s["op"] in ("show", "hide", "animate") and s.get("id") == old:
+                s["id"] = new
+            elif s["op"] == "say" and s.get("who") == old:
+                s["who"] = new
+    return True
+
+
+def to_text(model):
+    """Serializa un modelo (el que devuelve parse) de vuelta a texto .vn."""
+    out = [f"title: {model['title']}"]
+    for cid, c in model["characters"].items():
+        if cid == "narrator":
+            continue
+        line = f'character {cid} "{c["name"]}"'
+        if c.get("color"): line += f' color={c["color"]}'
+        out.append(line)
+        if c.get("sprite"): out.append(f'sprite {cid} {c["sprite"]}')
+    out.append("")
+    for sid in model.get("order", model["scenes"]):
+        out.append(f"scene {sid}")
+        for s in model["scenes"][sid]:
+            out.append("  " + _step_text(s))
+        out.append("")
+    return "\n".join(out).rstrip() + "\n"
+
+
+def _step_text(s):
+    op = s["op"]
+    if op == "bg":
+        sp = s["spec"]
+        if sp["kind"] == "grad": return f"bg grad:{sp['a']},{sp['b']}"
+        if sp["kind"] == "solid": return f"bg {sp['color']}"
+        return f"bg {sp.get('file', '?.png')}"          # ver nota en build()
+    if op == "show":
+        t = f"show {s['id']} {s.get('pos','center')}"
+        if "x" in s: t += f" x={s['x']}"
+        if "y" in s: t += f" y={s['y']}"
+        if "z" in s: t += f" z={s['z']}"
+        if "zoom" in s: t += f" zoom={s['zoom']}"
+        if "opacity" in s: t += f" opacity={s['opacity']}"
+        if "tint" in s: t += f" tint={s['tint']}"
+        return t
+    if op == "hide": return f"hide {s['id']}"
+    if op == "say":
+        return f"* {s['text']}" if s["who"] == "narrator" else f"{s['who']}: {s['text']}"
+    if op == "animate":
+        kv = " ".join(f"{k}={v}" for k, v in s.get("params", {}).items())
+        return f"animate {s['id']} {s['kind']} {kv}".rstrip()
+    if op == "choice":
+        return "choice\n" + "\n".join(f"    - {o['label']} -> {o['target']}"
+                                      for o in s.get("options", []))
+    if op == "bgm": return "bgm stop" if s.get("stop") else f"bgm {s['file']}"
+    if op == "se": return f"se {s['file']}"
+    if op == "goto": return f"goto {s['target']}"
+    if op == "end": return "end"
+    return f"# ? {op}"
+
+
+def _embed(model, base_dir):
+    """Copia el modelo con los assets embebidos como data URI (para el HTML)."""
+    import copy
+    m = copy.deepcopy(model)
+    def dat(f):
+        try: return _asset(f, base_dir)
+        except OSError: return None
+    for c in m["characters"].values():
+        if c.get("sprite"):
+            c["spriteData"] = dat(c["sprite"])
+    for steps in m["scenes"].values():
+        for s in steps:
+            if s["op"] == "bg" and s["spec"].get("kind") == "img":
+                s["spec"]["data"] = dat(s["spec"]["file"])
+            elif s["op"] in ("bgm", "se") and s.get("file"):
+                s["data"] = dat(s["file"])
+    return m
+
+
 def build(vn_path, out_html):
     text = open(vn_path, encoding="utf-8").read()
-    model = _link_choices(parse(text, os.path.dirname(os.path.abspath(vn_path))))
-    open(out_html, "w", encoding="utf-8").write(render_html(model))
+    model = _link_choices(parse(text))
+    base = os.path.dirname(os.path.abspath(vn_path))
+    open(out_html, "w", encoding="utf-8").write(render_html(model, base))
     n = sum(len(v) for v in model["scenes"].values())
     print(f"{len(model['scenes'])} escenas, {n} pasos -> {out_html}")
     return out_html
 
 
-def render_html(model):
-    data = json.dumps(model, ensure_ascii=False)
+def render_html(model, base_dir="."):
+    data = json.dumps(_embed(model, base_dir), ensure_ascii=False)
     return _TEMPLATE.replace("/*DATA*/", data).replace("__TITLE__", html.escape(model["title"]))
 
 
@@ -216,6 +415,12 @@ _TEMPLATE = r"""<!doctype html><html lang="es"><head><meta charset="utf-8">
        color:var(--amber-soft);background:#03040acc}
   #hint{position:absolute;top:10px;right:14px;font-size:.7rem;letter-spacing:.1em;
         text-transform:uppercase;color:var(--muted);opacity:.55}
+  /* aproximación CSS de las acciones del engine (Python es la fuente de verdad) */
+  @keyframes vn-jump{0%,100%{transform:translateY(0)}50%{transform:translateY(-6%)}}
+  @keyframes vn-fall{0%{transform:translateY(-30%);opacity:.2}100%{transform:translateY(0);opacity:1}}
+  @keyframes vn-shake{0%,100%{transform:translate(0,0)}25%{transform:translate(-1.5%,1%)}75%{transform:translate(1.5%,-1%)}}
+  @keyframes vn-wave{0%,100%{transform:translateX(0)}25%{transform:translateX(2%)}75%{transform:translateX(-2%)}}
+  .center.sprite[style*="vn-"]{transform-origin:bottom center}
   @media (prefers-reduced-motion:reduce){#cursor{animation:none}*{transition:none!important}}
 </style></head><body>
 <div id="stage">
@@ -225,6 +430,7 @@ _TEMPLATE = r"""<!doctype html><html lang="es"><head><meta charset="utf-8">
   <div id="choices" hidden></div>
   <div id="end" hidden></div>
   <div id="hint">click / espacio</div>
+  <audio id="bgm" loop></audio>
 </div>
 <script>
 const M = /*DATA*/;
@@ -239,16 +445,28 @@ function setBg(spec){
   else { bg.style.background = spec.color; }
 }
 function charColor(id){ return (M.characters[id]||{}).color || "#ccc"; }
-function show(id,pos,img){
+function show(id,pos){
+  const c = M.characters[id]||{};
   let el = sprites[id];
   if(!el){ el = document.createElement("div"); el.className="sprite"; $("#sprites").appendChild(el); sprites[id]=el; }
   el.className = "sprite "+(pos||"center");
-  if(img){ el.innerHTML = `<img src="${img}">`; }
-  else { const nm=(M.characters[id]||{}).name||id;
+  if(c.spriteData){ el.innerHTML = `<img src="${c.spriteData}">`; }
+  else { const nm=c.name||id;
          el.innerHTML = `<div class="ph" style="background:${charColor(id)}">${(nm[0]||"?").toUpperCase()}</div>`; }
-  el.style.opacity=1;
+  el.style.opacity=1; el.style.animation="";
 }
 function hide(id){ if(sprites[id]) sprites[id].style.opacity=0; }
+function playBgm(s){
+  const a=$("#bgm");
+  if(s.stop){ a.pause(); return; }
+  if(s.data){ a.src=s.data; a.play().catch(()=>{}); }
+}
+function animate(id,kind){        // aproximación CSS de las acciones del engine
+  const el = sprites[id]; if(!el) return;
+  const css = {jump:"vn-jump .5s 2", jumponce:"vn-jump .5s 1", vibrate:"vn-shake .4s 3",
+               wave:"vn-wave 1s 2", fall:"vn-fall .6s 1"}[kind];
+  if(css){ el.style.animation="none"; void el.offsetWidth; el.style.animation=css; }
+}
 
 function enter(id){ scene = M.scenes[id]; ip = 0; step(); }
 
@@ -257,8 +475,11 @@ function step(){
   while(ip < scene.length){
     const s = scene[ip++];
     if(s.op==="bg"){ setBg(s.spec); continue; }
-    if(s.op==="show"){ show(s.id,s.pos,s.img); continue; }
+    if(s.op==="show"){ show(s.id,s.pos); continue; }
+    if(s.op==="animate"){ animate(s.id,s.kind); continue; }
     if(s.op==="hide"){ hide(s.id); continue; }
+    if(s.op==="bgm"){ playBgm(s); continue; }
+    if(s.op==="se"){ if(s.data){ try{ new Audio(s.data).play().catch(()=>{});}catch(e){} } continue; }
     if(s.op==="goto"){ return enter(s.target); }
     if(s.op==="end"){ return theEnd(); }
     if(s.op==="say"){ return say(s); }
@@ -329,8 +550,70 @@ scene fin
 """
 
 
+def _ops_selfcheck():
+    # validate: detecta gotos/personajes/dead-ends
+    bad = _link_choices(parse(
+        'title: t\ncharacter a "A"\n'
+        'scene uno\n  show b left\n  goto ninguna\n'
+        'scene dos\n  a: hola\n'))
+    probs = validate(bad)
+    assert any("ninguna" in p for p in probs), probs
+    assert any("'b'" in p for p in probs), probs
+    assert any("dos" in p and "salida" in p for p in probs), probs
+    assert validate(_link_choices(parse(DEMO_VN))) == []
+    # rename_character: mueve y reapunta referencias
+    mm = _link_choices(parse('title: t\ncharacter x "X"\nscene s\n  show x left\n'
+                             '  x: hola\n  animate x jump\n  end\n'))
+    assert rename_character(mm, "x", "y") is True
+    assert "y" in mm["characters"] and "x" not in mm["characters"]
+    stp = mm["scenes"]["s"]
+    assert stp[0]["id"] == "y" and stp[1]["who"] == "y" and stp[2]["id"] == "y", stp
+    assert rename_character(mm, "nope", "z") is False and rename_character(mm, "y", "y") is False
+    # duplicate_scene: copia con id único, insertada después
+    dm = _link_choices(parse('title: t\ncharacter a "A"\nscene uno\n  a: hola\n  end\n'))
+    nid = duplicate_scene(dm, "uno")
+    assert nid in dm["scenes"] and nid != "uno"
+    assert dm["scenes"][nid] == dm["scenes"]["uno"] and dm["scenes"][nid] is not dm["scenes"]["uno"]
+    assert dm["order"].index(nid) == dm["order"].index("uno") + 1
+    assert duplicate_scene(dm, "uno") != nid          # id único la 2da vez
+    # duplicate_step: copia insertada después
+    stp = [{"op": "end"}]
+    duplicate_step(stp, 0)
+    assert len(stp) == 2 and stp[0] == stp[1] and stp[0] is not stp[1]
+    # move_scene: reordena en order, respeta bordes
+    om = _link_choices(parse('title: t\nscene a\n  end\nscene b\n  end\nscene c\n  end\n'))
+    assert om["order"] == ["a", "b", "c"]
+    assert move_scene(om, "a", 1) and om["order"] == ["b", "a", "c"]
+    assert move_scene(om, "a", -1) and om["order"] == ["a", "b", "c"]
+    assert move_scene(om, "a", -1) is False and move_scene(om, "c", 1) is False
+    # list_assets: imágenes del proyecto, ordenadas; dir inexistente -> []
+    import tempfile, os as _os
+    d = tempfile.mkdtemp()
+    for f in ("b.jpg", "a.png", "note.txt"):
+        open(_os.path.join(d, f), "w").close()
+    assert list_assets(d) == ["a.png", "b.jpg"], list_assets(d)
+    assert list_assets(_os.path.join(d, "nope")) == []
+    # blank_model: proyecto mínimo válido y round-trip
+    bm = blank_model()
+    assert bm["order"] and bm["start"] == bm["order"][0]
+    assert "narrator" in bm["characters"]
+    assert validate(bm) == []                          # arranca sin problemas
+    assert list(_link_choices(parse(to_text(bm)))["scenes"]) == bm["order"]
+    # audio: bgm/se en el .vn + round-trip
+    au = _link_choices(parse('title: t\ncharacter a "A"\nscene s\n'
+                             '  bgm tema.ogg\n  a: hola\n  se golpe.wav\n  bgm stop\n  end\n'))
+    sts = au["scenes"]["s"]
+    assert sts[0] == {"op": "bgm", "file": "tema.ogg"}, sts[0]
+    assert sts[2] == {"op": "se", "file": "golpe.wav"}, sts[2]
+    assert sts[3].get("stop") is True, sts[3]
+    txt = to_text(au)
+    assert "bgm tema.ogg" in txt and "se golpe.wav" in txt and "bgm stop" in txt, txt
+    assert _link_choices(parse(txt))["scenes"]["s"][3].get("stop") is True
+
+
 def demo():
     import tempfile
+    _ops_selfcheck()
     model = _link_choices(parse(DEMO_VN))
     assert model["start"] == "intro"
     assert model["characters"]["louise"]["color"] == "#ff9ec2"

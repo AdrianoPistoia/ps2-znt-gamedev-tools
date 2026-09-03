@@ -8,6 +8,15 @@ motor da a los scripts — la base para reimplementar el engine fuera de la cons
 Todo es **Python de stdlib, sin dependencias**. Cada módulo trae un self-check
 sintético que no depende de tener el juego: `python3 -m znt demo`.
 
+**Instalación** (opcional; deja el comando `znt` en el PATH):
+
+```sh
+pip install -e .          # editable; requiere Python 3.9+ (tkinter para el editor)
+znt demo                  # desde cualquier carpeta
+znt studio               # abre VN Studio
+```
+Sin instalar: `python3 -m znt <grupo> ...` desde la raíz del repo.
+
 > **Legal.** Herramientas y notas de formato para interoperabilidad. No se
 > distribuye ningún asset del juego; el `.gitignore` los excluye. Cualquier
 > resultado se publica como parche binario, nunca como ISO.
@@ -53,12 +62,15 @@ El engine se saca en tres capas apiladas. Este repo cubre la **2** y la **2b**.
   solas por `next`.
 
   ```sh
+  python3 -m znt play   iso 1000              # ventana en vivo (click/espacio avanza)
   python3 -m znt record iso 1000 out.apng     # graba la corrida a un PNG animado
+  python3 -m znt testbench iso 1000           # banco de pruebas: anima capas en vivo
   ```
 
-  Los **frentes interactivos** (ventana en vivo `play` y el banco de pruebas
-  `testbench`, que corre el engine real e inyecta animaciones en vivo sobre las
-  capas) viven desacoplados en la rama [`interactive-frontend`](../../tree/interactive-frontend).
+  El **banco de pruebas** (`testbench`) corre el engine real y deja inyectar
+  animaciones en vivo sobre las capas de la escena (elegís capa + curva o acción +
+  parámetros y lo ves moverse), con un inspector del estado de cada capa. Su núcleo
+  `Bench` es headless y guionable (sin tkinter).
 
   Falta para runtime completo: los módulos de animación `LayerModule` (curvas
   accel/decel/wave, no solo tween lineal), audio, y entrada más allá de avanzar.
@@ -174,13 +186,42 @@ znt/            el SDK (paquete importable, stdlib)
   sqrt.py       runtime del código transpilado (objetos, corrutinas)
   sqrun.py      corre una escena real y saca frames
   engine.py     runtime en vivo headless (animación + corrutina de escena)
-  frontends.py  frontend headless del engine: export a APNG
-                (los frentes interactivos van en la rama interactive-frontend)
+  frontends.py  frontend headless del engine: export APNG
+  # framework de creación de VN (headless)
+  image.py      lector PNG stdlib -> filas RGBA (assets propios)
+  vnstudio.py   VNRuntime: reproduce un modelo autoral con el render/animación real
   # capa 3 — autoría
-  vn.py         DSL .vn -> player HTML
+  vn.py         DSL .vn -> player HTML + ops de modelo (validate/rename/...)
+  gui/          FRONT INTERACTIVO (tkinter) — opcional, borrable, no lo importa el core
+    studio.py     VN Studio: editor gráfico
+    testbench.py  banco de pruebas (inyecta animación en vivo)
+    window.py     ventana en vivo (play)
 docs/engine_api.md   catálogo de la API del engine (capa 2b)
 docs/authoring.md    formato .vn para crear una VN (capa 3)
 research/codec_search.py   búsqueda automatizada del codec (resultado negativo)
 ```
 
-Un self-check por módulo, sin depender del juego: `python3 -m znt demo` (13/13).
+Un self-check por módulo, sin depender del juego: `python3 -m znt demo` (16/16).
+
+**Core headless separable.** Todo el paquete `znt` es headless salvo `znt/gui/`
+(el front tkinter). Se puede **borrar `znt/gui/` entero** y el core sigue: acceso a
+datos, codec, render, transpilador, runtime, `record` a APNG y el `VNRuntime` de VN.
+`znt demo` lo reporta y los comandos `play`/`testbench`/`studio` avisan si el front
+no está. Ningún módulo del core importa `gui` ni `tkinter`.
+
+## VN Studio — editor gráfico (`python -m znt studio [proyecto.vn]`)
+
+Corre el engine real; edita un proyecto `.vn`:
+
+- Escenas y pasos (`bg`/`show`/`hide`/`say`/`animate`/`choice`/`goto`/`end`):
+  agregar, duplicar, reordenar, borrar; renombrar/reordenar escenas.
+- Sprites: asignar PNG por personaje, **arrastrar en el escenario** con **snap +
+  guías** (centro/presets/piso/otros sprites; Shift = libre).
+- Por capa: **orden Z** (al frente/fondo), **zoom**, **opacidad**, **tinte**.
+- **Previsualización de transiciones** (▶ probar) sin entrar a Play; **Play** corre
+  la escena con animación real; **undo/redo** (Ctrl+Z/Y).
+- **Validar** el proyecto (gotos/personajes/dead-ends/assets), **biblioteca de
+  assets** (doble-click asigna), **Guardar .vn** / **Exportar** a player HTML.
+
+Lógica de modelo testeable en `vn.py` (`validate`/`rename_character`/
+`duplicate_scene`/`move_scene`/`list_assets`); el runtime `VNRuntime` es headless.

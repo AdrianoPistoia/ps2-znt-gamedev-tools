@@ -14,3 +14,7 @@ SLPM_*
 api.json
 iso/
 work/
+
+*.egg-info/
+build/
+dist/

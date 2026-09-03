@@ -10,7 +10,8 @@
 import os, sys
 
 from . import (container, codec, tim2, font, scriptscan, render, sqparse,
-               sqtranspile, sqrt, sqrun, vn, engine, frontends)
+               sqtranspile, sqrt, sqrun, vn, engine, frontends, image, vnstudio)
+# El front interactivo (znt.gui) se importa de forma perezosa: el core no depende de él.
 
 
 def extract(hd, bn, outdir, ext=".bin"):
@@ -33,9 +34,14 @@ def extract(hd, bn, outdir, ext=".bin"):
 
 def demo(*a):
     for m in (codec, container, tim2, font, scriptscan, render, sqparse, sqrt,
-              sqtranspile, sqrun, vn, engine, frontends):
+              sqtranspile, sqrun, vn, engine, frontends, image, vnstudio):
         print(f"{m.__name__}:", end=" ")
         m.demo()
+    try:                                  # el front es opcional
+        from . import gui
+        print("znt.gui:", end=" "); gui.demo()
+    except ImportError:
+        print("znt.gui: (ausente — core headless OK)")
 
 
 def main(argv):
@@ -58,6 +64,16 @@ def main(argv):
         return vn.cli(rest)
     if group == "record":
         return frontends.record_cli(*rest)
+    if group in ("play", "testbench", "studio"):    # front interactivo (opcional)
+        try:
+            from . import gui
+        except ImportError:
+            sys.exit("El front interactivo (znt.gui) no está disponible en esta distribución.")
+        if group == "play":
+            return gui.play(*rest)
+        if group == "testbench":
+            return gui.testbench.cli(rest)
+        return gui.run_editor(rest[0] if rest else None)
     if group == "container":
         return {"unpack": container.unpack, "pack": container.pack,
                 "info": container.info, "demo": container.demo}[rest[0]](*rest[1:])
@@ -65,6 +81,11 @@ def main(argv):
     if mod:
         return mod.cli(rest)
     sys.exit(__doc__)
+
+
+def cli_entry():
+    """Punto de entrada del comando `znt` (console_scripts)."""
+    main(sys.argv[1:])
 
 
 if __name__ == "__main__":

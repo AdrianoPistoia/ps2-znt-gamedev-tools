@@ -3,8 +3,8 @@
 color) reusando el escritor de chunks de PNG, sin cuantización de paleta. El core
 es headless; este lo consume sin acoplarse (el engine no lo importa).
 
-Los frentes *interactivos* (ventana en vivo `play` y el banco de pruebas
-`testbench`) viven en la rama `interactive-frontend`, desacoplados de la solución.
+Los frentes interactivos (ventana en vivo, banco de pruebas, VN Studio) viven en
+el subpaquete `znt.gui` — se pueden borrar sin afectar al core.
 
   python -m znt record <disc> <scene> <out.apng>   # graba a APNG
 """
