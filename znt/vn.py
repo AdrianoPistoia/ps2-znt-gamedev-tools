@@ -158,6 +158,18 @@ def _link_choices(model):
     return model
 
 
+_IMG_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}
+
+
+def list_assets(base):
+    """Imágenes en el directorio del proyecto, ordenadas ([] si no existe)."""
+    try:
+        names = os.listdir(base)
+    except OSError:
+        return []
+    return sorted(f for f in names if os.path.splitext(f)[1].lower() in _IMG_EXTS)
+
+
 def validate(model, base=None):
     """Lista de problemas del proyecto (vacía = OK): referencias a escenas o
     personajes inexistentes, escenas sin salida, y (si se da `base`) assets faltantes."""
@@ -543,6 +555,13 @@ def _ops_selfcheck():
     assert move_scene(om, "a", 1) and om["order"] == ["b", "a", "c"]
     assert move_scene(om, "a", -1) and om["order"] == ["a", "b", "c"]
     assert move_scene(om, "a", -1) is False and move_scene(om, "c", 1) is False
+    # list_assets: imágenes del proyecto, ordenadas; dir inexistente -> []
+    import tempfile, os as _os
+    d = tempfile.mkdtemp()
+    for f in ("b.jpg", "a.png", "note.txt"):
+        open(_os.path.join(d, f), "w").close()
+    assert list_assets(d) == ["a.png", "b.jpg"], list_assets(d)
+    assert list_assets(_os.path.join(d, "nope")) == []
 
 
 def demo():

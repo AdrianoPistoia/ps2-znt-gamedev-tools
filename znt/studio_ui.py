@@ -123,6 +123,11 @@ def run_editor(path=None):
     propf = tk.Frame(panel, bg=PANEL); propf.pack(fill="x")
     fields = {}   # nombre -> (widget, getter)
 
+    lbl(panel, "Assets del proyecto (doble-click: al show/bg activo)").pack(anchor="w", pady=(10, 0))
+    assets_lb = tk.Listbox(panel, height=5, width=44, bg=PANEL, fg=INK,
+                           selectbackground="#26335c", highlightthickness=0, font=("mono", 9))
+    assets_lb.pack()
+
     # ------------------------------------------------------------------ helpers
     def steps():
         return model["scenes"][st["scene"]]
@@ -168,8 +173,26 @@ def run_editor(path=None):
         if 0 <= st["step"] < steps_lb.size():
             steps_lb.selection_set(st["step"])
 
+    def refresh_assets():
+        assets_lb.delete(0, "end")
+        for f in vn.list_assets(base):
+            assets_lb.insert("end", f)
+
+    def assign_asset(_=None):
+        sel = assets_lb.curselection()
+        if not sel or not (0 <= st["step"] < len(steps())):
+            return
+        fname = assets_lb.get(sel[0]); s = steps()[st["step"]]
+        if s["op"] == "show":
+            snapshot(); model["characters"][s["id"]]["sprite"] = fname
+        elif s["op"] == "bg":
+            snapshot(); s["spec"] = {"kind": "img", "file": fname}
+        else:
+            return
+        rt.invalidate(); refresh_all()
+
     def refresh_all():
-        refresh_scenes(); refresh_steps(); build_props(); refresh_preview()
+        refresh_scenes(); refresh_steps(); build_props(); refresh_preview(); refresh_assets()
 
     # ------------------------------------------------------------------ undo/redo
     def snapshot():
@@ -562,6 +585,7 @@ def run_editor(path=None):
 
     scenes_lb.bind("<<ListboxSelect>>", on_scene)
     steps_lb.bind("<<ListboxSelect>>", on_step)
+    assets_lb.bind("<Double-Button-1>", assign_asset)
     root.bind("<Control-z>", undo)
     root.bind("<Control-y>", redo)
     root.bind("<Control-Z>", redo)          # Ctrl+Shift+Z
