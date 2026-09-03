@@ -9,7 +9,7 @@
 """
 import os, sys
 
-from . import container, codec, tim2, font, scriptscan, render
+from . import container, codec, tim2, font, scriptscan, render, sqparse
 
 
 def extract(hd, bn, outdir, ext=".bin"):
@@ -31,7 +31,7 @@ def extract(hd, bn, outdir, ext=".bin"):
 
 
 def demo(*a):
-    for m in (codec, container, tim2, font, scriptscan, render):
+    for m in (codec, container, tim2, font, scriptscan, render, sqparse):
         print(f"{m.__name__}:", end=" ")
         m.demo()
 
@@ -46,6 +46,8 @@ def main(argv):
         return scriptscan.cli(rest)
     if group == "render":
         return render.cli(rest)
+    if group == "sqparse":
+        return sqparse.cli(rest)
     if group == "container":
         return {"unpack": container.unpack, "pack": container.pack,
                 "info": container.info, "demo": container.demo}[rest[0]](*rest[1:])
