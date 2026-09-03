@@ -1,4 +1,285 @@
 <!doctype html>
-<html lang="es"><head><meta charset="utf-8"><title>VN Studio</title></head>
-<body><p>UI en construcción (tarea #24). La API ya responde en <code>/api/model</code>.</p></body>
-</html>
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VN Studio</title>
+<style>
+  :root{
+    --bg:#0e1220; --panel:#141a2c; --ink:#dfe7f5; --mut:#8493b5; --acc:#e8b04b;
+    --edge:#2a3350; --sel:#26335c;
+    --ui: system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --mono: ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;
+    color-scheme: dark;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 var(--ui);
+       display:grid;grid-template-columns:1fr 360px;gap:12px;padding:12px;height:100vh}
+  h2{font:600 12px/1 var(--ui);letter-spacing:.08em;text-transform:uppercase;
+     color:var(--mut);margin:14px 0 6px}
+  button{font:inherit;color:var(--ink);background:#1b2440;border:1px solid var(--edge);
+         border-radius:6px;padding:5px 10px;cursor:pointer}
+  button:hover{background:var(--sel)} button:disabled{opacity:.4;cursor:default}
+  input,select,textarea{font:inherit;color:var(--ink);background:#0f1525;
+         border:1px solid var(--edge);border-radius:6px;padding:5px 7px;width:100%}
+  .row{display:flex;gap:6px;align-items:center;margin:4px 0}
+  .row label{color:var(--mut);min-width:70px;font-size:13px}
+  .bar{display:flex;flex-wrap:wrap;gap:6px}
+
+  /* ---- stage: escala solo, todo en % ---- */
+  #left{display:flex;flex-direction:column;gap:8px;min-width:0}
+  #stagewrap{background:#05060f;border:1px solid var(--edge);border-radius:10px;
+             overflow:hidden;position:relative;aspect-ratio:640/448;width:100%}
+  #stage{position:absolute;inset:0}
+  .layer{position:absolute}
+  .layer img{width:100%;height:100%;object-fit:fill;display:block}
+  .ph{width:100%;height:100%;border-radius:14% 14% 4% 4%;
+      box-shadow:inset 0 0 0 1px #fff3, 0 6px 20px #0007;
+      display:flex;align-items:flex-end;justify-content:center;color:#0008;
+      font:700 clamp(10px,3vw,28px) var(--ui)}
+  #dbox{position:absolute;left:3%;right:3%;bottom:4%;min-height:22%;
+        background:linear-gradient(180deg,#141b3aee,#0a0e22f2);
+        border:1px solid var(--edge);border-top:2px solid var(--acc);
+        border-radius:4px 4px 10px 10px;padding:14px 16px}
+  #who{font-weight:700;color:var(--acc);margin-bottom:4px}
+  #text{white-space:pre-wrap}
+  #choices{position:absolute;inset:0;display:flex;flex-direction:column;gap:8px;
+           align-items:center;justify-content:center;background:#0009}
+  #choices button{min-width:50%}
+  #meta{color:var(--mut);font:12px var(--mono);display:flex;gap:12px}
+
+  /* ---- paneles ---- */
+  #right{overflow:auto;min-width:0}
+  ul.list{list-style:none;margin:0;padding:0;border:1px solid var(--edge);
+          border-radius:8px;background:var(--panel);max-height:26vh;overflow:auto}
+  ul.list li{padding:4px 8px;cursor:pointer;font:13px/1.5 var(--mono);
+             white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  ul.list li.sel{background:var(--sel)}
+  #props{background:var(--panel);border:1px solid var(--edge);border-radius:8px;padding:8px}
+  .hint{color:var(--mut);font-size:12px;margin-top:4px}
+  #probs{color:#ffb4b4;font:12px var(--mono);white-space:pre-wrap}
+</style></head>
+<body>
+<div id="left">
+  <div id="stagewrap">
+    <div id="stage"></div>
+    <div id="dbox" hidden><div id="who"></div><div id="text"></div></div>
+    <div id="choices" hidden></div>
+  </div>
+  <div id="meta"><span id="m-scene"></span><span id="m-bgm"></span><span id="m-path"></span></div>
+</div>
+
+<div id="right">
+  <div class="bar">
+    <button id="b-undo">↶</button><button id="b-redo">↷</button>
+    <button id="b-validate">Validar</button>
+    <button id="b-save">Guardar .vn</button>
+    <button id="b-export">Exportar HTML</button>
+    <button id="b-char">＋ Personaje</button>
+  </div>
+  <div id="probs"></div>
+
+  <h2>Escenas</h2>
+  <ul class="list" id="scenes"></ul>
+  <div class="bar" style="margin-top:6px">
+    <button id="b-scene-add">＋</button><button id="b-scene-dup">duplicar</button>
+    <button id="b-scene-ren">renombrar</button>
+    <button id="b-scene-up">↑</button><button id="b-scene-dn">↓</button>
+  </div>
+
+  <h2>Pasos</h2>
+  <ul class="list" id="steps"></ul>
+  <div class="bar" style="margin-top:6px">
+    <select id="newop" style="width:auto"></select>
+    <button id="b-step-add">＋</button><button id="b-step-dup">dup</button>
+    <button id="b-step-up">↑</button><button id="b-step-dn">↓</button>
+    <button id="b-step-del">borrar</button>
+  </div>
+
+  <h2>Propiedades</h2>
+  <div id="props"></div>
+</div>
+
+<script src="/static/logic.js"></script>
+<script>
+const $ = s => document.querySelector(s);
+let S = null;            // estado del servidor
+let SG = null;           // stage actual
+
+const api = {
+  model: () => fetch("/api/model").then(r => r.json()),
+  op: o => fetch("/api/op", {method:"POST", headers:{"Content-Type":"application/json"},
+                             body: JSON.stringify(o)}).then(r => r.json()),
+  stage: (sc, st) => fetch(`/api/stage?scene=${encodeURIComponent(sc)}&step=${st}`).then(r => r.json()),
+};
+
+async function op(o){ S = await api.op(o); await refresh(); }
+
+function stepText(s){
+  switch(s.op){
+    case "bg": { const p = s.spec||{};
+      return "bg " + (p.kind==="grad" ? `grad:${p.a},${p.b}` : p.kind==="solid" ? p.color : p.file); }
+    case "show": return `show ${s.id} ${s.pos||"center"}` +
+      ["x","y","z","zoom","opacity"].map(k=> k in s ? ` ${k}=${s[k]}`:"").join("") + (s.tint?` tint=${s.tint}`:"");
+    case "hide": return `hide ${s.id}`;
+    case "say": return s.who==="narrator" ? `* ${s.text}` : `${s.who}: ${s.text}`;
+    case "animate": return `animate ${s.id} ${s.kind} ` +
+      Object.entries(s.params||{}).map(([k,v])=>`${k}=${v}`).join(" ");
+    case "bgm": return s.stop ? "bgm stop" : `bgm ${s.file||""}`;
+    case "se": return `se ${s.file||""}`;
+    case "choice": return `choice (${(s.options||[]).length})`;
+    case "goto": return `goto ${s.target}`;
+    default: return s.op;
+  }
+}
+
+function renderLists(){
+  const sc = $("#scenes"); sc.innerHTML = "";
+  S.model.order.forEach(id => {
+    const li = document.createElement("li");
+    li.textContent = `${id}  (${S.model.scenes[id].length})`;
+    if (id === S.scene) li.className = "sel";
+    li.onclick = () => op({op:"select", scene:id, step:-1});
+    sc.appendChild(li);
+  });
+  const stl = $("#steps"); stl.innerHTML = "";
+  (S.model.scenes[S.scene]||[]).forEach((s,i) => {
+    const li = document.createElement("li");
+    li.textContent = stepText(s);
+    if (i === S.step) li.className = "sel";
+    li.onclick = () => op({op:"select", scene:S.scene, step:i});
+    stl.appendChild(li);
+  });
+  $("#b-undo").disabled = !S.can_undo; $("#b-redo").disabled = !S.can_redo;
+  $("#probs").textContent = (S.problems||[]).join("\n");
+  $("#m-scene").textContent = `escena ${S.scene} · paso ${S.step}`;
+  $("#m-path").textContent = S.path || "(sin guardar)";
+}
+
+function renderStage(){
+  const st = $("#stage"); st.innerHTML = "";
+  $("#stagewrap").style.background = VNS.bgStyle(SG.bg);
+  for (const l of SG.layers) {
+    const d = document.createElement("div");
+    d.className = "layer"; d.dataset.id = l.id;
+    Object.assign(d.style, VNS.layerStyle(l, SG));
+    if (l.url) d.innerHTML = `<img src="${l.url}" alt="">`;
+    else d.innerHTML = `<div class="ph" style="background:${l.color}">${(l.name||l.id)[0]||"?"}</div>`;
+    st.appendChild(d);
+  }
+  const say = SG.say;
+  $("#dbox").hidden = !say;
+  if (say){ $("#who").textContent = say.name || ""; $("#who").style.color = say.color;
+            $("#text").textContent = say.text; }
+  const ch = $("#choices"); ch.hidden = !(SG.choices && SG.choices.length);
+  ch.innerHTML = "";
+  (SG.choices||[]).forEach(o => {
+    const b = document.createElement("button"); b.textContent = o.label; ch.appendChild(b);
+  });
+  $("#m-bgm").textContent = SG.bgm ? `♪ ${SG.bgm}` : "";
+}
+
+/* ---- panel de propiedades ---- */
+function field(label, el){
+  const r = document.createElement("div"); r.className = "row";
+  const l = document.createElement("label"); l.textContent = label;
+  r.append(l, el); return r;
+}
+function input(v){ const e = document.createElement("input"); e.value = v ?? ""; return e; }
+function select(v, opts){
+  const e = document.createElement("select");
+  opts.forEach(o => { const x = document.createElement("option"); x.value = x.textContent = o;
+                      if (o === v) x.selected = true; e.appendChild(x); });
+  return e;
+}
+function renderProps(){
+  const box = $("#props"); box.innerHTML = "";
+  const steps = S.model.scenes[S.scene] || [];
+  if (!(S.step >= 0 && S.step < steps.length)) { box.innerHTML = '<div class="hint">(elegí un paso)</div>'; return; }
+  const s = steps[S.step], chars = Object.keys(S.model.characters), f = {};
+  const add = (k, label, el) => { f[k] = el; box.appendChild(field(label, el)); };
+
+  if (s.op === "bg") {
+    const p = s.spec||{};
+    add("bg","fondo", input(p.kind==="grad" ? `grad:${p.a},${p.b}` : p.kind==="solid" ? p.color : (p.file||"")));
+    box.insertAdjacentHTML("beforeend", '<div class="hint">grad:#a,#b · #rrggbb · archivo.png</div>');
+  } else if (s.op === "show" || s.op === "hide") {
+    add("id","personaje", select(s.id, chars));
+    if (s.op === "show") {
+      add("pos","pos", select(s.pos||"center", ["left","center","right"]));
+      add("z","z", input(s.z)); add("zoom","zoom %", input(s.zoom));
+      add("opacity","opac %", input(s.opacity)); add("tint","tinte", input(s.tint));
+      box.insertAdjacentHTML("beforeend", '<div class="hint">arrastrá el sprite en el escenario</div>');
+    }
+  } else if (s.op === "say") {
+    add("who","quién", select(s.who, chars)); add("text","texto", input(s.text));
+  } else if (s.op === "animate") {
+    add("id","personaje", select(s.id, chars.filter(c=>c!=="narrator")));
+    add("kind","tipo", select(s.kind, ["linear","accel","decel","move","wave","waveonce","jump","jumponce","fall","vibrate"]));
+    add("params","params", input(Object.entries(s.params||{}).map(([k,v])=>`${k}=${v}`).join(" ")));
+  } else if (s.op === "bgm" || s.op === "se") {
+    add("file","archivo", input(s.file));
+    if (s.op === "bgm") { const c = document.createElement("input"); c.type="checkbox"; c.checked=!!s.stop;
+                          c.style.width="auto"; add("stop","detener", c); }
+  } else if (s.op === "goto") {
+    add("target","a", select(s.target, S.model.order));
+  } else if (s.op === "choice") {
+    const t = document.createElement("textarea"); t.rows = 4;
+    t.value = (s.options||[]).map(o=>`${o.label} -> ${o.target}`).join("\n");
+    add("options","opciones", t);
+    box.insertAdjacentHTML("beforeend", '<div class="hint">etiqueta -&gt; escena (una por línea)</div>');
+  } else { box.innerHTML = '<div class="hint">(sin propiedades)</div>'; return; }
+
+  const b = document.createElement("button"); b.textContent = "Aplicar";
+  b.onclick = () => {
+    const props = {};
+    for (const [k, el] of Object.entries(f)) {
+      let v = el.type === "checkbox" ? el.checked : el.value;
+      if (k === "options") v = v.split("\n").filter(x=>x.includes("->"))
+            .map(x => ({label:x.split("->")[0].trim(), target:x.split("->")[1].trim()}));
+      else if (k === "params") { const o={}; v.split(/\s+/).filter(Boolean).forEach(kv=>{
+            const [a,bb]=kv.split("="); const n=Number(bb); o[a]= isNaN(n)?bb:n; }); v=o; }
+      else if (["z","zoom","opacity","x","y"].includes(k)) { if (v==="") continue; v = parseInt(v,10); }
+      props[k] = v;
+    }
+    op({op:"set_props", props});
+  };
+  box.appendChild(b);
+}
+
+async function refresh(){
+  SG = await api.stage(S.scene, S.step);
+  renderLists(); renderStage(); renderProps();
+}
+
+/* ---- toolbar ---- */
+const ask = (msg, def="") => { const v = prompt(msg, def); return v && v.trim() ? v.trim() : null; };
+$("#b-undo").onclick = () => op({op:"undo"});
+$("#b-redo").onclick = () => op({op:"redo"});
+$("#b-validate").onclick = () => op({op:"validate"});
+$("#b-save").onclick = () => op({op:"save"});
+$("#b-export").onclick = () => op({op:"export"});
+$("#b-char").onclick = () => { const id = ask("id del personaje:"); if(!id) return;
+  op({op:"add_char", id, name: ask("nombre visible:", id) || id, color: ask("color #hex:", "#7cc4ff") || "#7cc4ff"}); };
+$("#b-scene-add").onclick = () => { const n = ask("id de la escena nueva:"); if(n) op({op:"add_scene", name:n}); };
+$("#b-scene-dup").onclick = () => op({op:"dup_scene"});
+$("#b-scene-ren").onclick = () => { const n = ask("nuevo id:", S.scene); if(n) op({op:"rename_scene", name:n}); };
+$("#b-scene-up").onclick = () => op({op:"move_scene", delta:-1});
+$("#b-scene-dn").onclick = () => op({op:"move_scene", delta:1});
+$("#b-step-add").onclick = () => op({op:"add_step", kind: $("#newop").value});
+$("#b-step-dup").onclick = () => op({op:"dup_step"});
+$("#b-step-up").onclick = () => op({op:"move_step", delta:-1});
+$("#b-step-dn").onclick = () => op({op:"move_step", delta:1});
+$("#b-step-del").onclick = () => op({op:"del_step"});
+addEventListener("keydown", e => {
+  if (e.ctrlKey && e.key === "z") { e.preventDefault(); op({op:"undo"}); }
+  if (e.ctrlKey && (e.key === "y" || (e.shiftKey && e.key === "Z"))) { e.preventDefault(); op({op:"redo"}); }
+  if (e.ctrlKey && e.key === "s") { e.preventDefault(); op({op:"save"}); }
+});
+
+(async () => {
+  S = await api.model();
+  $("#newop").innerHTML = S.step_ops.map(o => `<option>${o}</option>`).join("");
+  $("#newop").value = "say";
+  await refresh();
+})();
+</script>
+</body></html>

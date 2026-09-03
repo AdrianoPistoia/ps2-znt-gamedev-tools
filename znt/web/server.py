@@ -213,6 +213,12 @@ class _Handler(BaseHTTPRequestHandler):
             except OSError:
                 body = b"<html><body>falta ui.html</body></html>"
             return self._send(200, "text/html; charset=utf-8", body)
+        if path.startswith("/static/"):
+            f = os.path.join(os.path.dirname(__file__), "static", os.path.basename(path))
+            if not os.path.isfile(f):
+                return self._json({"error": "no existe"}, 404)
+            ctype = mimetypes.guess_type(f)[0] or "application/octet-stream"
+            return self._send(200, ctype, open(f, "rb").read())
         if path == "/api/model":
             return self._json(self.studio.state())
         q = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
