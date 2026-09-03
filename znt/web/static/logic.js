@@ -60,5 +60,20 @@
              y: (fy - grabDY) - st.h + h };
   }
 
-  return { layerStyle, bgStyle, stageXY, snap, snapTargets, dragTo, POS };
+  /* --- shell --- */
+
+  /* Ancho de un panel al arrastrar el splitter: respeta su mínimo y el del vecino. */
+  function clampPane(px, total, min, minOther) {
+    return Math.max(min, Math.min(px, total - minOther));
+  }
+
+  /* Encajar el stage (aw x ah) dentro del contenedor, centrado y con letterbox. */
+  function fitRect(cw, ch, aw, ah) {
+    if (cw <= 0 || ch <= 0) return { w: 0, h: 0, left: 0, top: 0, scale: 0 };
+    const scale = Math.min(cw / aw, ch / ah), w = aw * scale, h = ah * scale;
+    return { w, h, left: (cw - w) / 2, top: (ch - h) / 2, scale };
+  }
+
+  return { layerStyle, bgStyle, stageXY, snap, snapTargets, dragTo, POS,
+           clampPane, fitRect };
 });
