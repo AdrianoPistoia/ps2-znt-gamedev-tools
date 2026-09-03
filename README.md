@@ -22,8 +22,8 @@ El engine se saca en tres capas apiladas. Este repo cubre la **2** y la **2b**.
 ┌───────────────────────────────────────────────┐
 │  3. Autoría   crear una VN nueva (player PC)     │  ✅ DSL .vn -> player HTML
 ├───────────────────────────────────────────────┤
-│  1. Runtime   correr las escenas en la PC       │  ✅ MVP: escena real
-│     VM Squirrel + render TIM2/fuente            │     transpilada y dibujada
+│  1. Runtime   correr las escenas en la PC       │  ✅ ventana en vivo +
+│     VM Squirrel + render TIM2/fuente + animación│     animación (frontend aparte)
 ├───────────────────────────────────────────────┤
 │  2. Acceso    abrir/inspeccionar/modificar/repack│  ✅
 │     contenedor, codec, TIM2, fuente             │
