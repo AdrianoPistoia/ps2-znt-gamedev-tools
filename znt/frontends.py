@@ -1,17 +1,14 @@
 #!/usr/bin/env python3
-"""Frontends intercambiables para el `engine`. El core es headless; estos lo
-consumen. Ninguno está acoplado al otro: el engine no los importa.
+"""Frontend headless del `engine`: graba la corrida a un PNG animado (APNG, todo
+color) reusando el escritor de chunks de PNG, sin cuantización de paleta. El core
+es headless; este lo consume sin acoplarse (el engine no lo importa).
 
-- `TkWindow`  ventana en vivo (tkinter, stdlib): dibuja el framebuffer y manda
-              los clicks/teclas de vuelta al engine (advance).
-- `write_apng` / `record`  graba la corrida a un PNG animado (APNG, todo color),
-              para ver la animación sin una pantalla — reusa el escritor de chunks
-              de PNG, sin cuantización de paleta.
+Los frentes *interactivos* (ventana en vivo `play` y el banco de pruebas
+`testbench`) viven en la rama `interactive-frontend`, desacoplados de la solución.
 
-  python -m znt play   <disc> <scene>              # ventana en vivo
   python -m znt record <disc> <scene> <out.apng>   # graba a APNG
 """
-import sys, zlib, struct, base64, time
+import zlib, struct
 
 
 # --- APNG (PNG animado, RGB, sin cuantizar) ---------------------------------
@@ -87,55 +84,7 @@ def record(engine, scene, path, fps=15, hold_ms=500, anim_ms=750, max_frames=90,
     return write_apng([s[0] for s in shrunk], fw, fh, path, delay_ms=dt)
 
 
-# --- ventana en vivo (tkinter) ----------------------------------------------
-class TkWindow:
-    """Frontend en vivo. Requiere un display. No lo importa el engine."""
-    def __init__(self, engine, scale=1, fps=60):
-        self.e = engine; self.scale = scale; self.dt = 1000 // fps
-        self._img = None; self._last = None
-
-    def _present(self, root, canvas, item):
-        import tkinter as tk
-        fb = self.e.frame()
-        self._img = tk.PhotoImage(data=base64.b64encode(fb.png_bytes()))
-        if self.scale > 1:
-            self._img = self._img.zoom(self.scale)
-        canvas.itemconfig(item, image=self._img)
-
-    def run(self, scene):
-        import tkinter as tk
-        self.e.load(scene)
-        root = tk.Tk(); root.title("znt engine")
-        W, H = self.e.W * self.scale, self.e.H * self.scale
-        canvas = tk.Canvas(root, width=W, height=H, highlightthickness=0, bg="black")
-        canvas.pack()
-        item = canvas.create_image(0, 0, anchor="nw")
-
-        def click(_=None):
-            if self.e.waiting and not self.e.animating():
-                self.e.advance()
-        root.bind("<Button-1>", click)
-        root.bind("<space>", click)
-        root.bind("<Return>", click)
-        root.bind("<Escape>", lambda _: root.destroy())
-
-        def loop():
-            if self.e.done:
-                return
-            self.e.tick(self.dt)
-            self._present(root, canvas, item)
-            root.after(self.dt, loop)
-        loop()
-        root.mainloop()
-
-
-# --- entradas ---------------------------------------------------------------
-def play(disc_path, scene, scale=1):
-    import znt
-    from .engine import Engine
-    TkWindow(Engine(znt.open(disc_path)), scale=int(scale)).run(int(scene))
-
-
+# --- entrada ----------------------------------------------------------------
 def record_cli(disc_path, scene, out):
     import znt
     from .engine import Engine

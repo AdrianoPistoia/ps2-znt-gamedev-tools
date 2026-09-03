@@ -53,15 +53,12 @@ El engine se saca en tres capas apiladas. Este repo cubre la **2** y la **2b**.
   solas por `next`.
 
   ```sh
-  python3 -m znt play   iso 1000              # ventana en vivo (click/espacio avanza)
   python3 -m znt record iso 1000 out.apng     # graba la corrida a un PNG animado
-  python3 -m znt testbench iso 1000           # banco de pruebas: anima capas en vivo
   ```
 
-  El **banco de pruebas** (`testbench`) corre el engine real y deja inyectar
-  animaciones en vivo sobre las capas de la escena (elegís capa + curva o acción +
-  parámetros y lo ves moverse), con un inspector del estado de cada capa. Su núcleo
-  `Bench` es headless y guionable (sin tkinter).
+  Los **frentes interactivos** (ventana en vivo `play` y el banco de pruebas
+  `testbench`, que corre el engine real e inyecta animaciones en vivo sobre las
+  capas) viven desacoplados en la rama [`interactive-frontend`](../../tree/interactive-frontend).
 
   Falta para runtime completo: los módulos de animación `LayerModule` (curvas
   accel/decel/wave, no solo tween lineal), audio, y entrada más allá de avanzar.
@@ -177,8 +174,8 @@ znt/            el SDK (paquete importable, stdlib)
   sqrt.py       runtime del código transpilado (objetos, corrutinas)
   sqrun.py      corre una escena real y saca frames
   engine.py     runtime en vivo headless (animación + corrutina de escena)
-  frontends.py  frontends del engine: ventana tkinter + export APNG
-  testbench.py  banco de pruebas: corre el engine y anima capas en vivo
+  frontends.py  frontend headless del engine: export a APNG
+                (los frentes interactivos van en la rama interactive-frontend)
   # capa 3 — autoría
   vn.py         DSL .vn -> player HTML
 docs/engine_api.md   catálogo de la API del engine (capa 2b)

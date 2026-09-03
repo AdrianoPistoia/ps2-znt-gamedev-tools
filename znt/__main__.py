@@ -10,7 +10,7 @@
 import os, sys
 
 from . import (container, codec, tim2, font, scriptscan, render, sqparse,
-               sqtranspile, sqrt, sqrun, vn, engine, frontends, testbench)
+               sqtranspile, sqrt, sqrun, vn, engine, frontends)
 
 
 def extract(hd, bn, outdir, ext=".bin"):
@@ -33,7 +33,7 @@ def extract(hd, bn, outdir, ext=".bin"):
 
 def demo(*a):
     for m in (codec, container, tim2, font, scriptscan, render, sqparse, sqrt,
-              sqtranspile, sqrun, vn, engine, frontends, testbench):
+              sqtranspile, sqrun, vn, engine, frontends):
         print(f"{m.__name__}:", end=" ")
         m.demo()
 
@@ -56,12 +56,8 @@ def main(argv):
         return sqrun.cli(rest)
     if group == "vn":
         return vn.cli(rest)
-    if group == "play":
-        return frontends.play(*rest)
     if group == "record":
         return frontends.record_cli(*rest)
-    if group == "testbench":
-        return testbench.cli(rest)
     if group == "container":
         return {"unpack": container.unpack, "pack": container.pack,
                 "info": container.info, "demo": container.demo}[rest[0]](*rest[1:])
