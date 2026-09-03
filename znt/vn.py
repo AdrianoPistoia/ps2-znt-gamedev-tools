@@ -76,11 +76,13 @@ def _step(line, chars):
         parts = arg.split()
         cid = parts[0]; pos = "center"; step = {"op": "show", "id": cid}
         for p in parts[1:]:
-            if "=" in p:                       # x=.. y=.. z=.. : posición libre y orden Z
+            if "=" in p:                       # x/y/z/zoom/opacity + tint : capa
                 k, v = p.split("=", 1)
-                if k in ("x", "y", "z", "zoom"):
+                if k in ("x", "y", "z", "zoom", "opacity"):
                     try: step[k] = int(v)
                     except ValueError: pass
+                elif k == "tint":
+                    step["tint"] = v
             else:
                 pos = p
         step["pos"] = pos
@@ -188,6 +190,8 @@ def _step_text(s):
         if "y" in s: t += f" y={s['y']}"
         if "z" in s: t += f" z={s['z']}"
         if "zoom" in s: t += f" zoom={s['zoom']}"
+        if "opacity" in s: t += f" opacity={s['opacity']}"
+        if "tint" in s: t += f" tint={s['tint']}"
         return t
     if op == "hide": return f"hide {s['id']}"
     if op == "say":

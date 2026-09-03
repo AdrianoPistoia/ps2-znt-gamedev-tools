@@ -237,6 +237,9 @@ def run_editor(path=None):
                 btn(zf, "▼ al fondo", lambda: set_z(False)).pack(side="left", padx=2)
                 cur_zoom = rt.stage[s["id"]].zoom if s["id"] in rt.stage else s.get("zoom", 100)
                 wzm, gzm = entry(str(int(cur_zoom))); field("zoom%", wzm, gzm)
+                cur_op = rt.stage[s["id"]].opacity if s["id"] in rt.stage else s.get("opacity", 100)
+                wop, gop = entry(str(int(cur_op))); field("opac%", wop, gop)
+                wtn, gtn = entry(s.get("tint", "")); field("tinte", wtn, gtn)
                 spr = model["characters"].get(s["id"], {}).get("sprite")
                 lbl(propf, f"sprite: {spr or '(placeholder)'}", bg=PANEL).pack(anchor="w", padx=6)
                 def pick_sprite(cid=s["id"]):
@@ -287,6 +290,12 @@ def run_editor(path=None):
                     if g.get("zoom%", "").strip():
                         try: s["zoom"] = int(g["zoom%"])
                         except ValueError: pass
+                    if g.get("opac%", "").strip():
+                        try: s["opacity"] = int(g["opac%"])
+                        except ValueError: pass
+                    tn = g.get("tinte", "").strip()
+                    if tn: s["tint"] = tn
+                    else: s.pop("tint", None)
             elif op == "say":
                 s["who"] = g["quién"]; s["text"] = g["texto"]
             elif op == "animate":

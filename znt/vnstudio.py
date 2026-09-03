@@ -151,6 +151,7 @@ class VNRuntime:
             l.y = float(s.get("y", 0))
             l.level = int(s["z"]) if "z" in s else 10 + len([k for k in self.stage if k != "bg"])
             l.zoom = float(s.get("zoom", 100)); l._zc = None
+            l.opacity = float(s.get("opacity", 100)); l.tint = s.get("tint")
             l.show = True
         elif op == "hide":
             if s["id"] in self.stage: self.stage[s["id"]].show = False
@@ -254,7 +255,10 @@ class VNRuntime:
             rows = self._drawn(l)
             sx, sy, w, h = self._screen(l, rows)
             ly = render.Layer().loadImage(rows)
-            ly.setPos(sx, sy); ly.setOpacity(l.opacity); ly.draw(fb)
+            ly.setPos(sx, sy); ly.setOpacity(l.opacity)
+            if l.tint:
+                ly.setColor(*(c * 100 // 255 for c in _hex(l.tint)))   # tinte multiplicativo
+            ly.draw(fb)
         return fb
 
 
@@ -291,6 +295,15 @@ def demo():
     assert r3.stage["z"].zoom == 200.0
     sx3, sy3, w3, h3 = r3.layer_rect("z")
     assert (w3, h3) == (400, 600) and sx3 == r3.W // 2 - 200 and sy3 == r3.H - 600, (w3, h3, sx3, sy3)
+    # opacidad y tinte por capa
+    m4 = vn._link_choices(vn.parse('title: t\ncharacter w "W" color=#ffffff\n'
+                                   'scene s\n  bg #000000\n  show w center opacity=50 tint=#0000ff\n  w: h\n  end\n'))
+    r4 = VNRuntime(m4); r4.enter("s")
+    assert r4.stage["w"].opacity == 50.0 and r4.stage["w"].tint == "#0000ff"
+    fb4 = r4.frame(); rw = r4.layer_rect("w")
+    o = ((rw[1] + rw[3]//2) * fb4.w + rw[0] + rw[2]//2) * 3
+    cw = tuple(fb4.buf[o:o+3])
+    assert cw[0] == 0 and cw[1] == 0 and cw[2] > 0, ("tinte azul", cw)   # R,G a 0; B queda
     print("demo OK")
 
 

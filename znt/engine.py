@@ -115,6 +115,7 @@ class LayerState:
         self.x = self.y = 0.0
         self.opacity = 100.0
         self.zoom = 100.0            # escala en % (100 = tamaño original)
+        self.tint = None            # "#rrggbb" multiplicativo, o None
         self.level = 0
         self.show = True
         self.tw = {}                 # prop -> Tween
