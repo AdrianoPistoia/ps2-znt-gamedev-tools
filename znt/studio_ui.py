@@ -40,7 +40,7 @@ def run_editor(path=None):
         model = vn._link_choices(vn.parse(open(path, encoding="utf-8").read()))
         base = os.path.dirname(os.path.abspath(path)); cur = {"path": path}
     else:
-        model = _fresh(); base = os.getcwd(); cur = {"path": None}
+        model = vn.blank_model(); base = os.getcwd(); cur = {"path": None}
     rt = VNRuntime(model, base)
     st = {"scene": model["order"][0], "step": -1, "play": False}
     drag = {"name": None, "ox": 0, "oy": 0, "step": None}
@@ -81,10 +81,31 @@ def run_editor(path=None):
 
     # ---- toolbar ----------------------------------------------------------
     tb = tk.Frame(panel, bg=BG); tb.pack(fill="x")
-    for t, fn in (("▶ Play", lambda: play()), ("↶", lambda: undo()), ("↷", lambda: redo()),
+    for t, fn in (("Nuevo", lambda: new_project()), ("Abrir", lambda: open_project()),
+                  ("▶ Play", lambda: play()), ("↶", lambda: undo()), ("↷", lambda: redo()),
                   ("＋ Personaje", lambda: add_char()), ("Validar", lambda: do_validate()),
                   ("Guardar .vn", lambda: save()), ("Exportar HTML", lambda: export())):
         btn(tb, t, fn).pack(side="left", padx=2)
+
+    def _load_model(nm, path, nb):
+        nonlocal base
+        model.clear(); model.update(nm)
+        base = nb; rt.base = nb; rt.invalidate()
+        hist["undo"].clear(); hist["redo"].clear()
+        cur["path"] = path
+        st["scene"] = model["order"][0]; st["step"] = -1; st["play"] = False
+        root.title(f"znt · VN Studio · {os.path.basename(path) if path else 'nueva'}")
+        refresh_all()
+
+    def new_project():
+        if messagebox.askyesno("Nuevo", "¿Descartar el proyecto actual?"):
+            _load_model(vn.blank_model(), None, os.getcwd())
+
+    def open_project():
+        p = filedialog.askopenfilename(filetypes=[("VN", "*.vn")])
+        if p:
+            m2 = vn._link_choices(vn.parse(open(p, encoding="utf-8").read()))
+            _load_model(m2, p, os.path.dirname(os.path.abspath(p)))
 
     def do_validate():
         probs = vn.validate(model, base)

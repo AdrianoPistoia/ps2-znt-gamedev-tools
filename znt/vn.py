@@ -158,6 +158,14 @@ def _link_choices(model):
     return model
 
 
+def blank_model(title="Nueva VN"):
+    """Proyecto mínimo válido para arrancar en el editor."""
+    return {"title": title,
+            "characters": {"narrator": {"name": "", "color": "#cccccc"}},
+            "scenes": {"inicio": [{"op": "end"}]},
+            "order": ["inicio"], "start": "inicio"}
+
+
 _IMG_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}
 
 
@@ -562,6 +570,12 @@ def _ops_selfcheck():
         open(_os.path.join(d, f), "w").close()
     assert list_assets(d) == ["a.png", "b.jpg"], list_assets(d)
     assert list_assets(_os.path.join(d, "nope")) == []
+    # blank_model: proyecto mínimo válido y round-trip
+    bm = blank_model()
+    assert bm["order"] and bm["start"] == bm["order"][0]
+    assert "narrator" in bm["characters"]
+    assert validate(bm) == []                          # arranca sin problemas
+    assert list(_link_choices(parse(to_text(bm)))["scenes"]) == bm["order"]
 
 
 def demo():
