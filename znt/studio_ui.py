@@ -100,6 +100,8 @@ def run_editor(path=None):
     btn(sc_btns, "＋ escena", lambda: add_scene()).pack(side="left", padx=2)
     btn(sc_btns, "duplicar", lambda: dup_scene()).pack(side="left", padx=2)
     btn(sc_btns, "renombrar", lambda: rename_scene()).pack(side="left", padx=2)
+    btn(sc_btns, "↑", lambda: move_scene_ui(-1)).pack(side="left")
+    btn(sc_btns, "↓", lambda: move_scene_ui(1)).pack(side="left")
 
     # ---- pasos ------------------------------------------------------------
     lbl(panel, "Pasos de la escena").pack(anchor="w", pady=(10, 0))
@@ -375,6 +377,11 @@ def run_editor(path=None):
         snapshot()
         model["characters"][cid] = {"name": name, "color": color}
         build_props()
+
+    def move_scene_ui(d):
+        snapshot()
+        if vn.move_scene(model, st["scene"], d):
+            refresh_all()
 
     def dup_scene():
         snapshot()

@@ -212,6 +212,15 @@ def duplicate_step(steps, i):
     steps.insert(i + 1, copy.deepcopy(steps[i]))
 
 
+def move_scene(model, sid, delta):
+    """Mueve una escena en el orden. False si queda fuera de rango."""
+    o = model["order"]; i = o.index(sid); j = i + delta
+    if 0 <= j < len(o):
+        o[i], o[j] = o[j], o[i]
+        return True
+    return False
+
+
 def rename_character(model, old, new):
     """Renombra un personaje y reapunta todas sus referencias. False si no aplica."""
     chars = model["characters"]
@@ -528,6 +537,12 @@ def _ops_selfcheck():
     stp = [{"op": "end"}]
     duplicate_step(stp, 0)
     assert len(stp) == 2 and stp[0] == stp[1] and stp[0] is not stp[1]
+    # move_scene: reordena en order, respeta bordes
+    om = _link_choices(parse('title: t\nscene a\n  end\nscene b\n  end\nscene c\n  end\n'))
+    assert om["order"] == ["a", "b", "c"]
+    assert move_scene(om, "a", 1) and om["order"] == ["b", "a", "c"]
+    assert move_scene(om, "a", -1) and om["order"] == ["a", "b", "c"]
+    assert move_scene(om, "a", -1) is False and move_scene(om, "c", 1) is False
 
 
 def demo():
