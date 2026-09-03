@@ -93,6 +93,8 @@ def run_window(disc, scene=None):
 
     b = Bench(disc)
     dt = 33   # ~30fps
+    dirty = {"f": True}                     # pedir un re-render tras cada control
+    def mark(): dirty["f"] = True
 
     root = tk.Tk(); root.title("znt · banco de pruebas")
     root.configure(bg="#0d1017")
@@ -123,11 +125,11 @@ def run_window(disc, scene=None):
 
     def load():
         try:
-            b.load(int(scene_var.get()), jump=jump_var.get()); refresh_layers()
+            b.load(int(scene_var.get()), jump=jump_var.get()); refresh_layers(); mark()
         except Exception as ex:
             status_var.set(f"error: {ex}")
-    def adv(): b.advance(); refresh_layers()
-    def rst(): b.reset(); refresh_layers()
+    def adv(): b.advance(); refresh_layers(); mark()
+    def rst(): b.reset(); refresh_layers(); mark()
 
     r = row(right)
     for t, fn in (("Cargar", load), ("Avanzar ▸", adv), ("Reset", rst)):
@@ -175,7 +177,7 @@ def run_window(disc, scene=None):
             b.inject_action(layer_var.get(), act_var.get(), vibration=vib.get(),
                             cycle=cyc.get(), distance=140, falltime=cyc.get())
     def stop_action():
-        if layer_var.get(): b.clear_action(layer_var.get())
+        if layer_var.get(): b.clear_action(layer_var.get()); mark()
     r = row(right)
     tk.Button(r, text="Aplicar acción", command=do_action, bg="#1b2440", fg="#cfe3ff",
               relief="flat", font=("monospace", 9), activebackground="#26335c").pack(side="left", padx=2)
@@ -194,11 +196,14 @@ def run_window(disc, scene=None):
 
     def loop():
         b.tick(dt)
-        fb = b.frame()
-        imgref["i"] = tk.PhotoImage(data=base64.b64encode(fb.png_bytes()))
-        canvas.itemconfig(item, image=imgref["i"])
-        status_var.set(b.status)
-        inspector.delete("1.0", "end"); inspector.insert("1.0", "\n".join(b.inspect()))
+        # sólo re-renderiza si algo se mueve o hubo un cambio (dirty). En reposo
+        # el frame no cambia -> no re-encodeamos (60fps ociosos gratis).
+        if b.e.animating() or dirty.pop("f", False):
+            fb = b.frame()
+            imgref["i"] = tk.PhotoImage(data=base64.b64encode(fb.png_bytes(1)))  # nivel 1: encode rápido
+            canvas.itemconfig(item, image=imgref["i"])
+            status_var.set(b.status)
+            inspector.delete("1.0", "end"); inspector.insert("1.0", "\n".join(b.inspect()))
         root.after(dt, loop)
 
     canvas.bind("<Button-1>", lambda e: adv())

@@ -97,7 +97,7 @@ class TkWindow:
     def _present(self, root, canvas, item):
         import tkinter as tk
         fb = self.e.frame()
-        self._img = tk.PhotoImage(data=base64.b64encode(fb.png_bytes()))
+        self._img = tk.PhotoImage(data=base64.b64encode(fb.png_bytes(1)))   # nivel 1: encode rápido
         if self.scale > 1:
             self._img = self._img.zoom(self.scale)
         canvas.itemconfig(item, image=self._img)
@@ -111,9 +111,10 @@ class TkWindow:
         canvas.pack()
         item = canvas.create_image(0, 0, anchor="nw")
 
+        self._dirty = True
         def click(_=None):
             if self.e.waiting and not self.e.animating():
-                self.e.advance()
+                self.e.advance(); self._dirty = True
         root.bind("<Button-1>", click)
         root.bind("<space>", click)
         root.bind("<Return>", click)
@@ -123,7 +124,8 @@ class TkWindow:
             if self.e.done:
                 return
             self.e.tick(self.dt)
-            self._present(root, canvas, item)
+            if self.e.animating() or self._dirty:   # en reposo no re-renderiza
+                self._present(root, canvas, item); self._dirty = False
             root.after(self.dt, loop)
         loop()
         root.mainloop()
