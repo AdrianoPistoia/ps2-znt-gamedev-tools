@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include <kernel.h>
 #include <gsKit.h>
 #include <dmaKit.h>
@@ -114,9 +115,55 @@ static void draw_text(GSGLOBAL *gs, float x, float y, const char *s, int len, ui
 /* --- capa activa en el stage --- */
 typedef struct {
     int used, chr;
-    int x, y, z, zoom, opacity;
+    float x, y; int z, zoom, opacity;
     GSTEXTURE tex;      /*GSKIT*/  int has_tex;
+    /* animación (mismo modelo que engine.py) */
+    int   tw_active, tw_curve; float tw_from, tw_to, tw_dur, tw_t;      /* tween de x */
+    int   ac_kind, ac_done;    float ac_vib, ac_cycle, ac_dist, ac_time, ac_now, ac_next, ac_ox, ac_oy;
 } Layer;
+
+/* ease() de engine.py: normal t, accel t^2, decel 1-(1-t)^2 */
+static float easef(int curve, float k)
+{
+    if (curve == AN_ACCEL) return k * k;
+    if (curve == AN_DECEL) return 1.0f - (1.0f - k) * (1.0f - k);
+    return k;
+}
+static uint32_t g_rng = 0x2545F491;
+static int rnd_range(int n) { g_rng = g_rng * 1103515245u + 12345u; return n > 0 ? (int)((g_rng >> 16) % (uint32_t)n) : 0; }
+
+/* Action.tick() de engine.py. Para vibrate, ac_cycle se usa como waitTime. */
+static void action_tick(Layer *L, float dt)
+{
+    if (!L->ac_kind || L->ac_done) { L->ac_ox = L->ac_oy = 0; return; }
+    L->ac_now += dt;
+    float w = 2.0f * M_PI * L->ac_now / L->ac_cycle;
+    switch (L->ac_kind) {
+    case AN_WAVE:     L->ac_ox = L->ac_vib * sinf(w); L->ac_oy = 0; break;
+    case AN_WAVEONCE: if (L->ac_now >= L->ac_cycle / 2) { L->ac_done = 1; L->ac_ox = L->ac_oy = 0; }
+                      else { L->ac_ox = L->ac_vib * sinf(M_PI + w); L->ac_oy = 0; } break;
+    case AN_JUMP:     L->ac_ox = 0; L->ac_oy = L->ac_vib * sinf(w) + L->ac_vib; break;
+    case AN_JUMPONCE: if (L->ac_now >= L->ac_cycle / 2) { L->ac_done = 1; L->ac_ox = L->ac_oy = 0; }
+                      else { L->ac_ox = 0; L->ac_oy = L->ac_vib * sinf(M_PI + w) + L->ac_vib; } break;
+    case AN_FALL:     if (L->ac_now >= L->ac_time) { L->ac_done = 1; L->ac_ox = L->ac_oy = 0; }
+                      else { L->ac_ox = 0; L->ac_oy = -L->ac_dist + L->ac_dist * L->ac_now / L->ac_time; } break;
+    case AN_VIBRATE:  if (L->ac_now >= L->ac_next) {
+                          L->ac_ox = rnd_range((int)L->ac_vib) - L->ac_vib / 2;
+                          L->ac_oy = rnd_range((int)L->ac_vib);
+                          L->ac_next += (L->ac_cycle > 0 ? L->ac_cycle : 40);
+                      } break;
+    }
+}
+
+static void layer_tick(Layer *L, float dt)
+{
+    if (L->tw_active) {
+        L->tw_t += dt; float k = L->tw_t / L->tw_dur;
+        if (k >= 1.0f) { k = 1.0f; L->tw_active = 0; }
+        L->x = L->tw_from + (L->tw_to - L->tw_from) * easef(L->tw_curve, k);
+    }
+    action_tick(L, dt);
+}
 
 static VnpDoc doc;
 static Layer layers[MAX_LAYERS];
@@ -178,6 +225,8 @@ static Block advance(GSGLOBAL *gs)
             for (int i = 1; i < MAX_LAYERS; i++) if (!layers[i].used) { slot = i; break; }
             if (slot < 0) break;
             Layer *L = &layers[slot];
+            if (L->has_tex) free(L->tex.Mem);          /* slot reciclado de un hide */
+            memset(L, 0, sizeof(*L));
             L->used = 1; L->chr = s.chr;
             L->x = s.x; L->y = s.y; L->z = s.z; L->zoom = s.zoom; L->opacity = s.opacity;
             VnpChar c; vnp_char(&doc, s.chr, &c);
@@ -188,9 +237,24 @@ static Block advance(GSGLOBAL *gs)
             break;
         case OP_SAY:   blk.kind = 1; blk.step = s; return blk;
         case OP_CHOICE:blk.kind = 2; blk.step = s; return blk;
+        case OP_ANIM: {
+            Layer *L = 0;
+            for (int i = 1; i < MAX_LAYERS; i++) if (layers[i].used && layers[i].chr == s.chr) L = &layers[i];
+            if (!L) break;
+            if (s.an_kind <= AN_MOVE) {                 /* movimiento con curva */
+                int curve = (s.an_kind == AN_MOVE) ? s.an_curve : s.an_kind;
+                L->tw_active = 1; L->tw_from = L->x; L->tw_to = s.an_x;
+                L->tw_dur = s.an_time ? s.an_time : 1; L->tw_t = 0; L->tw_curve = curve;
+            } else {                                    /* action offset */
+                L->ac_kind = s.an_kind; L->ac_done = 0; L->ac_now = 0; L->ac_next = 0;
+                L->ac_vib = s.an_vib; L->ac_cycle = s.an_cycle ? s.an_cycle : 1;
+                L->ac_dist = s.an_dist; L->ac_time = s.an_time ? s.an_time : 1;
+            }
+            break;
+        }
         case OP_GOTO:  return enter_scene(gs, s.target);
         case OP_END:   blk.kind = 3; return blk;
-        default: break; /* anim/bgm/se: siguiente iteración */
+        default: break; /* bgm/se: abajo */
         }
     }
     blk.kind = 3; return blk;
@@ -208,8 +272,8 @@ static void draw_frame(GSGLOBAL *gs, const Block *blk)
             gsKit_TexManager_bind(gs, &L->tex);           /*GSKIT: sube a VRAM este frame*/
             float w = L->tex.Width * L->zoom / 100.0f;
             float h = L->tex.Height * L->zoom / 100.0f;
-            float cx = SCR_W / 2.0f + L->x;                /* centrado en x */
-            float x0 = cx - w / 2.0f, y0 = SCR_H - h + L->y;
+            float cx = SCR_W / 2.0f + L->x + L->ac_ox;     /* centrado en x + offset de acción */
+            float x0 = cx - w / 2.0f, y0 = SCR_H - h + L->y + L->ac_oy;
             uint8_t a = (uint8_t)(L->opacity * 0x80 / 100);
             gsKit_prim_sprite_texture(gs, &L->tex, x0, y0, 0, 0,
                                       x0 + w, y0 + h, L->tex.Width, L->tex.Height,
@@ -280,6 +344,7 @@ int main(void)
             if (hit & PAD_DOWN) g_choice_sel = (g_choice_sel + 1) % blk.step.n_opts;
             if (hit & PAD_CROSS) { blk = enter_scene(gs, blk.step.opt_target[g_choice_sel]); g_choice_sel = 0; }
         }
+        for (int i = 0; i < MAX_LAYERS; i++) if (layers[i].used) layer_tick(&layers[i], 16.0f);  /* ~60fps */
         gsKit_TexManager_nextFrame(gs);
         draw_frame(gs, &blk);
         gsKit_queue_exec(gs); gsKit_sync_flip(gs);
