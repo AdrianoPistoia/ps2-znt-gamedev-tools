@@ -194,6 +194,24 @@ def validate(model, base=None):
     return probs
 
 
+def duplicate_scene(model, sid):
+    """Duplica una escena (contenido deep-copy) con id único, tras la original."""
+    import copy
+    scenes = model["scenes"]
+    base = f"{sid}_copia"; new = base; i = 2
+    while new in scenes:
+        new = f"{base}{i}"; i += 1
+    scenes[new] = copy.deepcopy(scenes[sid])
+    model["order"].insert(model["order"].index(sid) + 1, new)
+    return new
+
+
+def duplicate_step(steps, i):
+    """Inserta una copia del paso i justo después."""
+    import copy
+    steps.insert(i + 1, copy.deepcopy(steps[i]))
+
+
 def rename_character(model, old, new):
     """Renombra un personaje y reapunta todas sus referencias. False si no aplica."""
     chars = model["characters"]
@@ -499,6 +517,17 @@ def _ops_selfcheck():
     stp = mm["scenes"]["s"]
     assert stp[0]["id"] == "y" and stp[1]["who"] == "y" and stp[2]["id"] == "y", stp
     assert rename_character(mm, "nope", "z") is False and rename_character(mm, "y", "y") is False
+    # duplicate_scene: copia con id único, insertada después
+    dm = _link_choices(parse('title: t\ncharacter a "A"\nscene uno\n  a: hola\n  end\n'))
+    nid = duplicate_scene(dm, "uno")
+    assert nid in dm["scenes"] and nid != "uno"
+    assert dm["scenes"][nid] == dm["scenes"]["uno"] and dm["scenes"][nid] is not dm["scenes"]["uno"]
+    assert dm["order"].index(nid) == dm["order"].index("uno") + 1
+    assert duplicate_scene(dm, "uno") != nid          # id único la 2da vez
+    # duplicate_step: copia insertada después
+    stp = [{"op": "end"}]
+    duplicate_step(stp, 0)
+    assert len(stp) == 2 and stp[0] == stp[1] and stp[0] is not stp[1]
 
 
 def demo():

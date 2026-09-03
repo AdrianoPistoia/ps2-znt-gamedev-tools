@@ -98,6 +98,7 @@ def run_editor(path=None):
     scenes_lb.pack()
     sc_btns = tk.Frame(panel, bg=BG); sc_btns.pack(fill="x")
     btn(sc_btns, "＋ escena", lambda: add_scene()).pack(side="left", padx=2)
+    btn(sc_btns, "duplicar", lambda: dup_scene()).pack(side="left", padx=2)
     btn(sc_btns, "renombrar", lambda: rename_scene()).pack(side="left", padx=2)
 
     # ---- pasos ------------------------------------------------------------
@@ -111,6 +112,7 @@ def run_editor(path=None):
     btn(addf, "＋ agregar", lambda: add_step()).pack(side="left", padx=2)
     btn(addf, "↑", lambda: move_step(-1)).pack(side="left")
     btn(addf, "↓", lambda: move_step(1)).pack(side="left")
+    btn(addf, "dup", lambda: dup_step()).pack(side="left")
     btn(addf, "borrar", lambda: del_step()).pack(side="left", padx=2)
     btn(addf, "▶ probar", lambda: preview_transition()).pack(side="left", padx=2)
 
@@ -373,6 +375,16 @@ def run_editor(path=None):
         snapshot()
         model["characters"][cid] = {"name": name, "color": color}
         build_props()
+
+    def dup_scene():
+        snapshot()
+        nid = vn.duplicate_scene(model, st["scene"])
+        st["scene"] = nid; st["step"] = -1; refresh_all()
+
+    def dup_step():
+        if 0 <= st["step"] < len(steps()):
+            snapshot()
+            vn.duplicate_step(steps(), st["step"]); st["step"] += 1; refresh_all()
 
     def add_step():
         snapshot()
