@@ -54,6 +54,10 @@ def parse(text):
                 name = pre.strip(); color = color.strip()
             chars[cid] = {"name": name.strip().strip('"'), "color": color}
             continue
+        if line.startswith("sprite "):                # arte del personaje (top-level)
+            _, cid, f = line.split(None, 2)
+            chars.setdefault(cid, {"name": cid, "color": "#ccc"})["sprite"] = f.strip()
+            continue
         if line.startswith("scene "):
             cur = line[6:].strip(); scenes[cur] = []; order.append(cur); continue
         if cur is None:
