@@ -158,6 +158,42 @@ def _link_choices(model):
     return model
 
 
+def validate(model, base=None):
+    """Lista de problemas del proyecto (vacía = OK): referencias a escenas o
+    personajes inexistentes, escenas sin salida, y (si se da `base`) assets faltantes."""
+    probs = []
+    scenes, chars = model["scenes"], model["characters"]
+    for sid in model.get("order", scenes):
+        has_exit = False
+        for s in scenes[sid]:
+            op = s["op"]
+            if op in ("show", "hide", "animate") and s.get("id") not in chars:
+                probs.append(f"escena {sid}: personaje '{s.get('id')}' no existe")
+            if op == "say" and s.get("who") not in chars:
+                probs.append(f"escena {sid}: personaje '{s.get('who')}' no existe")
+            if op == "goto":
+                has_exit = True
+                if s["target"] not in scenes:
+                    probs.append(f"escena {sid}: goto a '{s['target']}' inexistente")
+            if op == "end":
+                has_exit = True
+            if op == "choice":
+                has_exit = True
+                for o in s.get("options", []):
+                    if o["target"] not in scenes:
+                        probs.append(f"escena {sid}: opción a '{o['target']}' inexistente")
+            if base and op == "bg" and s["spec"].get("kind") == "img":
+                if not os.path.exists(os.path.join(base, s["spec"]["file"])):
+                    probs.append(f"escena {sid}: falta el fondo '{s['spec']['file']}'")
+        if not has_exit:
+            probs.append(f"escena {sid}: sin salida (end/goto/choice)")
+    if base:
+        for cid, c in chars.items():
+            if c.get("sprite") and not os.path.exists(os.path.join(base, c["sprite"])):
+                probs.append(f"personaje {cid}: falta el sprite '{c['sprite']}'")
+    return probs
+
+
 def to_text(model):
     """Serializa un modelo (el que devuelve parse) de vuelta a texto .vn."""
     out = [f"title: {model['title']}"]
@@ -429,8 +465,22 @@ scene fin
 """
 
 
+def _ops_selfcheck():
+    # validate: detecta gotos/personajes/dead-ends
+    bad = _link_choices(parse(
+        'title: t\ncharacter a "A"\n'
+        'scene uno\n  show b left\n  goto ninguna\n'
+        'scene dos\n  a: hola\n'))
+    probs = validate(bad)
+    assert any("ninguna" in p for p in probs), probs
+    assert any("'b'" in p for p in probs), probs
+    assert any("dos" in p and "salida" in p for p in probs), probs
+    assert validate(_link_choices(parse(DEMO_VN))) == []
+
+
 def demo():
     import tempfile
+    _ops_selfcheck()
     model = _link_choices(parse(DEMO_VN))
     assert model["start"] == "intro"
     assert model["characters"]["louise"]["color"] == "#ff9ec2"

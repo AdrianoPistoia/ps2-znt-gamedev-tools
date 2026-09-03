@@ -82,9 +82,14 @@ def run_editor(path=None):
     # ---- toolbar ----------------------------------------------------------
     tb = tk.Frame(panel, bg=BG); tb.pack(fill="x")
     for t, fn in (("▶ Play", lambda: play()), ("↶", lambda: undo()), ("↷", lambda: redo()),
-                  ("＋ Personaje", lambda: add_char()),
+                  ("＋ Personaje", lambda: add_char()), ("Validar", lambda: do_validate()),
                   ("Guardar .vn", lambda: save()), ("Exportar HTML", lambda: export())):
         btn(tb, t, fn).pack(side="left", padx=2)
+
+    def do_validate():
+        probs = vn.validate(model, base)
+        messagebox.showinfo("Validación",
+                            "\n".join(probs) if probs else "Sin problemas ✔")
 
     # ---- escenas ----------------------------------------------------------
     lbl(panel, "Escenas").pack(anchor="w", pady=(10, 0))
