@@ -44,6 +44,8 @@ def run_editor(path=None):
     rt = VNRuntime(model, base)
     st = {"scene": model["order"][0], "step": -1, "play": False}
     drag = {"name": None, "ox": 0, "oy": 0, "step": None}
+    import copy
+    hist = {"undo": [], "redo": [], "max": 60}
 
     def _rel(p):
         try: return os.path.relpath(p, base)
@@ -79,7 +81,8 @@ def run_editor(path=None):
 
     # ---- toolbar ----------------------------------------------------------
     tb = tk.Frame(panel, bg=BG); tb.pack(fill="x")
-    for t, fn in (("▶ Play", lambda: play()), ("＋ Personaje", lambda: add_char()),
+    for t, fn in (("▶ Play", lambda: play()), ("↶", lambda: undo()), ("↷", lambda: redo()),
+                  ("＋ Personaje", lambda: add_char()),
                   ("Guardar .vn", lambda: save()), ("Exportar HTML", lambda: export())):
         btn(tb, t, fn).pack(side="left", padx=2)
 
@@ -158,6 +161,31 @@ def run_editor(path=None):
     def refresh_all():
         refresh_scenes(); refresh_steps(); build_props(); refresh_preview()
 
+    # ------------------------------------------------------------------ undo/redo
+    def snapshot():
+        """Guardar el estado antes de una mutación. Llamar ANTES de tocar el modelo."""
+        hist["undo"].append(copy.deepcopy(model)); hist["redo"].clear()
+        if len(hist["undo"]) > hist["max"]:
+            hist["undo"].pop(0)
+
+    def _restore(saved):
+        model.clear(); model.update(copy.deepcopy(saved))   # in-place: rt.model y los closures ven el cambio
+        rt.invalidate()
+        if st["scene"] not in model["scenes"]:
+            st["scene"] = model["order"][0]
+        st["step"] = min(st["step"], len(model["scenes"][st["scene"]]) - 1)
+        refresh_all()
+
+    def undo(_=None):
+        if st["play"] or not hist["undo"]:
+            return
+        hist["redo"].append(copy.deepcopy(model)); _restore(hist["undo"].pop())
+
+    def redo(_=None):
+        if st["play"] or not hist["redo"]:
+            return
+        hist["undo"].append(copy.deepcopy(model)); _restore(hist["redo"].pop())
+
     # ------------------------------------------------------------------ props
     def build_props():
         for w in propf.winfo_children():
@@ -188,6 +216,7 @@ def run_editor(path=None):
             def pick_bg(s=s):
                 p = filedialog.askopenfilename(filetypes=[("imagen", "*.png *.jpg *.jpeg *.webp *.gif")])
                 if p:
+                    snapshot()
                     s["spec"] = {"kind": "img", "file": _rel(p)}; rt.invalidate(); refresh_all()
             btn(propf, "imagen de fondo…", pick_bg).pack(padx=6, pady=2, anchor="w")
         elif op in ("show", "hide"):
@@ -199,6 +228,7 @@ def run_editor(path=None):
                 def pick_sprite(cid=s["id"]):
                     p = filedialog.askopenfilename(filetypes=[("imagen", "*.png *.jpg *.jpeg *.webp *.gif")])
                     if p:
+                        snapshot()
                         model["characters"][cid]["sprite"] = _rel(p); rt.invalidate(); refresh_all()
                 btn(propf, "asignar sprite…", pick_sprite).pack(padx=6, pady=2, anchor="w")
                 lbl(propf, "arrastrá el sprite en el escenario para ubicarlo", bg=PANEL).pack(anchor="w", padx=6)
@@ -227,6 +257,7 @@ def run_editor(path=None):
     def apply_props():
         if not (0 <= st["step"] < len(steps())):
             return
+        snapshot()
         s = steps()[st["step"]]; op = s["op"]
         g = {k: getr() for k, (w, getr) in fields.items()}
         try:
@@ -265,6 +296,7 @@ def run_editor(path=None):
     def add_scene():
         name = simpledialog.askstring("Escena", "id de la nueva escena:", parent=root)
         if name and name not in model["scenes"]:
+            snapshot()
             model["scenes"][name] = []; model["order"].append(name)
             st["scene"] = name; st["step"] = -1; refresh_all()
 
@@ -272,6 +304,7 @@ def run_editor(path=None):
         old = st["scene"]
         name = simpledialog.askstring("Renombrar", "nuevo id:", initialvalue=old, parent=root)
         if name and name != old and name not in model["scenes"]:
+            snapshot()
             model["scenes"][name] = model["scenes"].pop(old)
             model["order"][model["order"].index(old)] = name
             if model.get("start") == old: model["start"] = name
@@ -288,10 +321,12 @@ def run_editor(path=None):
         if not cid: return
         name = simpledialog.askstring("Personaje", "nombre visible:", initialvalue=cid, parent=root) or cid
         color = simpledialog.askstring("Personaje", "color #hex:", initialvalue="#7cc4ff", parent=root) or "#7cc4ff"
+        snapshot()
         model["characters"][cid] = {"name": name, "color": color}
         build_props()
 
     def add_step():
+        snapshot()
         s = _default_step(add_op.get(), model)
         steps().insert(st["step"] + 1 if st["step"] >= 0 else len(steps()), s)
         st["step"] = st["step"] + 1 if st["step"] >= 0 else len(steps()) - 1
@@ -299,11 +334,13 @@ def run_editor(path=None):
 
     def del_step():
         if 0 <= st["step"] < len(steps()):
+            snapshot()
             steps().pop(st["step"]); st["step"] = min(st["step"], len(steps()) - 1); refresh_all()
 
     def move_step(d):
         i = st["step"]; j = i + d
         if 0 <= i < len(steps()) and 0 <= j < len(steps()):
+            snapshot()
             steps()[i], steps()[j] = steps()[j], steps()[i]; st["step"] = j; refresh_all()
 
     def save():
@@ -353,6 +390,7 @@ def run_editor(path=None):
         s = _show_step_for(name)
         if not s:
             return
+        snapshot()                          # un undo por gesto de arrastre
         r = rt.layer_rect(name)
         drag.update(name=name, ox=e.x - r[0], oy=e.y - r[1], step=s)
 
@@ -440,6 +478,9 @@ def run_editor(path=None):
 
     scenes_lb.bind("<<ListboxSelect>>", on_scene)
     steps_lb.bind("<<ListboxSelect>>", on_step)
+    root.bind("<Control-z>", undo)
+    root.bind("<Control-y>", redo)
+    root.bind("<Control-Z>", redo)          # Ctrl+Shift+Z
     root.title(f"znt · VN Studio · {os.path.basename(cur['path']) if cur['path'] else 'nueva'}")
     refresh_all()
     root.mainloop()
