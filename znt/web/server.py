@@ -12,6 +12,9 @@ UI = os.path.join(os.path.dirname(__file__), "ui.html")
 HIST_MAX = 60
 
 
+_NUM = ("x", "y", "z", "zoom", "opacity")
+
+
 class Studio:
     """Estado del editor, agnóstico de UI (lo usa el server; testeable solo)."""
 
@@ -150,13 +153,16 @@ class Studio:
                 self._snapshot()
                 tgt["z"] = ((max(others) + 1) if others else 10) if r.get("front") \
                     else (max(1, min(others) - 1) if others else 10)
-        elif o == "set_layer_pos":
-            # el drag mueve una CAPA: escribe x/y en el `show` de ese personaje.
+        elif o in ("set_layer", "set_layer_pos"):
+            # editar una CAPA (arrastre, handles, tinte) escribe en su `show`,
+            # aunque el paso elegido sea otro más adelante.
             tgt = self._show_of(r.get("id"))
-            if tgt is not None:
+            props = r.get("props") or {k: r[k] for k in ("x", "y") if k in r}
+            if tgt is not None and props:
                 self._snapshot()
-                tgt["x"] = int(round(float(r.get("x", tgt.get("x", 0)))))
-                tgt["y"] = int(round(float(r.get("y", tgt.get("y", 0)))))
+                self._set_props(tgt, {k: int(round(float(v))) if k in _NUM else v
+                                      for k, v in props.items()})
+                self.rt.invalidate()
         elif o == "play":
             self.prt = VNRuntime(self.model, self.base)
             self.prt.enter(r.get("scene") or self.scene)

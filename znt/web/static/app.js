@@ -7,6 +7,8 @@ let S = null;              // estado del servidor
 let SG = null;             // stage actual (layout que manda Python)
 let ASSETS = [], AUDIO = [];
 let SEL = null;            // capa seleccionada (sólo del cliente)
+let GUIDE = "off";
+try { GUIDE = localStorage.getItem("vnsguide") || "off"; } catch (e) {}
 
 const api = {
   model: () => fetch("/api/model").then(r => r.json()),
@@ -107,8 +109,57 @@ function selectLayer(id){
 function markSelection(){
   document.querySelectorAll("#stage .layer").forEach(
     el => el.classList.toggle("sel", el.dataset.id === SEL));
+  const l = SG && SEL ? SG.layers.find(x => x.id === SEL) : null;
+  const f = $("#frame"); f.hidden = !l || !!S.play;
+  if (l && !f.hidden) {
+    const st = VNS.layerStyle(l, SG);
+    Object.assign(f.style, {left: st.left, top: st.top, width: st.width, height: st.height});
+    $("#flabel").textContent =
+      `${l.name}  x${Math.round(l.x)} y${Math.round(l.y)}  ${l.zoom == null ? 100 : l.zoom}%`;
+  }
   $("#m-sel").textContent = SEL ? `⬚ ${SEL}` : "";
 }
+
+/* guías: centro / tercios / zona segura */
+function renderGuides(){
+  const g = VNS.guides(GUIDE), box = $("#guides"); box.innerHTML = "";
+  g.xs.forEach(x => box.insertAdjacentHTML("beforeend",
+    `<div class="g" style="left:${x*100}%;top:0;bottom:0;width:1px"></div>`));
+  g.ys.forEach(y => box.insertAdjacentHTML("beforeend",
+    `<div class="g" style="top:${y*100}%;left:0;right:0;height:1px"></div>`));
+  if (g.rect) box.insertAdjacentHTML("beforeend",
+    `<div class="safe" style="left:${g.rect.x*100}%;top:${g.rect.y*100}%;` +
+    `width:${g.rect.w*100}%;height:${g.rect.h*100}%"></div>`);
+  $("#b-guides").classList.toggle("on", GUIDE !== "off");
+  $("#b-guides").textContent = "⊞ " + (GUIDE === "off" ? "guías" : GUIDE);
+}
+function cycleGuides(){
+  GUIDE = VNS.nextGuide(GUIDE);
+  try { localStorage.setItem("vnsguide", GUIDE); } catch (e) {}
+  renderGuides();
+}
+$("#b-guides").onclick = cycleGuides;
+
+/* handles: arrastrar una esquina cambia el zoom de la capa */
+$("#frame").addEventListener("pointerdown", e => {
+  const h = e.target.closest(".hnd"); if (!h || !SEL) return;
+  const l = SG.layers.find(x => x.id === SEL); if (!l) return;
+  const dir = +h.dataset.h, x0 = e.clientX, z0 = l.zoom == null ? 100 : l.zoom;
+  const scale = SG.w / $("#stagewrap").getBoundingClientRect().width;   // px de pantalla -> stage
+  h.setPointerCapture(e.pointerId);
+  const move = ev => {
+    l.zoom = VNS.resizeZoom({w: l.w, h: l.h, zoom: z0}, dir, (ev.clientX - x0) * scale);
+    const el = document.querySelector(`#stage .layer[data-id="${l.id}"]`);
+    if (el) Object.assign(el.style, VNS.layerStyle(l, SG));
+    markSelection();
+  };
+  const up = () => {
+    h.removeEventListener("pointermove", move); h.removeEventListener("pointerup", up);
+    op({op:"set_layer", id: l.id, props:{zoom: l.zoom}});
+  };
+  h.addEventListener("pointermove", move); h.addEventListener("pointerup", up);
+  e.preventDefault(); e.stopPropagation();
+});
 function renderLayers(){
   const ul = $("#layers"); ul.innerHTML = "";
   const rows = SG ? VNS.outlineRows(SG.layers) : [];
@@ -241,7 +292,7 @@ function renderStage(){
   });
   $("#m-bgm").textContent = SG.bgm ? `♪ ${SG.bgm}` : "";
   $("#vptag").textContent = S.play ? "PLAY" : "";
-  markSelection();
+  markSelection(); renderGuides();
   layoutStage();
 }
 
@@ -432,6 +483,7 @@ addEventListener("keydown", e => {
   else if (e.key === "ArrowLeft") { e.preventDefault(); $("#b-prev").click(); }
   else if (e.key === "ArrowRight") { e.preventDefault(); $("#b-next").click(); }
   else if (e.key === " ") { e.preventDefault(); $("#b-play").click(); }
+  else if (e.key === "g" || e.key === "G") cycleGuides();
 });
 
 /* ---------- arrastrar sprites: 60fps en el cliente, sync al soltar ---------- */
@@ -475,6 +527,7 @@ $("#stage").addEventListener("pointermove", e => {
   }
   drag.l.x = d.x; drag.l.y = d.y;
   Object.assign(drag.el.style, VNS.layerStyle(drag.l, SG));
+  markSelection();
   showGuides(gx, gy);
 });
 

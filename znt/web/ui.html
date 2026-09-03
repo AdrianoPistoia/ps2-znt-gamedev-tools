@@ -76,6 +76,14 @@
       font:700 clamp(10px,3vw,28px) var(--ui)}
   #anim{position:absolute;inset:0;width:100%;height:100%;object-fit:fill;
         background:#05060f;cursor:pointer}
+  #guides{position:absolute;inset:0;pointer-events:none}
+  #guides .g{position:absolute;background:#ffffff26}
+  #guides .safe{position:absolute;border:1px dashed #ffffff40}
+  #frame{position:absolute;outline:1px solid var(--acc2);pointer-events:none}
+  #frame .hnd{position:absolute;width:8px;height:8px;background:var(--acc2);
+              border-radius:2px;pointer-events:auto;cursor:nwse-resize}
+  #flabel{position:absolute;left:0;top:-17px;color:#04121a;background:var(--acc2);
+          font:10px/1 var(--mono);padding:2px 4px;border-radius:2px;white-space:nowrap}
   #gv{position:absolute;top:0;bottom:0;border-left:1px dashed var(--acc2);pointer-events:none}
   #gh{position:absolute;left:0;right:0;border-top:1px dashed var(--acc);pointer-events:none}
   #dbox{position:absolute;left:3%;right:3%;bottom:4%;min-height:22%;
@@ -172,10 +180,21 @@
         <div id="stage"></div>
         <div id="dbox" hidden><div id="who"></div><div id="text"></div></div>
         <div id="choices" hidden></div>
+        <div id="guides"></div>
+        <div id="frame" hidden>
+          <span class="hnd" data-h="-1" style="left:-4px;top:-4px"></span>
+          <span class="hnd" data-h="1"  style="right:-4px;top:-4px"></span>
+          <span class="hnd" data-h="-1" style="left:-4px;bottom:-4px"></span>
+          <span class="hnd" data-h="1"  style="right:-4px;bottom:-4px"></span>
+          <span id="flabel"></span>
+        </div>
         <div id="gv" hidden></div><div id="gh" hidden></div>
         <img id="anim" hidden alt="">
       </div>
-      <div id="vpbar"><span id="vptag"></span></div>
+      <div id="vpbar">
+        <button id="b-guides" title="Guías: centro / tercios / zona segura (G)">⊞ guías</button>
+        <span class="grow"></span><span id="vptag"></span>
+      </div>
     </main>
 
     <div class="vsplit" data-pane="ins"></div>

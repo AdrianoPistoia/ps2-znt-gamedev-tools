@@ -60,6 +60,25 @@
              y: (fy - grabDY) - st.h + h };
   }
 
+  /* --- viewport --- */
+
+  /* Arrastrar un handle de esquina (dir: 1 der, -1 izq). La capa está centrada
+     en su x, así que el ancho crece del lado opuesto también: 2*dx. */
+  function resizeZoom(l, dir, dx) {
+    const z = (l.zoom == null ? 100 : l.zoom);
+    return Math.max(10, Math.min(400, Math.round((l.w * z / 100 + 2 * dir * dx) / l.w * 100)));
+  }
+
+  /* Guías del viewport, en fracciones del stage. */
+  const GUIDES = ["off", "center", "thirds", "safe"];
+  function guides(kind) {
+    if (kind === "center") return { xs: [0.5], ys: [0.5], rect: null };
+    if (kind === "thirds") return { xs: [1/3, 2/3], ys: [1/3, 2/3], rect: null };
+    if (kind === "safe")   return { xs: [], ys: [], rect: { x: .05, y: .05, w: .9, h: .9 } };
+    return { xs: [], ys: [], rect: null };
+  }
+  const nextGuide = k => GUIDES[(GUIDES.indexOf(k) + 1) % GUIDES.length];
+
   /* --- outliner --- */
 
   /* Capas del escenario, al frente primero. */
@@ -119,5 +138,5 @@
   }
 
   return { layerStyle, bgStyle, stageXY, snap, snapTargets, dragTo, POS,
-           clampPane, fitRect, outlineRows, showStepIndex, LANES, laneOf, clipRect, dropIndex };
+           clampPane, fitRect, resizeZoom, guides, nextGuide, GUIDES, outlineRows, showStepIndex, LANES, laneOf, clipRect, dropIndex };
 });
