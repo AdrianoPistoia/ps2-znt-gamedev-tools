@@ -4,9 +4,9 @@ en vivo con el engine, lista de escenas y de pasos, edición de propiedades, Pla
 y export a `.vn` + player HTML. No lo importa el runtime (frontend desacoplado)."""
 import os, base64
 
-from . import vn
-from .vnstudio import VNRuntime, POS, ACTIONS
-from .engine import CURVES
+from .. import vn
+from ..vnstudio import VNRuntime, POS, ACTIONS
+from ..engine import CURVES
 
 STEP_OPS = ["bg", "show", "hide", "say", "animate", "bgm", "se", "choice", "goto", "end"]
 AUDIO_EXTS = (".ogg", ".mp3", ".wav", ".m4a")

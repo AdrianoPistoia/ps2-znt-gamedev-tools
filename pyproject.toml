@@ -11,8 +11,14 @@ requires-python = ">=3.9"
 license = { text = "MIT" }
 dependencies = []                # stdlib puro; la GUI usa tkinter (viene con CPython)
 
+[project.optional-dependencies]
+# El front interactivo (znt.gui) es opcional: no agrega dependencias externas
+# (usa tkinter de la stdlib) y se puede omitir borrando el paquete znt/gui/.
+gui = []
+
 [project.scripts]
 znt = "znt.__main__:cli_entry"
 
 [tool.setuptools]
-packages = ["znt"]
+# Core headless = "znt"; front interactivo = "znt.gui" (separable/borrable).
+packages = ["znt", "znt.gui"]

@@ -13,7 +13,7 @@ El núcleo (`Bench`) es headless y no importa tkinter: se puede guionar sin UI.
 """
 import sys
 
-from .engine import Engine, Action, CURVES
+from ..engine import Engine, Action, CURVES
 
 ACTIONS = ("wave", "waveonce", "jump", "jumponce", "fall", "vibrate")
 

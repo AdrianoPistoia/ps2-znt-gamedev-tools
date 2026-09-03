@@ -330,9 +330,5 @@ def demo():
     print("demo OK")
 
 
-if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] != "demo":
-        from .studio_ui import run_editor
-        run_editor(sys.argv[1] if sys.argv[1] != "new" else None)
-    else:
-        demo()
+if __name__ == "__main__":       # el runtime es headless; el editor va en `znt studio`
+    demo()
