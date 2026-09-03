@@ -1,0 +1,2 @@
+[console_scripts]
+znt = znt.__main__:cli_entry

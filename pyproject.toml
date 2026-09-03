@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ps2-znt-gamedev-tools"
+version = "0.1.0"
+description = "SDK de ingeniería inversa + VN Studio para el engine de Zero no Tsukaima (PS2, SLPS-25709)"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+dependencies = []                # stdlib puro; la GUI usa tkinter (viene con CPython)
+
+[project.scripts]
+znt = "znt.__main__:cli_entry"
+
+[tool.setuptools]
+packages = ["znt"]

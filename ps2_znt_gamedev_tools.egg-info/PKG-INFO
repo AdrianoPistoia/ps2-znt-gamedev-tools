@@ -1,3 +1,11 @@
+Metadata-Version: 2.4
+Name: ps2-znt-gamedev-tools
+Version: 0.1.0
+Summary: SDK de ingeniería inversa + VN Studio para el engine de Zero no Tsukaima (PS2, SLPS-25709)
+License: MIT
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+
 # ps2-znt-gamedev-tools
 
 SDK de ingeniería inversa para el engine de **Zero no Tsukaima: Koakuma to
@@ -7,15 +15,6 @@ motor da a los scripts — la base para reimplementar el engine fuera de la cons
 
 Todo es **Python de stdlib, sin dependencias**. Cada módulo trae un self-check
 sintético que no depende de tener el juego: `python3 -m znt demo`.
-
-**Instalación** (opcional; deja el comando `znt` en el PATH):
-
-```sh
-pip install -e .          # editable; requiere Python 3.9+ (tkinter para el editor)
-znt demo                  # desde cualquier carpeta
-znt studio               # abre VN Studio
-```
-Sin instalar: `python3 -m znt <grupo> ...` desde la raíz del repo.
 
 > **Legal.** Herramientas y notas de formato para interoperabilidad. No se
 > distribuye ningún asset del juego; el `.gitignore` los excluye. Cualquier

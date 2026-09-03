@@ -75,5 +75,10 @@ def main(argv):
     sys.exit(__doc__)
 
 
+def cli_entry():
+    """Punto de entrada del comando `znt` (console_scripts)."""
+    main(sys.argv[1:])
+
+
 if __name__ == "__main__":
     main(sys.argv[1:])
