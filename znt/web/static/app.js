@@ -119,7 +119,35 @@ function renderLists(){
     : `${S.scene} · paso ${S.step < 0 ? "—" : S.step + 1}/${steps.length}`;
   $("#m-op").textContent = S.step >= 0 && steps[S.step] ? steps[S.step].op : "";
   $("#m-path").textContent = S.path || "(sin guardar)";
+  $("#m-path").classList.toggle("dirty", !!S.dirty);
+  $("#m-path").title = S.dirty ? "hay cambios sin guardar (Ctrl+S)" : "";
+  document.title = (S.dirty ? "● " : "") + "VN Studio";
+  renderChars();
   $("#b-play").classList.toggle("on", !!S.play);
+}
+
+/* ---------- personajes del proyecto (roster) ---------- */
+function renderChars(){
+  const ul = $("#chars"); ul.innerHTML = "";
+  const ids = Object.keys(S.model.characters).filter(c => c !== "narrator");
+  ids.forEach(id => {
+    const c = S.model.characters[id], li = document.createElement("li");
+    li.innerHTML = `<span class="chip" style="background:${c.color || "#888"}"></span>` +
+      `<span>${c.name || id}</span><span class="n">${id}</span><span class="grow"></span>` +
+      `<span class="x" title="borrar personaje">🗑</span>`;
+    li.title = "doble click: renombrar id";
+    li.ondblclick = async () => {
+      const n = await askOne("Renombrar personaje", "nuevo id", id);
+      if (n && n !== id) op({op:"rename_char", old:id, new:n});
+    };
+    li.querySelector(".x").onclick = async e => {
+      e.stopPropagation();
+      if (await ask("Borrar personaje", [], `¿Borrar a "${c.name || id}"? Si está en algún paso, no se deja.`))
+        op({op:"del_char", id});
+    };
+    ul.appendChild(li);
+  });
+  $("#m-chars").textContent = ids.length || "";
 }
 
 /* ---------- capas del escenario ---------- */
@@ -636,7 +664,8 @@ function ask(title, fields, msg){
   });
   $("#dlg-ok").textContent = fields.length ? "Aceptar" : "Sí";
   dlg.showModal();
-  const first = body.querySelector("input,select"); if (first) first.focus();
+  const first = body.querySelector("input,select");
+  (first || $("#dlg-ok")).focus();                  // sin campos: Enter = Sí, no Cancelar
   return new Promise(res => {
     dlg.addEventListener("close", () => {
       if (dlg.returnValue !== "ok") return res(null);
@@ -686,6 +715,10 @@ $("#b-scene-add").onclick = async () => {
 $("#b-scene-dup").onclick = () => op({op:"dup_scene"});
 $("#b-scene-ren").onclick = async () => {
   const n = await askOne("Renombrar escena", "nuevo id", S.scene); if(n) op({op:"rename_scene", name:n}); };
+$("#b-scene-del").onclick = async () => {
+  if (await ask("Borrar escena", [], `¿Borrar la escena "${S.scene}" con sus ${stepCount()} pasos?`))
+    op({op:"del_scene"});
+};
 $("#b-scene-up").onclick = () => op({op:"move_scene", delta:-1});
 $("#b-scene-dn").onclick = () => op({op:"move_scene", delta:1});
 $("#b-step-add").onclick = () => op({op:"add_step", kind: $("#newop").value});
@@ -797,6 +830,8 @@ const endDrag = async () => {
 };
 $("#stage").addEventListener("pointerup", endDrag);
 $("#stage").addEventListener("pointercancel", endDrag);
+
+addEventListener("beforeunload", e => { if (S && S.dirty) { e.preventDefault(); e.returnValue = ""; } });
 
 (async () => {
   S = await api.model();

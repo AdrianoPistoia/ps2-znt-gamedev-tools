@@ -354,6 +354,43 @@ async function main() {
     await settle();
   };
 
+  flow("cambios-sin-guardar", async () => {
+    await key("s", CTRL);
+    assert.ok(!(await js("document.querySelector('#m-path').classList.contains('dirty')")), "guardado = limpio");
+    await click("#b-step-add"); 
+    assert.ok(await js("document.querySelector('#m-path').classList.contains('dirty')"), "editar marca ●");
+    assert.ok((await js("document.title")).startsWith("●"), "y el título de la pestaña también");
+    assert.ok(fs.existsSync(VN.replace(/\.vn$/, ".autosave.vn")), "hay autosave");
+    await key("s", CTRL);
+    assert.ok(!(await js("document.querySelector('#m-path').classList.contains('dirty')")), "Ctrl+S limpia");
+    assert.ok(!fs.existsSync(VN.replace(/\.vn$/, ".autosave.vn")), "y borra el autosave");
+    await key("z", CTRL);
+  });
+
+  flow("borrar-escena", async () => {
+    await click("#b-scene-add"); await type("basura"); await key("Enter"); await settle();
+    assert.strictEqual(await js("S.scene"), "basura");
+    await click("#b-scene-del");
+    assert.ok(await isOpen("#dlg"), "pide confirmación");
+    await key("Enter"); await settle();
+    assert.ok(!(await text("#scenes")).includes("basura"), "la escena se fue");
+    assert.ok(await js("S.model.order.includes(S.scene)"), "quedó otra seleccionada");
+  });
+
+  flow("roster-personajes", async () => {
+    assert.ok((await text("#chars")).includes("Ana"), "el roster lista a los personajes");
+    await click("#b-char"); await type("tmp"); await key("Enter"); await settle();
+    assert.ok((await text("#chars")).includes("tmp"), "el nuevo aparece");
+    const ok = await js(`(() => { const li = [...document.querySelectorAll("#chars li")].find(l => l.textContent.includes("tmp")); li.querySelector(".x").click(); return !!li; })()`);
+    assert.ok(ok); await settle();
+    await key("Enter"); await settle();
+    assert.ok(!(await text("#chars")).includes("tmp"), "borrado");
+    await js(`(() => { const li = [...document.querySelectorAll("#chars li")].find(l => l.textContent.includes("Ana")); li.querySelector(".x").click(); })()`);
+    await settle(); await key("Enter"); await settle();
+    assert.ok((await text("#chars")).includes("Ana"), "Ana está en uso: no se borra");
+    assert.ok((await text("#toast")).includes("paso"), "y se dice por qué: " + await text("#toast"));
+  });
+
   /* ---------- correr ---------- */
   const names = Object.keys(flows).filter(n => !ONLY.length || ONLY.includes(n));
   let fails = 0;

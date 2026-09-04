@@ -66,6 +66,9 @@
   ul.list li:hover{background:#222736}
   ul.list li.sel{background:var(--sel);color:var(--selink);box-shadow:inset 2px 0 0 var(--acc)}
   ul.list li .n{color:var(--mut);font-size:11px}
+  ul.list li .x{opacity:0;padding:0 4px;color:var(--mut)}
+  ul.list li:hover .x{opacity:1} ul.list li .x:hover{color:#ff9d9d}
+  #m-path.dirty::before{content:"● ";color:var(--acc)}
   .bar{display:flex;gap:4px;padding:5px 6px;border-top:1px solid var(--edge);background:var(--panel2)}
 
   /* ---------- viewport ---------- */
@@ -230,12 +233,15 @@
         <button id="b-scene-add" class="ico" title="Nueva escena">＋</button>
         <button id="b-scene-dup" class="ico" title="Duplicar">⧉</button>
         <button id="b-scene-ren" class="ico" title="Renombrar">✎</button>
+        <button id="b-scene-del" class="ico" title="Borrar escena">🗑</button>
         <span class="grow"></span>
         <button id="b-scene-up" class="ico" title="Subir">↑</button>
         <button id="b-scene-dn" class="ico" title="Bajar">↓</button>
       </div>
       <div class="phead">Capas<span class="grow"></span><span id="m-layers"></span></div>
       <div class="pbody"><ul class="list" id="layers"></ul></div>
+      <div class="phead">Personajes<span class="grow"></span><span id="m-chars"></span></div>
+      <div class="pbody" style="flex:0 1 auto;max-height:26%"><ul class="list" id="chars"></ul></div>
     </aside>
 
     <div class="vsplit" data-pane="out"></div>

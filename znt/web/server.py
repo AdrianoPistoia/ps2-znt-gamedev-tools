@@ -22,6 +22,7 @@ class Studio:
 
     def __init__(self, path=None):
         self.problems = []
+        self.dirty = False
         if path and not os.path.exists(path):        # typo en la ruta: decilo
             self.problems.append(f"no existe {path}: arranco un proyecto nuevo")
             sys.stderr.write(f"⚠ no existe {path}: arranco un proyecto nuevo\n")
@@ -33,6 +34,7 @@ class Studio:
             self.model = vn.blank_model()
             self.base = os.getcwd()
             self.path = None
+        self._autosave_notice()
         self.rt = VNRuntime(self.model, self.base)   # render/animación reales
         self.scene = self.model["order"][0]
         self.step = -1
@@ -43,7 +45,25 @@ class Studio:
     def steps(self):
         return self.model["scenes"][self.scene]
 
+    def _autosave_notice(self):
+        """Si quedó un autosave más nuevo que el .vn (se cerró sin guardar), avisar."""
+        a = autosave_path(self.path) if self.path else None
+        try:
+            if a and os.path.getmtime(a) > os.path.getmtime(self.path):
+                self.problems.append(f"hay un autosave más nuevo que el proyecto: {a} "
+                                     f"(abrilo si perdiste cambios)")
+        except OSError:
+            pass
+
+    def _autosave(self):
+        if self.path and self.dirty:
+            try:
+                open(autosave_path(self.path), "w", encoding="utf-8").write(vn.to_text(self.model))
+            except OSError:
+                pass
+
     def _snapshot(self):
+        self.dirty = True
         self.undo.append(copy.deepcopy(self.model)); self.redo.clear()
         if len(self.undo) > HIST_MAX:
             self.undo.pop(0)
@@ -60,6 +80,7 @@ class Studio:
                 "model": self.model, "scene": self.scene, "step": self.step,
                 "play": self.play_state() if self.prt else None,
                 "path": self.path, "base": os.path.abspath(self.base or "."),
+                "dirty": self.dirty,
                 "problems": self.problems,
                 "step_ops": vn.STEP_OPS,
                 "can_undo": bool(self.undo), "can_redo": bool(self.redo)}
@@ -115,6 +136,23 @@ class Studio:
             name = (r.get("name") or "").strip()
             if name and name not in self.model["scenes"]:
                 self._snapshot(); self._rename_scene(self.scene, name); self.scene = name
+        elif o == "del_scene":
+            if len(self.model["order"]) <= 1:
+                st = self.state(); st["error"] = "no se puede borrar la última escena"; return st
+            self._snapshot()
+            del self.model["scenes"][self.scene]; self.model["order"].remove(self.scene)
+            self.scene = self.model["order"][0]; self.step = -1
+        elif o == "del_char":
+            cid = r.get("id")
+            if cid == "narrator" or cid not in self.model["characters"]:
+                st = self.state(); st["error"] = f"no se puede borrar {cid}"; return st
+            uses = sum(1 for steps in self.model["scenes"].values() for x in steps
+                       if x.get("id") == cid or x.get("who") == cid)
+            if uses:
+                st = self.state()
+                st["error"] = f"{cid} está en {uses} paso(s): sacalo de ahí antes de borrarlo"
+                return st
+            self._snapshot(); del self.model["characters"][cid]
         elif o == "add_char":
             cid = (r.get("id") or "").strip()
             if cid and cid not in self.model["characters"]:
@@ -210,11 +248,15 @@ class Studio:
                 self._load(m, path, os.path.dirname(os.path.abspath(path)))
         elif o == "new_project":
             self._load(vn.blank_model(), None, self.base)
+        elif o == "undo" and self.undo:
+            self.dirty = True
+            self.redo.append(copy.deepcopy(self.model)); self._restore(self.undo.pop())
         elif o == "undo":
             if self.undo:
                 self.redo.append(copy.deepcopy(self.model)); self._restore(self.undo.pop())
         elif o == "redo":
             if self.redo:
+                self.dirty = True
                 self.undo.append(copy.deepcopy(self.model)); self._restore(self.redo.pop())
         elif o == "validate":
             self.problems = vn.validate(self.model, self.base)
@@ -224,7 +266,11 @@ class Studio:
                 st = self.state(); st["error"] = "el proyecto no tiene ruta todavía: elegí dónde guardarlo"
                 return st
             open(p, "w", encoding="utf-8").write(vn.to_text(self.model))
-            self.path = p
+            self.path = p; self.dirty = False
+            try:
+                os.remove(autosave_path(p))
+            except OSError:
+                pass
             self.base = os.path.dirname(os.path.abspath(p)) or "."
             self.rt.base = self.base
         elif o == "export":
@@ -235,6 +281,7 @@ class Studio:
             return st
         if o not in ("select", "validate", "save", "export"):
             self.rt.invalidate()
+            self._autosave()
         return self.state()
 
     def anim(self, scene, step, ms=1200, fps=15, shrink=2):
@@ -357,7 +404,8 @@ class Studio:
         self.rt.base = base; self.rt.invalidate()
         self.undo.clear(); self.redo.clear()
         self.scene = self.model["order"][0]; self.step = -1
-        self.problems = []
+        self.problems = []; self.dirty = False
+        self._autosave_notice()
 
     def _set_props(self, s, props):
         for k, v in props.items():
@@ -480,6 +528,12 @@ def make_server(studio, host="127.0.0.1", port=8765):
             if e.errno != errno.EADDRINUSE:
                 raise
     raise OSError("no hay puertos libres")
+
+
+def autosave_path(path):
+    """h.vn -> h.autosave.vn (visible y con .vn: se puede abrir desde el explorador)."""
+    root, ext = os.path.splitext(path)
+    return f"{root}.autosave{ext or '.vn'}"
 
 
 # --- procesos: encontrar / bajar el server que está corriendo -----------------
