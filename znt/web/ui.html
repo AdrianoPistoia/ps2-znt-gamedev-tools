@@ -12,6 +12,7 @@
     color-scheme: dark;
   }
   *{box-sizing:border-box}
+  [hidden]{display:none!important}   /* una regla de id le gana al [hidden] del browser */
   html,body{height:100%}
   body{margin:0;background:var(--bg);color:var(--ink);font:12.5px/1.45 var(--ui);
        overflow:hidden;user-select:none}
@@ -92,6 +93,13 @@
         border-radius:3px 3px 8px 8px;padding:12px 14px}
   #who{font-weight:700;color:var(--acc);margin-bottom:3px}
   #text{white-space:pre-wrap;user-select:text}
+  #choices.edit{pointer-events:none}
+  #choices.edit button{opacity:.85;border-style:dashed}
+  #choices .tag{position:absolute;top:8px;left:0;right:0;text-align:center;
+                color:var(--acc);font:11px var(--mono)}
+  #animbar{position:absolute;z-index:1000;top:8px;left:50%;transform:translateX(-50%);
+           display:flex;gap:8px;align-items:center;background:#171a22e6;color:var(--ink);
+           border:1px solid var(--edge);border-radius:6px;padding:5px 8px;font:11px var(--mono)}
   #choices{position:absolute;inset:0;z-index:950;display:flex;flex-direction:column;gap:8px;
            align-items:center;justify-content:center;background:#0009}
   #choices button{min-width:46%;padding:7px 12px}
@@ -238,10 +246,16 @@
         </div>
         <div id="gv" hidden></div><div id="gh" hidden></div>
         <img id="anim" hidden alt="">
+        <div id="animbar" hidden><span>reproduciendo la transición…</span>
+          <button id="b-anim-x">✕ salir</button></div>
       </div>
       <div id="vpbar">
         <button id="b-guides" title="Guías: centro / tercios / zona segura (G)">⊞ guías</button>
-        <span class="grow"></span><span id="vptag"></span>
+        <button id="b-overlay" title="Mostrar/ocultar el cuadro de diálogo y las opciones">👁 diálogo</button>
+        <span class="grow"></span>
+        <span id="vptag"></span>
+        <button id="b-adv" hidden title="Avanzar (click en el escenario o Espacio)">⏭ avanzar</button>
+        <button id="b-exit" hidden title="Salir (Esc)">⏹ salir</button>
       </div>
     </main>
 

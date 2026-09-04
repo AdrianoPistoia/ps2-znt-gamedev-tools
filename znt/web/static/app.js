@@ -8,8 +8,9 @@ let S = null;              // estado del servidor
 let SG = null;             // stage actual (layout que manda Python)
 let ASSETS = [], AUDIO = [];
 let SEL = null;            // capa seleccionada (sólo del cliente)
-let GUIDE = "off";
-try { GUIDE = localStorage.getItem("vnsguide") || "off"; } catch (e) {}
+let GUIDE = "off", SHOWDLG = true;
+try { GUIDE = localStorage.getItem("vnsguide") || "off";
+      SHOWDLG = localStorage.getItem("vnsdlg") !== "0"; } catch (e) {}
 
 const api = {
   model: () => fetch("/api/model").then(r => r.json()),
@@ -155,6 +156,11 @@ function cycleGuides(){
   renderGuides();
 }
 $("#b-guides").onclick = cycleGuides;
+$("#b-overlay").onclick = () => {                 // ojo: apaga los overlays para trabajar
+  SHOWDLG = !SHOWDLG;
+  try { localStorage.setItem("vnsdlg", SHOWDLG ? "1" : "0"); } catch (e) {}
+  renderStage();
+};
 
 /* handles: arrastrar una esquina cambia el zoom de la capa */
 $("#frame").addEventListener("pointerdown", e => {
@@ -301,19 +307,27 @@ function renderStage(){
     else d.innerHTML = `<div class="ph" style="background:${l.color}">${(l.name||l.id)[0]||"?"}</div>`;
     st.appendChild(d);
   }
+  const ov = VNS.stageOverlay({play: !!S.play, choices: SG.choices, say: SG.say,
+                               showDialog: SHOWDLG});
   const say = SG.say;
-  $("#dbox").hidden = !say;
+  $("#dbox").hidden = !(ov.dialog && say);
   if (say){ $("#who").textContent = say.name || ""; $("#who").style.color = say.color;
             $("#text").textContent = say.text; }
-  const ch = $("#choices"); ch.hidden = !(SG.choices && SG.choices.length);
-  ch.innerHTML = "";
+  const ch = $("#choices");
+  ch.hidden = !ov.choices;
+  ch.className = ov.interactive ? "" : "edit";
+  ch.style.background = ov.scrim ? `rgba(0,0,0,${ov.scrim})` : "transparent";
+  ch.innerHTML = ov.label ? `<div class="tag">${ov.label}</div>` : "";
   (SG.choices||[]).forEach((o, i) => {
     const b = document.createElement("button"); b.textContent = o.label;
-    if (S.play) b.onclick = () => op({op:"play_choose", i});
+    if (ov.interactive) b.onclick = () => op({op:"play_choose", i});
     ch.appendChild(b);
   });
+  $("#b-overlay").classList.toggle("on", SHOWDLG);
+  $("#b-adv").hidden = $("#b-exit").hidden = !S.play;
   $("#m-bgm").textContent = SG.bgm ? `♪ ${SG.bgm}` : "";
-  $("#vptag").textContent = S.play ? "PLAY" : "";
+  $("#vptag").textContent = S.play
+    ? (SG.done ? "▶ PLAY · fin" : "▶ PLAY · click o Espacio para avanzar") : "";
   markSelection(); renderGuides();
   layoutStage();
 }
@@ -414,20 +428,45 @@ function picker(cur, list, onpick, apply, accept){
   w.style.cssText = "display:flex;gap:4px;flex:1"; w.append(sel, b);
   return w;
 }
-/* editar el personaje del paso: id (renombra y reapunta), nombre y color */
-function charFields(cid){
-  const c = S.model.characters[cid]; if (!c) return null;
-  const w = document.createElement("div");
-  const nid = input(cid), nm = input(c.name), col = input(c.color || "#7cc4ff");
+/* Sección PERSONAJE: el ÚNICO lugar donde se elige y se edita un personaje.
+   `assign` cambia a qué personaje apunta el paso; lo demás edita al personaje. */
+function charSection(cid, chars, assign, withSprite){
+  const sec = sect("Personaje", true);
+  const sel = select(cid, chars);
+  sel.dataset.role = "char";                        // uno solo por inspector
+  sel.onchange = () => assign(sel.value);
+  sec.add(field("personaje", sel));
+  const c = S.model.characters[cid];
+  if (!c) return sec;
+
+  const nm = input(c.name), col = input(c.color || "#7cc4ff");
   col.type = "color"; col.style.padding = "0";
-  const b = document.createElement("button"); b.textContent = "Aplicar personaje";
-  b.onclick = async () => {
-    const id = nid.value.trim() || cid;
-    if (id !== cid) await op({op:"rename_char", old: cid, new: id});
-    op({op:"set_char", id, name: nm.value, color: col.value});
+  const apply = () => op({op:"set_char", id: cid, name: nm.value, color: col.value});
+  nm.onchange = apply; col.onchange = apply;
+  sec.add(field("nombre", nm)); sec.add(field("color", col));
+
+  if (withSprite) {                                 // el sprite es del personaje
+    const cur = c.sprite || "";
+    const sp = select(cur, [""].concat(ASSETS.includes(cur) || !cur ? ASSETS : ASSETS.concat(cur)));
+    sp.querySelector('option[value=""]').textContent = "(placeholder)";
+    sp.onchange = () => op({op:"set_sprite", id: cid, file: sp.value});
+    const b = fileBtn("Elegir imagen del personaje", "img", S.base || "",
+                      pa => op({op:"import_asset", path:pa, id:cid}),
+                      () => upload({op:"upload_sprite", id:cid}));
+    const w = document.createElement("div");
+    w.style.cssText = "display:flex;gap:4px;flex:1"; w.append(sp, b);
+    sec.add(field("sprite", w));
+  }
+
+  const ren = document.createElement("button");
+  ren.textContent = "renombrar id…";
+  ren.title = "cambia el id y reapunta todos los pasos que lo usan";
+  ren.onclick = async () => {
+    const n = await askOne("Renombrar personaje", "nuevo id", cid);
+    if (n && n !== cid) op({op:"rename_char", old: cid, new: n});
   };
-  w.append(field("id", nid), field("nombre", nm), field("color", col), b);
-  return w;
+  sec.add(field("id", ren));
+  return sec;
 }
 
 /* secciones plegables (recuerdan si quedaron abiertas) */
@@ -490,7 +529,8 @@ function renderProps(){
       v => op({op:"set_props", props:{bg: v || "#000000"}}), "bg", "image/*")));
     paso.insertAdjacentHTML("beforeend", '<div class="hint">grad:#a,#b · #rrggbb · archivo.png</div>');
   } else if (s.op === "show" || s.op === "hide") {
-    add("id","personaje", select(s.id, chars));
+    box.appendChild(charSection(s.id, chars, v => op({op:"set_props", props:{id: v}}),
+                                s.op === "show"));
     if (s.op === "show") {
       add("pos","pos", select(s.pos||"center", ["left","center","right"]));
       const tr = sect("Transformar", true); box.appendChild(tr);
@@ -511,36 +551,20 @@ function renderProps(){
       });
       tr.add(field("orden", zf));
 
-      /* el sprite es del PERSONAJE (no del paso): se aplica al instante */
-      const sp = sect("Sprite", true); box.appendChild(sp);
-      const cur = (S.model.characters[s.id] || {}).sprite || "";
-      const sel = select(cur, [""].concat(ASSETS));
-      sel.querySelector('option[value=""]').textContent = "(placeholder)";
-      sel.onchange = () => op({op:"set_sprite", id: s.id, file: sel.value});
-      const pick = fileBtn("Elegir imagen del personaje", "img", S.path || "",
-                           p => op({op:"import_asset", path:p, id:s.id}),
-                           () => upload({op:"upload_sprite", id: s.id}));
-      const wrap = document.createElement("div");
-      wrap.style.cssText = "display:flex;gap:4px;flex:1";
-      wrap.append(sel, pick);
-      sp.add(field("imagen", wrap));
-      sp.insertAdjacentHTML("beforeend",
-        '<div class="hint">la imagen se copia junto al .vn · arrastrá el sprite o sus esquinas en el escenario</div>');
+      tr.insertAdjacentHTML("beforeend",
+        '<div class="hint">arrastrá el sprite o sus esquinas en el escenario</div>');
     }
-    const cf = charFields(s.id);
-    if (cf) box.appendChild(sect("Personaje", false).add(cf));
   } else if (s.op === "say") {
-    add("who","quién", select(s.who, chars));
     const t = document.createElement("textarea"); t.rows = 3; t.value = s.text || "";
     f.text = t; paso.add(field("texto", t));
-    const cf = charFields(s.who);
-    if (cf) box.appendChild(sect("Personaje", false).add(cf));
+    box.appendChild(charSection(s.who, chars, v => op({op:"set_props", props:{who: v}}), true));
   } else if (s.op === "animate") {
-    add("id","personaje", select(s.id, chars.filter(c=>c!=="narrator")));
     add("kind","tipo", select(s.kind, ["linear","accel","decel","move","wave","waveonce","jump","jumponce","fall","vibrate"]));
     add("params","params", input(Object.entries(s.params||{}).map(([k,v])=>`${k}=${v}`).join(" ")));
     paso.insertAdjacentHTML("beforeend",
       '<div class="hint">doble click en el timeline (o ▶ Probar paso) para verla</div>');
+    box.appendChild(charSection(s.id, chars.filter(c => c !== "narrator"),
+                                v => op({op:"set_props", props:{id: v}}), true));
   } else if (s.op === "bgm" || s.op === "se") {
     paso.add(field("archivo", picker(s.file || "", AUDIO,
       v => op({op:"set_props", props:{file: v}}), "file", "audio/*")));
@@ -650,17 +674,31 @@ $("#b-step-del").onclick = () => op({op:"del_step"});
 $("#b-prev").onclick = () => op({op:"select", scene:S.scene, step: Math.max(-1, S.step - 1)});
 $("#b-next").onclick = () => op({op:"select", scene:S.scene, step: Math.min(stepCount() - 1, S.step + 1)});
 /* preview AUTORITATIVO: lo renderiza Python con el engine real y llega como APNG */
+let animT = null;
+const ANIM_MS = 1200;
+function closeAnim(){
+  clearTimeout(animT);
+  $("#anim").hidden = true; $("#anim").removeAttribute("src");
+  $("#animbar").hidden = true;
+}
 $("#b-probar").onclick = () => {
+  if (S.step < 0) return toast("elegí un paso en el timeline para probarlo");
   const a = $("#anim");
-  a.src = `/api/anim?scene=${encodeURIComponent(S.scene)}&step=${S.step}&ms=1200&_=${Date.now()}`;
-  a.hidden = false;
+  a.src = `/api/anim?scene=${encodeURIComponent(S.scene)}&step=${S.step}&ms=${ANIM_MS}&_=${Date.now()}`;
+  a.hidden = false; $("#animbar").hidden = false;
+  clearTimeout(animT);
+  animT = setTimeout(closeAnim, ANIM_MS + 600);      // se va sola, no hay que adivinar
 };
+$("#b-anim-x").onclick = closeAnim;
+$("#b-adv").onclick = () => op({op:"play_advance"});
+$("#b-exit").onclick = () => op({op:"play_stop"});
 $("#b-help").onclick = () => $("#help").showModal();
-$("#anim").onclick = () => { $("#anim").hidden = true; $("#anim").removeAttribute("src"); };
+$("#anim").onclick = closeAnim;
 
 const CMDS = {
   play:     () => $("#b-play").click(),
-  stop:     () => { if (S.play) op({op:"play_stop"}); },
+  stop:     () => { if (!$("#anim").hidden) return closeAnim();
+                    if (S.play) op({op:"play_stop"}); },
   prev:     () => $("#b-prev").click(),
   next:     () => $("#b-next").click(),
   del_step: () => $("#b-step-del").click(),

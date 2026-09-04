@@ -60,6 +60,23 @@
              y: (fy - grabDY) - st.h + h };
   }
 
+  /* --- escenario: qué se dibuja encima --- */
+
+  /* En Play se ve como en el juego. Editando, las opciones se previsualizan sin
+     tapar el escenario (el velo del juego hacía parecer que "se oscurecía solo")
+     y el ojo del viewport apaga los overlays para trabajar con los sprites. */
+  function stageOverlay(st) {
+    const has = (st.choices || []).length > 0;
+    if (st.play)
+      return { dialog: !!st.say, choices: has, scrim: has ? 0.6 : 0,
+               interactive: true, label: "" };
+    if (!st.showDialog)
+      return { dialog: false, choices: false, scrim: 0, interactive: false, label: "" };
+    return { dialog: !!st.say, choices: has, scrim: has ? 0.22 : 0,
+             interactive: false,
+             label: has ? "opciones (previsualización) — ▶ Play para probarlas" : "" };
+  }
+
   /* --- explorador de archivos --- */
 
   /* Ruta -> tramos clickeables. */
@@ -209,5 +226,5 @@
   }
 
   return { layerStyle, bgStyle, stageXY, snap, snapTargets, dragTo, POS,
-           clampPane, fitRect, crumbs, joinPath, mergeState, KEYMAP, resolveKey, scrubValue, resizeZoom, guides, nextGuide, GUIDES, outlineRows, showStepIndex, LANES, laneOf, clipRect, dropIndex };
+           clampPane, fitRect, stageOverlay, crumbs, joinPath, mergeState, KEYMAP, resolveKey, scrubValue, resizeZoom, guides, nextGuide, GUIDES, outlineRows, showStepIndex, LANES, laneOf, clipRect, dropIndex };
 });

@@ -45,6 +45,11 @@ PY
   rm -rf "$TMP"
 else skip "lector C" "cc no instalado"; fi
 
+echo "── DOM del editor web (chromium headless)"
+if command -v chromium >/dev/null || command -v google-chrome-stable >/dev/null; then
+  run "estructura de la UI ya renderizada" python3 tests/browser/dom_check.py
+else skip "DOM" "no hay chromium"; fi
+
 echo "── masterizado de ISO"
 if command -v genisoimage >/dev/null; then
   TMP=$(mktemp -d); printf '\x7fELF' > "$TMP/p.elf"
