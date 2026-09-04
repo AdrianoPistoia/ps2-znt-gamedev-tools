@@ -383,6 +383,8 @@ def _embed(model, base_dir):
     for c in m["characters"].values():
         if c.get("sprite"):
             c["spriteData"] = dat(c["sprite"])
+        if c.get("expr"):                          # una imagen por expresión
+            c["exprData"] = {ex: dat(f) for ex, f in c["expr"].items()}
     for steps in m["scenes"].values():
         for s in steps:
             if s["op"] == "bg" and s["spec"].get("kind") == "img":
@@ -503,12 +505,14 @@ function setBg(spec){
   else { bg.style.background = spec.color; }
 }
 function charColor(id){ return (M.characters[id]||{}).color || "#ccc"; }
-function show(id,pos){
+function show(id,pos,expr){
   const c = M.characters[id]||{};
   let el = sprites[id];
+  const was = !!el;
   if(!el){ el = document.createElement("div"); el.className="sprite"; $("#sprites").appendChild(el); sprites[id]=el; }
-  el.className = "sprite "+(pos||"center");
-  if(c.spriteData){ el.innerHTML = `<img src="${c.spriteData}">`; }
+  if(pos || !was) el.className = "sprite "+(pos||"center");   // sin pos: se queda donde está
+  const img = (c.exprData||{})[expr] || c.spriteData;
+  if(img){ el.innerHTML = `<img src="${img}">`; }
   else { const nm=c.name||id;
          el.innerHTML = `<div class="ph" style="background:${charColor(id)}">${(nm[0]||"?").toUpperCase()}</div>`; }
   el.style.opacity=1; el.style.animation="";
@@ -533,7 +537,7 @@ function step(){
   while(ip < scene.length){
     const s = scene[ip++];
     if(s.op==="bg"){ setBg(s.spec); continue; }
-    if(s.op==="show"){ show(s.id,s.pos); continue; }
+    if(s.op==="show"){ show(s.id, s.pos, s.expr); continue; }
     if(s.op==="animate"){ animate(s.id,s.kind); continue; }
     if(s.op==="hide"){ hide(s.id); continue; }
     if(s.op==="bgm"){ playBgm(s); continue; }

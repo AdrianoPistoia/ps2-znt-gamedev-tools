@@ -439,6 +439,32 @@ async function main() {
     await key("z", CTRL); await key("z", CTRL);
   });
 
+  flow("expresiones", async () => {
+    await click(`.clip[data-i="${await clipOf("show ana")}"]`);
+    assert.strictEqual(await count("#props .expr"), 0, "ana arranca sin expresiones");
+    assert.strictEqual(await count('#props select[data-k="expr"]'), 0, "sin expresiones no hay selector en el paso");
+    await clickText("#props button", "+ expresión");
+    assert.ok(await isOpen("#dlg"), "pide el nombre");
+    await type("feliz"); await key("Enter"); await settle();
+    assert.ok(await isOpen("#brw"), "y después la imagen");
+    await clickText("#brw-list li", "ana.png");
+    await clickText("#brw menu button", "Elegir");
+    assert.strictEqual(await count("#props .expr"), 1, "aparece la fila de la expresión");
+    let c = (await model()).model.characters.ana;
+    assert.strictEqual(c.expr.feliz, "ana.png", "quedó definida");
+    assert.strictEqual(await count('#props select[data-k="expr"]'), 1, "ahora el paso puede elegir expresión");
+    await selectValue('#props select[data-k="expr"]', "feliz");
+    let st = (await model()).model.scenes.inicio.find(s => s.op === "show" && s.id === "ana");
+    assert.strictEqual(st.expr, "feliz", "el show usa la expresión");
+    assert.ok((await text("#layers")).includes("feliz"), "el outliner muestra la expresión");
+    await selectValue('#props select[data-k="expr"]', "");
+    st = (await model()).model.scenes.inicio.find(s => s.op === "show" && s.id === "ana");
+    assert.ok(!("expr" in st), "(base) saca la expresión del paso");
+    await js(`document.querySelector("#props .expr .x").click()`); await settle();
+    c = (await model()).model.characters.ana;
+    assert.ok(!c.expr, "✕ quita la expresión del personaje");
+  });
+
   /* ---------- correr ---------- */
   const names = Object.keys(flows).filter(n => !ONLY.length || ONLY.includes(n));
   let fails = 0;

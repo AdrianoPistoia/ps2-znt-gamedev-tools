@@ -115,6 +115,7 @@ int vnp_step(VnpScene *sc, VnpStep *o)
         break;
     case OP_SHOW:
         o->chr = rd16(p); p += 2;
+        o->img = rd16(p); p += 2;                   /* v4 */
         o->x = (int16_t)rd16(p); p += 2; o->y = (int16_t)rd16(p); p += 2;
         o->z = (int16_t)rd16(p); p += 2; o->zoom = rd16(p); p += 2;
         o->opacity = *p++; o->tint = rd32(p); p += 4;

@@ -182,7 +182,7 @@
     return layers.slice()
       .sort((a, b) => (b.z - a.z) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
       .map(l => ({ id: l.id, name: l.name || l.id, z: l.z, color: l.color,
-                   sprite: !!l.url }));
+                   sprite: !!l.url, expr: l.expr || null }));
   }
 
   /* Índice del `show` que puso esa capa (el último en o antes de `upto`). */

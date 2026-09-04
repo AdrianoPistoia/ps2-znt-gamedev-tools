@@ -28,6 +28,7 @@ typedef struct {
     uint16_t bg_img;
     /* show / hide / anim */
     uint16_t chr;
+    uint16_t img;            /* show: imagen de la expresión (VNP_NONE16 = sprite del personaje) */
     int16_t  x, y, z;
     uint16_t zoom; uint8_t opacity; uint32_t tint;
     /* anim */

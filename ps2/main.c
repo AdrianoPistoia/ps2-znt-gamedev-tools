@@ -286,7 +286,8 @@ static Block advance(GSGLOBAL *gs)
             L->used = 1; L->chr = s.chr;
             L->x = s.x; L->y = s.y; L->z = s.z; L->zoom = s.zoom; L->opacity = s.opacity;
             VnpChar c; vnp_char(&doc, s.chr, &c);
-            if (c.sprite != VNP_NONE16) { upload_image(gs, c.sprite, &L->tex); L->has_tex = 1; }
+            uint16_t img = (s.img != VNP_NONE16) ? s.img : c.sprite;   /* expresión o base */
+            if (img != VNP_NONE16) { upload_image(gs, img, &L->tex); L->has_tex = 1; }
             break; }
         case OP_HIDE:
             for (int i = 1; i < MAX_LAYERS; i++) if (layers[i].used && layers[i].chr == s.chr) layers[i].used = 0;

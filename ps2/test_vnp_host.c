@@ -19,7 +19,7 @@ int main(int argc, char **argv) {
 
     VnpDoc d;
     CHECK(vnp_open(&d, buf, n) == 0);
-    CHECK(d.version == 3);
+    CHECK(d.version == 4);
     CHECK(d.start == 0);
     CHECK(d.n_scenes == 2);
     CHECK(d.n_chars == 1);
@@ -33,6 +33,7 @@ int main(int argc, char **argv) {
     CHECK(vnp_scene_begin(&d, 0, &sc) == 0);
     CHECK(vnp_step(&sc, &s) && s.op == OP_BG && s.bg_kind == 1);
     CHECK(vnp_step(&sc, &s) && s.op == OP_SHOW && s.x == 40 && s.z == 5 && s.zoom == 150 && s.opacity == 80);
+    CHECK(s.img == VNP_NONE16);               /* sin expresión: sprite base */
     CHECK(vnp_step(&sc, &s) && s.op == OP_SAY && streq(&d, s.text, "Hola."));
     CHECK(vnp_step(&sc, &s) && s.op == OP_CHOICE && s.n_opts == 2 && s.opt_target[0] == 1 && s.opt_target[1] == 1);
     CHECK(vnp_step(&sc, &s) == 0);            /* fin de escena 0 */

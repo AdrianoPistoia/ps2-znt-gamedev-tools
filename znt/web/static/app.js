@@ -221,7 +221,7 @@ function renderLayers(){
   rows.forEach(r => {
     const li = document.createElement("li");
     li.innerHTML = `<span class="chip" style="background:${r.color}"></span>` +
-      `<span>${r.name}</span><span class="grow"></span>` +
+      `<span>${r.name}${r.expr ? ` <span class="n">· ${r.expr}</span>` : ""}</span><span class="grow"></span>` +
       `<span class="n">${r.sprite ? "🖼" : "●"} z${r.z}</span>`;
     if (r.id === SEL) li.className = "sel";
     li.title = "click: seleccionar · doble click: ir al paso que la muestra";
@@ -501,6 +501,32 @@ function charSection(cid, chars, assign, withSprite){
     const w = document.createElement("div");
     w.style.cssText = "display:flex;gap:4px;flex:1"; w.append(sp, b);
     sec.add(field("sprite", w));
+
+    /* expresiones: nombre -> imagen; el show elige cuál */
+    const ew = document.createElement("div");
+    Object.entries(c.expr || {}).forEach(([ex, f]) => {
+      const row = document.createElement("div"); row.className = "expr";
+      const nm = document.createElement("span"); nm.className = "n"; nm.textContent = ex;
+      const sel = select(f, ASSETS.includes(f) ? ASSETS : ASSETS.concat(f));
+      sel.onchange = () => op({op:"set_sprite", id: cid, expr: ex, file: sel.value});
+      const fb = fileBtn(`Imagen para "${ex}"`, "img", S.base || "",
+                         pa => op({op:"import_asset", path: pa, id: cid, expr: ex}),
+                         () => upload({op:"upload_sprite", id: cid, expr: ex}));
+      const x = document.createElement("span"); x.className = "x"; x.textContent = "✕"; x.title = "quitar la expresión";
+      x.onclick = () => op({op:"set_sprite", id: cid, expr: ex, file: ""});
+      row.append(nm, sel, fb, x); ew.appendChild(row);
+    });
+    const addx = document.createElement("button"); addx.textContent = "+ expresión";
+    addx.onclick = async () => {
+      let n = await askOne("Nueva expresión", "nombre (p.ej. feliz)"); if (!n) return;
+      n = n.replace(/\s+/g, "_");
+      if (["left", "center", "right"].includes(n)) return toast("ese nombre es una posición, elegí otro", true);
+      const pa = await browse(`Imagen para "${n}"`, "img", S.base || "",
+                              () => upload({op:"upload_sprite", id: cid, expr: n}));
+      if (pa) op({op:"import_asset", path: pa, id: cid, expr: n});
+    };
+    ew.appendChild(addx);
+    sec.add(field("expresiones", ew));
   }
 
   const ren = document.createElement("button");
@@ -599,7 +625,15 @@ function renderProps(){
     box.appendChild(charSection(s.id, chars, v => op({op:"set_props", props:{id: v}}),
                                 s.op === "show"));
     if (s.op === "show") {
-      add("pos","pos", select(s.pos||"center", ["left","center","right"]));
+      const posSel = select(s.pos || "", ["", "left", "center", "right"]);
+      posSel.querySelector('option[value=""]').textContent = "(donde está)";
+      add("pos","pos", posSel);
+      const exs = Object.keys((S.model.characters[s.id] || {}).expr || {});
+      if (exs.length) {                                // sólo si el personaje tiene expresiones
+        const e = select(s.expr || "", [""].concat(exs));
+        e.querySelector('option[value=""]').textContent = "(base)"; e.dataset.k = "expr";
+        add("expr", "expresión", e);
+      }
       const tr = sect("Transformar", true); box.appendChild(tr);
       tr.add(num("x", s.x, {def:0}, liveLayer(s.id, "x")));
       tr.add(num("y", s.y, {def:0}, liveLayer(s.id, "y")));

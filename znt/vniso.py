@@ -12,6 +12,7 @@ Formato (little-endian):
     -- scenes --        u32 N ; por cada: u32 nsteps ; por cada step: u8 op + payload
 
 Opcodes: 1 bg, 2 show, 3 hide, 4 say, 5 anim, 6 bgm, 7 se, 8 choice, 9 goto, 10 end.
+v4: `show` lleva u16 img (imagen de la expresión; 0xFFFF = el sprite base del personaje).
 (payloads: ver `_emit_step` / `_read_step`). Audio: opcode con el nombre de archivo,
 sin data embebida todavía (diferido, ver spike).
 """
@@ -118,6 +119,13 @@ def compile_blob(model, base=".", font=None):
 
     for c in chars:
         c["_spr"] = IMG(c.get("sprite"))
+    by_id = {cid: c for cid, c in model["characters"].items()}
+
+    def expr_img(s):                                 # show con expresión -> su imagen
+        ex = s.get("expr")
+        c = by_id.get(s.get("id"), {})
+        f = (c.get("expr") or {}).get(ex) if ex else None
+        return IMG(f) if f else NONE16
 
     # --- audio (bgm/se): embebe los archivos que existen ---
     aud_idx = {}
@@ -134,7 +142,7 @@ def compile_blob(model, base=".", font=None):
         return aud_idx[fname]
 
     w = _W()
-    w.b += MAGIC; w.u16(3); w.u16(scene_idx.get(model.get("start", order[0]), 0))
+    w.b += MAGIC; w.u16(4); w.u16(scene_idx.get(model.get("start", order[0]), 0))
     S(model["title"])                                    # reservar título como string 0
 
     # cuerpo de escenas primero (llena el pool), luego se serializa el pool al final…
@@ -147,7 +155,7 @@ def compile_blob(model, base=".", font=None):
         sw = _W(); steps = model["scenes"][sid]
         sw.u32(len(steps))
         for s in steps:
-            _emit_step(sw, s, S, char_idx, scene_idx, IMG, AUD)
+            _emit_step(sw, s, S, char_idx, scene_idx, IMG, AUD, expr_img)
         scene_bytes.append(bytes(sw.b))
 
     # --- string pool ---
@@ -202,7 +210,7 @@ def build_iso(elf_path, blob_path, out_iso, name="VN", vmode="NTSC"):
     return out_iso
 
 
-def _emit_step(w, s, S, char_idx, scene_idx, IMG, AUD):
+def _emit_step(w, s, S, char_idx, scene_idx, IMG, AUD, expr_img=lambda s: NONE16):
     op = s["op"]
     w.u8(OP["anim"] if op == "animate" else OP[op])
     if op == "bg":
@@ -215,6 +223,7 @@ def _emit_step(w, s, S, char_idx, scene_idx, IMG, AUD):
             w.u8(2); w.u16(IMG(sp.get("file")))
     elif op == "show":
         w.u16(char_idx.get(s["id"], NONE16))
+        w.u16(expr_img(s))                          # v4: imagen de la expresión (NONE = base)
         w.i16(s.get("x", 0)); w.i16(s.get("y", 0)); w.i16(s.get("z", 0))
         w.u16(int(s.get("zoom", 100))); w.u8(int(s.get("opacity", 100)))
         w.u32(_rgba(s["tint"]) if s.get("tint") else 0)
@@ -293,7 +302,7 @@ def _read_step(r, S):
         if k == 1: return {"op": "bg", "kind": "grad", "a": r.u32(), "b": r.u32()}
         return {"op": "bg", "kind": "img", "img": r.u16()}
     if op == "show":
-        return {"op": "show", "id": r.u16(), "x": r.i16(), "y": r.i16(), "z": r.i16(),
+        return {"op": "show", "id": r.u16(), "img": r.u16(), "x": r.i16(), "y": r.i16(), "z": r.i16(),
                 "zoom": r.u16(), "opacity": r.u8(), "tint": r.u32()}
     if op == "hide":
         return {"op": "hide", "id": r.u16()}
@@ -386,7 +395,7 @@ def demo():
                                    '  h: hi\n  end\n'))
     r2 = read_blob(compile_blob(m2, d))
     assert r2["images"] == [(2, 2)], r2["images"]
-    assert r2["version"] == 3 and r2["font"] is None      # sin fuente -> sección vacía
+    assert r2["version"] == 4 and r2["font"] is None      # sin fuente -> sección vacía
     # audio: bgm embebe el archivo; el paso guarda el índice
     open(f"{d}/tema.wav", "wb").write(b"RIFF....WAVEfake" * 4)
     m4 = vn._link_choices(vn.parse('title: t\ncharacter a "A"\nscene s\n  bgm tema.wav\n  a: h\n'
