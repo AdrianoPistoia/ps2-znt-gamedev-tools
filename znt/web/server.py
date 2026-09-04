@@ -248,9 +248,9 @@ class Studio:
             k = r.get("step", self.step if r.get("scene", self.scene) == self.scene else 0)
             self.prt.enter_at(r.get("scene") or self.scene, k if k is not None else 0)
         elif o == "play_advance":
-            if self.prt: self.prt.advance()
+            if self.prt: self.prt.step_once()         # paso a paso (lo que se ve en el timeline)
         elif o == "play_choose":
-            if self.prt: self.prt.choose(int(r.get("i", 0)))
+            if self.prt: self.prt.choose(int(r.get("i", 0)), stepwise=True)
         elif o == "play_stop":
             self.prt = None
         elif o == "open_project" and not os.path.exists(os.path.expanduser(r.get("path") or "")):

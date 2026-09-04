@@ -118,7 +118,7 @@
 
   /* Un solo lugar: de acá salen el dispatch y el overlay de ayuda. */
   const KEYMAP = [
-    { keys: "Espacio",    cmd: "play",     desc: "Play / avanzar el diálogo" },
+    { keys: "Espacio",    cmd: "play",     desc: "Play / siguiente paso" },
     { keys: "Esc",        cmd: "stop",     desc: "Salir del modo Play" },
     { keys: "←  →",       cmd: "prev",     desc: "Paso anterior / siguiente" },
     { keys: "Supr",       cmd: "del_step", desc: "Borrar el paso" },

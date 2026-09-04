@@ -137,15 +137,32 @@ class VNRuntime:
         self._run()
 
     def enter_at(self, scene_id, k):
-        """Play desde el paso k: lo anterior se aplica sin frenar (como el editor),
-        y de ahí en adelante corre normal."""
+        """Play del editor, paso a paso: lo anterior se aplica sin frenar, el paso k
+        se ejecuta y ahí se para (aunque no sea un diálogo). Cada step_once()
+        ejecuta el siguiente. `enter()`/`advance()` siguen siendo el modo juego."""
         self.reset_state(); self.scene_id = scene_id
         k = max(0, int(k))
         for s in self._steps()[:k]:
             self._exec(s, navigate=False)
         self.settle()
         self.ip = k
-        self._run()
+        self.step_once()
+
+    def step_once(self):
+        """Ejecuta exactamente un paso (modo paso a paso del editor)."""
+        steps = self._steps()
+        self.speaker = self.text = None; self.choices = []
+        if self.done or self.ip >= len(steps):
+            self.done = True; return
+        s = steps[self.ip]; self.ip += 1
+        if s["op"] == "goto":
+            self.enter_at(s["target"], 0)             # entra y muestra su primer paso
+        elif s["op"] == "end":
+            self.done = True
+        else:
+            self._exec(s)
+        if self.ip >= len(self._steps()) and not self.text and not self.choices:
+            self.done = True
 
     @property
     def cursor(self):
@@ -247,9 +264,10 @@ class VNRuntime:
         if self.text is not None and not self.done:
             self._run()
 
-    def choose(self, i):
+    def choose(self, i, stepwise=False):
         if 0 <= i < len(self.choices):
-            self.enter(self.choices[i]["target"])
+            if stepwise: self.enter_at(self.choices[i]["target"], 0)
+            else: self.enter(self.choices[i]["target"])
 
     def settle(self):
         """Lleva los tweens (movimientos) a su fin, para el preview estático."""

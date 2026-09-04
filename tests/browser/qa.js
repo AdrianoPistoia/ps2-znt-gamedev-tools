@@ -205,12 +205,14 @@ async function main() {
     await click("#b-play");
     assert.ok(await js("document.body.classList.contains('playing')"), "modo Play");
     assert.strictEqual(await count(".clip.playing"), 1, "un clip marcado");
-    assert.strictEqual(await js("S.play.step"), 3, "arrancó en el 1 y se frenó en el primer diálogo (3)");
+    assert.strictEqual(await js("S.play.step"), 1, "arranca EN el paso elegido (paso a paso)");
+    assert.strictEqual(await count("#stage .layer"), 1, "se ve sólo lo de hasta ese paso");
     const r = await rect("#stage"); await clickAt(r.x, r.y - 80);
-    assert.strictEqual(await js("S.play.step"), 4, "click en pantalla avanza un diálogo");
+    assert.strictEqual(await js("S.play.step"), 2, "click en pantalla = un paso");
     await key(" ");
-    assert.ok(await js("S.play.step >= 5"), "Espacio también avanza");
-    for (let i = 0; i < 6 && !(await js("S.play.choices.length")); i++) await key(" ");
+    assert.strictEqual(await js("S.play.step"), 3, "Espacio también");
+    assert.ok((await text("#text")).includes("mapa"), "y ahí sí el diálogo");
+    for (let i = 0; i < 8 && !(await js("S.play.choices.length")); i++) await key(" ");
     assert.strictEqual(await js("S.play.choices.length"), 2, "llega al choice");
     await clickText("#choices button", "Ir a la torre");
     assert.strictEqual(await js("S.play.scene"), "torre", "elegir salta de escena");
@@ -477,7 +479,7 @@ async function main() {
 
   flow("tipeo", async () => {
     await js(`localStorage.setItem("vnscps", "3"); CPS = 3;`);   // lento, para verlo
-    await click('.clip[data-i="1"]');
+    await click('.clip[data-i="3"]');                            // un diálogo
     await click("#b-play");
     const full = await js("S.play.say.text");
     const shown = await text("#text");
@@ -502,13 +504,15 @@ async function main() {
 
   flow("audio", async () => {
     await clickText("#scenes li", "torre");
-    await click('.clip[data-i="0"]');
+    await click('.clip[data-i="1"]');                                  // el bgm
     await click("#b-play");
     assert.ok((await js("document.querySelector('#bgm').getAttribute('src') || ''")).includes("tema.wav"),
               "en Play suena el bgm de la escena");
     assert.ok(await js("!document.querySelector('#bgm').paused || document.querySelector('#bgm').error !== null"),
               "está reproduciendo (o el archivo de prueba no es audio válido)");
-    const r = await rect("#stage"); await clickAt(r.x, r.y - 80);      // pasa el say -> dispara el se
+    const r = await rect("#stage");
+    for (let i = 0; i < 6 && !(await js("document.querySelector('#sfx').getAttribute('src') || ''")).includes("golpe"); i++)
+      await clickAt(r.x, r.y - 80);                                    // paso a paso hasta el se
     assert.ok((await js("document.querySelector('#sfx').getAttribute('src') || ''")).includes("golpe.wav"),
               "el se se disparó");
     await key("Escape");

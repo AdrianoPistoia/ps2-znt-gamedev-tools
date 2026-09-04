@@ -430,7 +430,7 @@ function renderStage(){
   syncAudio();
   $("#m-bgm").textContent = SG.bgm ? `♪ ${SG.bgm}` : "";
   $("#vptag").textContent = S.play
-    ? (SG.done ? "▶ PLAY · fin" : "▶ PLAY · click o Espacio para avanzar") : "";
+    ? (SG.done ? "▶ PLAY · fin" : "▶ PLAY · click o Espacio = siguiente paso") : "";
   markSelection(); renderGuides();
   layoutStage();
 }

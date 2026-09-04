@@ -11,13 +11,14 @@ st = ws.Studio(p)
 st.op({"op": "play", "scene": "s", "step": 0})
 pl = st.state()["play"]
 assert pl["bgm"] == "tema.wav" and pl["se"] is None and pl["se_seq"] == 0, pl
-st.op({"op": "play_advance"})
+adv = lambda n: [st.op({"op": "play_advance"}) for _ in range(n)]
+adv(2)                                             # say, se
 pl = st.state()["play"]
 assert pl["se"] == "golpe.wav" and pl["se_seq"] == 1, "el se se disparó una vez"
-st.op({"op": "play_advance"})
+adv(2)                                             # say, se
 pl = st.state()["play"]
 assert pl["se"] == "golpe.wav" and pl["se_seq"] == 2, "mismo archivo, otro disparo: el cliente lo distingue por seq"
-st.op({"op": "play_advance"})
+adv(2)                                             # say, bgm stop
 assert st.state()["play"]["bgm"] is None, "bgm stop"
 
 # el audio se sirve con su mimetype

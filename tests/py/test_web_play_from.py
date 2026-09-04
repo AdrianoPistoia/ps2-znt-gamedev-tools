@@ -1,4 +1,4 @@
-"""Play arranca en el paso elegido y cuenta en qué paso/escena está."""
+"""Play arranca en el paso elegido y cuenta en qué paso/escena está (paso a paso)."""
 import tempfile, os
 from znt.web import server as ws
 
@@ -11,35 +11,24 @@ open(p, "w", encoding="utf-8").write(
 st = ws.Studio(p)
 play = lambda: st.state()["play"]
 
-# desde el paso 3 ("a: dos"): lo anterior (bg, show a) ya está aplicado
 st.op({"op": "select", "scene": "s", "step": 3})
 st.op({"op": "play", "scene": "s", "step": 3})
 pl = play()
-assert pl["say"]["text"] == "dos", pl["say"]
-assert (pl["scene"], pl["step"]) == ("s", 3), (pl["scene"], pl["step"])
+assert pl["say"]["text"] == "dos" and (pl["scene"], pl["step"]) == ("s", 3)
 assert [l["id"] for l in pl["layers"]] == ["a"], "el show de antes se aplicó, el de después no"
-
-st.op({"op": "play_advance"})
-pl = play()
-assert pl["say"]["text"] == "tres" and pl["step"] == 5, (pl["say"], pl["step"])
-assert sorted(l["id"] for l in pl["layers"]) == ["a", "b"]
-
-st.op({"op": "play_advance"})
-pl = play()
+st.op({"op": "play_advance"}); pl = play()
+assert pl["step"] == 4 and sorted(l["id"] for l in pl["layers"]) == ["a", "b"] and pl["say"] is None, "un paso: aparece b"
+st.op({"op": "play_advance"}); pl = play()
+assert pl["say"]["text"] == "tres" and pl["step"] == 5
+st.op({"op": "play_advance"}); pl = play()
 assert pl["choices"] and pl["step"] == 6, "parado en el choice"
-
-# elegir salta de escena: el cursor lo dice
-st.op({"op": "play_choose", "i": 0})
-pl = play()
-assert (pl["scene"], pl["step"]) == ("t", 0) and pl["say"]["text"] == "cuatro", (pl["scene"], pl["step"])
+st.op({"op": "play_choose", "i": 0}); pl = play()
+assert (pl["scene"], pl["step"]) == ("t", 0) and pl["say"]["text"] == "cuatro"
 st.op({"op": "play_advance"})
 assert play()["done"] and play()["step"] == 1
 
-# sin paso elegido arranca del principio
 st.op({"op": "play_stop"}); st.op({"op": "select", "scene": "s", "step": -1})
 st.op({"op": "play", "scene": "s"})
-assert play()["step"] == 2 and play()["say"]["text"] == "uno"
-
-# la edición no se tocó
+assert play()["step"] == 0 and play()["say"] is None and play()["bg"]["color"] == "#000000", "sin paso elegido: el fondo"
 assert st.state()["scene"] == "s" and st.state()["step"] == -1
 print("PLAY-FROM GREEN")

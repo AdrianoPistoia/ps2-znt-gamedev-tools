@@ -47,13 +47,13 @@ h = dom(2)                                        # paso `say`
 ok(len(re.findall(r'data-role="char"', h)) == 1, "en say también, uno solo")
 # Play desde el paso elegido: la UI se apaga menos el timeline, y el clip que
 # se está reproduciendo queda marcado
-st.op({"op": "select", "scene": "s", "step": 1})
-st.op({"op": "play", "scene": "s", "step": 1})
+st.op({"op": "select", "scene": "s", "step": 2})
+st.op({"op": "play", "scene": "s", "step": 2})
 h = dom_raw()
 ok(re.search(r'<body[^>]*class="[^"]*playing', h), "body.playing mientras se reproduce")
 ok('class="clip playing' in h or 'class="clip sel playing' in h or 'clip playing' in h,
    "el clip en reproducción está marcado")
-ok(">hola<" in h or "hola" in h, "el diálogo del paso 2 está en pantalla (arrancó en el 1 y avanzó)")
+ok(">hola<" in h or "hola" in h, "el diálogo del paso elegido está en pantalla")
 st.op({"op": "play_stop"})
 srv.shutdown()
 print("DOM GREEN")
