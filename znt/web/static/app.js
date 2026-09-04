@@ -150,6 +150,23 @@ function renderChars(){
   $("#m-chars").textContent = ids.length || "";
 }
 
+/* ---------- audio (sólo en Play, y ▶ para escuchar en edición) ---------- */
+const assetUrl = f => "/api/asset?f=" + encodeURIComponent(f);
+let seSeq = null;
+function playAudio(el, f){
+  el.setAttribute("src", assetUrl(f)); el.load();
+  el.play().catch(() => {});                          // sin gesto o archivo inválido: silencio
+}
+function syncAudio(){
+  const bgm = $("#bgm"), sfx = $("#sfx");
+  if (!S.play) { bgm.pause(); bgm.removeAttribute("src"); seSeq = null; return; }
+  const want = S.play.bgm ? assetUrl(S.play.bgm) : null;
+  if (!want) { bgm.pause(); bgm.removeAttribute("src"); }
+  else if (bgm.getAttribute("src") !== want) playAudio(bgm, S.play.bgm);
+  if (seSeq === null) seSeq = S.play.se_seq;         // al entrar no se dispara lo viejo
+  else if (S.play.se_seq !== seSeq) { seSeq = S.play.se_seq; if (S.play.se) playAudio(sfx, S.play.se); }
+}
+
 /* ---------- efecto de tipeo (sólo en Play) ---------- */
 let CPS = 40;                                       // caracteres por segundo (0 = sin efecto)
 try { const v = localStorage.getItem("vnscps"); if (v !== null) CPS = +v; } catch (e) {}
@@ -398,6 +415,7 @@ function renderStage(){
   });
   $("#b-overlay").classList.toggle("on", SHOWDLG);
   $("#b-adv").hidden = $("#b-exit").hidden = $("#b-cps").hidden = !S.play;
+  syncAudio();
   $("#m-bgm").textContent = SG.bgm ? `♪ ${SG.bgm}` : "";
   $("#vptag").textContent = S.play
     ? (SG.done ? "▶ PLAY · fin" : "▶ PLAY · click o Espacio para avanzar") : "";
@@ -499,6 +517,12 @@ function picker(cur, list, onpick, apply, accept){
                     () => upload({op:"upload", apply}, accept));
   const w = document.createElement("div");
   w.style.cssText = "display:flex;gap:4px;flex:1"; w.append(sel, b);
+  if (kind === "audio") {                            // ▶ escuchar lo elegido
+    const pl = document.createElement("button"); pl.textContent = "▶"; pl.title = "escuchar";
+    pl.style.flex = "0 0 auto";
+    pl.onclick = () => { if (sel.value) playAudio($("#sfx"), sel.value); };
+    w.append(pl);
+  }
   return w;
 }
 /* Sección PERSONAJE: el ÚNICO lugar donde se elige y se edita un personaje.

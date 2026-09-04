@@ -29,10 +29,15 @@ scene inicio
   - Quedarse -> inicio
 scene torre
   bg #1a1020
+  bgm tema.wav
   show leo center
   leo: Llegamos.
+  se golpe.wav
+  leo: Fin.
   end
 `);
+for (const f of ["tema.wav", "golpe.wav"])                  // WAV mínimo (cabecera)
+  fs.writeFileSync(path.join(DIR, f), Buffer.from("RIFF\x24\x00\x00\x00WAVEfmt ", "latin1"));
 { // PNG 40x60 opaco, sin deps
   const zlib = require("zlib");
   const w = 40, h = 60, raw = Buffer.alloc((w * 3 + 1) * h);
@@ -489,6 +494,27 @@ async function main() {
     const st = (await model()).model.scenes.inicio[0];
     assert.strictEqual(st.fade, 300, "quedó en el paso");
     await key("z", CTRL);
+  });
+
+  flow("audio", async () => {
+    await clickText("#scenes li", "torre");
+    await click('.clip[data-i="0"]');
+    await click("#b-play");
+    assert.ok((await js("document.querySelector('#bgm').getAttribute('src') || ''")).includes("tema.wav"),
+              "en Play suena el bgm de la escena");
+    assert.ok(await js("!document.querySelector('#bgm').paused || document.querySelector('#bgm').error !== null"),
+              "está reproduciendo (o el archivo de prueba no es audio válido)");
+    const r = await rect("#stage"); await clickAt(r.x, r.y - 80);      // pasa el say -> dispara el se
+    assert.ok((await js("document.querySelector('#sfx').getAttribute('src') || ''")).includes("golpe.wav"),
+              "el se se disparó");
+    await key("Escape");
+    assert.ok(await js("document.querySelector('#bgm').paused"), "al salir de Play se calla");
+    /* en edición: botón ▶ para escuchar el archivo elegido */
+    await click('.clip[data-i="1"]');                            // bgm
+    await clickText("#props button", "▶");
+    assert.ok((await js("document.querySelector('#sfx').getAttribute('src') || ''")).includes("tema.wav"),
+              "▶ escucha el archivo del paso");
+    await clickText("#scenes li", "inicio");
   });
 
   /* ---------- correr ---------- */

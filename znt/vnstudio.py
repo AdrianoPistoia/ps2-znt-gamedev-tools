@@ -92,6 +92,7 @@ class VNRuntime:
         self.bg_spec = None      # último fondo aplicado (para el frontend)
         self.bgm = None          # archivo de música actual (estado)
         self.last_se = None      # último efecto disparado
+        self.se_seq = 0          # cuántos se dispararon (el cliente detecta uno nuevo por esto)
         self.scene_id = None
         self.done = False
         self.ip = 0
@@ -203,7 +204,7 @@ class VNRuntime:
         elif op == "bgm":
             self.bgm = None if s.get("stop") else s.get("file")
         elif op == "se":
-            self.last_se = s.get("file")
+            self.last_se = s.get("file"); self.se_seq += 1
         elif op == "say":
             self.speaker, self.text = s.get("who"), s.get("text", ""); return True
         elif op == "choice":

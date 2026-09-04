@@ -319,6 +319,7 @@ class Studio:
         st = self._stage_from(self.prt)
         st["playing"] = True; st["done"] = self.prt.done
         st["scene"], st["step"] = self.prt.scene_id, self.prt.cursor   # para el timeline
+        st["se"], st["se_seq"] = self.prt.last_se, self.prt.se_seq     # audio
         return st
 
     def _stage_from(self, rt):
