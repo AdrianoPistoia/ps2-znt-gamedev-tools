@@ -170,6 +170,19 @@
   dialog td{padding:3px 10px 3px 0;vertical-align:top}
   dialog td.k{color:var(--acc2);font:12px var(--mono);white-space:nowrap}
   #dlg-msg{color:var(--mut);margin-bottom:6px}
+  #brw{min-width:min(560px,92vw)}
+  #brw-crumbs{display:flex;flex-wrap:wrap;gap:2px;padding:8px 14px 0;font:11px var(--mono)}
+  #brw-crumbs button{padding:1px 5px;background:transparent;border-color:transparent;color:var(--acc2)}
+  #brw-crumbs button:hover{background:var(--sel);border-color:var(--edge)}
+  #brw-list{list-style:none;margin:8px 14px 0;padding:0;height:46vh;overflow:auto;
+            border:1px solid var(--edge);border-radius:5px;background:#0c0e14}
+  #brw-list li{padding:4px 8px;cursor:pointer;font:12px/1.5 var(--mono);
+               white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #brw-list li:hover{background:#222736}
+  #brw-list li.sel{background:var(--sel);color:#fff}
+  #brw-list li.dir{color:var(--acc)}
+  #brw-foot{display:flex;gap:5px;padding:8px 14px 0}
+  #brw-foot input{font:12px var(--mono)}
 </style></head>
 <body>
 <div id="app">
@@ -273,6 +286,20 @@
   <div id="dlg-body"></div>
   <menu><button value="" id="dlg-cancel">Cancelar</button>
         <button value="ok" id="dlg-ok" class="primary">Aceptar</button></menu>
+</form></dialog>
+
+<dialog id="brw"><form method="dialog">
+  <h3 id="brw-title">Elegir archivo</h3>
+  <div id="brw-crumbs"></div>
+  <ul id="brw-list"></ul>
+  <div id="brw-foot">
+    <input id="brw-path" spellcheck="false">
+    <button type="button" id="brw-up" title="Carpeta de arriba">↑</button>
+    <button type="button" id="brw-home" title="Ir a tu carpeta">⌂</button>
+    <button type="button" id="brw-upload" title="Subir un archivo desde el diálogo del sistema">⇧ subir</button>
+  </div>
+  <menu><button value="">Cancelar</button>
+        <button value="ok" class="primary">Elegir</button></menu>
 </form></dialog>
 
 <dialog id="help"><form method="dialog">

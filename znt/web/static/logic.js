@@ -60,6 +60,19 @@
              y: (fy - grabDY) - st.h + h };
   }
 
+  /* --- explorador de archivos --- */
+
+  /* Ruta -> tramos clickeables. */
+  function crumbs(path) {
+    if (!path) return [];
+    const parts = path.split("/").filter(Boolean);
+    const out = [{ name: "/", path: "/" }];
+    let acc = "";
+    for (const p of parts) { acc += "/" + p; out.push({ name: p, path: acc }); }
+    return out;
+  }
+  const joinPath = (dir, name) => (dir.endsWith("/") ? dir : dir + "/") + name;
+
   /* --- estado --- */
 
   /* Respuesta del server -> estado nuevo + error a mostrar. Una respuesta rota
@@ -196,5 +209,5 @@
   }
 
   return { layerStyle, bgStyle, stageXY, snap, snapTargets, dragTo, POS,
-           clampPane, fitRect, mergeState, KEYMAP, resolveKey, scrubValue, resizeZoom, guides, nextGuide, GUIDES, outlineRows, showStepIndex, LANES, laneOf, clipRect, dropIndex };
+           clampPane, fitRect, crumbs, joinPath, mergeState, KEYMAP, resolveKey, scrubValue, resizeZoom, guides, nextGuide, GUIDES, outlineRows, showStepIndex, LANES, laneOf, clipRect, dropIndex };
 });

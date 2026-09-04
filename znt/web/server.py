@@ -56,7 +56,8 @@ class Studio:
         return {"api": API,
                 "model": self.model, "scene": self.scene, "step": self.step,
                 "play": self.play_state() if self.prt else None,
-                "path": self.path, "base": self.base, "problems": self.problems,
+                "path": self.path, "base": os.path.abspath(self.base or "."),
+                "problems": self.problems,
                 "step_ops": vn.STEP_OPS,
                 "can_undo": bool(self.undo), "can_redo": bool(self.redo)}
 
@@ -133,6 +134,25 @@ class Studio:
                 self.rt.invalidate()
         elif o == "rename_char":
             self._snapshot(); vn.rename_character(self.model, r.get("old"), r.get("new"))
+        elif o == "import_asset":
+            # traer un archivo de cualquier carpeta del disco al lado del .vn
+            src = os.path.expanduser(r.get("path") or "")
+            if not os.path.isfile(src):
+                st = self.state(); st["error"] = f"no existe el archivo: {src}"
+                return st
+            name = os.path.basename(src)
+            dst = os.path.join(self.base or ".", name)
+            if os.path.abspath(src) != os.path.abspath(dst):
+                with open(src, "rb") as fi, open(dst, "wb") as fo:
+                    fo.write(fi.read())
+            self._snapshot()
+            c = self.model["characters"].get(r.get("id"))
+            steps, ap = self.steps(), r.get("apply")
+            if c is not None:
+                c["sprite"] = name
+            elif ap and 0 <= self.step < len(steps):
+                self._set_props(steps[self.step], {ap: name})
+            self.rt.invalidate()
         elif o == "upload_sprite":
             # el browser no ve el disco del server: manda la imagen elegida en base64.
             c = self.model["characters"].get(r.get("id"))
@@ -272,6 +292,35 @@ class Studio:
                 "warnings": rt.warnings()}
 
 
+    def browse(self, path, kind="any"):
+        """Lista una carpeta del disco para el explorador del editor.
+        (El server es local y el editor ya escribe donde le digas: esto no abre
+        nada que la ruta a mano no abriera igual.)"""
+        home = os.path.expanduser("~")
+        path = os.path.abspath(os.path.expanduser(path or home))
+        pick = None
+        if os.path.isfile(path):
+            path, pick = os.path.dirname(path), os.path.basename(path)
+        if not os.path.isdir(path):
+            path = home
+        exts = {"img": vn._IMG_EXTS, "audio": vn._SND_EXTS, "vn": {".vn"}}.get(kind)
+        dirs, files = [], []
+        try:
+            for name in sorted(os.listdir(path), key=str.lower):
+                if name.startswith("."):
+                    continue
+                full = os.path.join(path, name)
+                if os.path.isdir(full):
+                    dirs.append(name)
+                elif exts is None or os.path.splitext(name)[1].lower() in exts:
+                    files.append(name)
+        except OSError as e:
+            return {"path": path, "parent": os.path.dirname(path), "dirs": [], "files": [],
+                    "home": home, "pick": None, "error": str(e)}
+        parent = os.path.dirname(path)
+        return {"path": path, "parent": parent if parent != path else None,
+                "dirs": dirs, "files": files, "home": home, "pick": pick}
+
     def assets(self, kind="img"):
         return vn.list_assets(self.base, kind)
 
@@ -370,6 +419,9 @@ class _Handler(BaseHTTPRequestHandler):
             sc = (q.get("scene") or [self.studio.scene])[0]
             sp = (q.get("step") or ["-1"])[0]
             return self._json(self.studio.stage(sc, sp))
+        if path == "/api/browse":
+            return self._json(self.studio.browse((q.get("path") or [""])[0],
+                                                 (q.get("kind") or ["any"])[0]))
         if path == "/api/assets":
             return self._json({"assets": self.studio.assets(),
                                "audio": self.studio.assets("audio")})

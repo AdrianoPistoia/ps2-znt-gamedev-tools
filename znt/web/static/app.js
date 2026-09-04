@@ -17,6 +17,7 @@ const api = {
                              body: JSON.stringify(o)}).then(r => r.json()),
   stage: (sc, st) => fetch(`/api/stage?scene=${encodeURIComponent(sc)}&step=${st}`).then(r => r.json()),
   assets: () => fetch("/api/assets").then(r => r.json()),
+  browse: (p, kind) => fetch(`/api/browse?path=${encodeURIComponent(p||"")}&kind=${kind}`).then(r => r.json()),
 };
 let toastT = null;
 function toast(msg, bad){
@@ -345,15 +346,70 @@ function upload(req, accept){
   };
   f.click();
 }
-/* selector de asset + botón "…" para traer uno del sistema */
+/* ---------- explorador de archivos del disco ----------
+   Estándar: TODO campo que apunte a un archivo lleva su botón 📁. */
+let brwDir = null;
+async function browseTo(dir, kind, sel){
+  const r = await api.browse(dir, kind);
+  if (r.error) toast(r.error, true);
+  brwDir = r.path;
+  $("#brw-path").value = sel || r.pick ? VNS.joinPath(r.path, sel || r.pick) : r.path;
+  const cr = $("#brw-crumbs"); cr.innerHTML = "";
+  VNS.crumbs(r.path).forEach(c => {
+    const b = document.createElement("button"); b.type = "button"; b.textContent = c.name;
+    b.onclick = () => browseTo(c.path, kind);
+    cr.append(b);
+  });
+  const ul = $("#brw-list"); ul.innerHTML = "";
+  r.dirs.forEach(d => {
+    const li = document.createElement("li"); li.className = "dir"; li.textContent = "📁 " + d;
+    li.onclick = () => browseTo(VNS.joinPath(r.path, d), kind);
+    ul.append(li);
+  });
+  r.files.forEach(f => {
+    const li = document.createElement("li"); li.textContent = "   " + f;
+    if (f === (sel || r.pick)) li.className = "sel";
+    li.onclick = () => {
+      ul.querySelectorAll("li").forEach(x => x.classList.remove("sel"));
+      li.classList.add("sel"); $("#brw-path").value = VNS.joinPath(r.path, f);
+    };
+    li.ondblclick = () => { $("#brw-path").value = VNS.joinPath(r.path, f);
+                            $("#brw").close("ok"); };
+    ul.append(li);
+  });
+  $("#brw-up").onclick = () => r.parent && browseTo(r.parent, kind);
+  $("#brw-home").onclick = () => browseTo(r.home, kind);
+}
+/* kind: "vn" | "img" | "audio" | "any". Devuelve la ruta elegida o null. */
+function browse(title, kind, start, onUpload){
+  const dlg = $("#brw");
+  $("#brw-title").textContent = title;
+  $("#brw-upload").hidden = !onUpload;
+  $("#brw-upload").onclick = () => { dlg.close(""); onUpload(); };
+  browseTo(start || brwDir || "", kind);
+  dlg.showModal();
+  return new Promise(res => dlg.addEventListener("close", () => {
+    res(dlg.returnValue === "ok" ? ($("#brw-path").value.trim() || null) : null);
+  }, {once:true}));
+}
+/* botón 📁 para cualquier campo de archivo */
+function fileBtn(title, kind, start, onPick, onUpload){
+  const b = document.createElement("button");
+  b.textContent = "📁"; b.title = "buscar en el disco";
+  b.style.flex = "0 0 auto";
+  b.onclick = async () => { const p = await browse(title, kind, start, onUpload); if (p) onPick(p); };
+  return b;
+}
+
+/* selector de asset + botón 📁 (traer del disco) y ⇧ (subir) */
 function picker(cur, list, onpick, apply, accept){
   const sel = select(cur, [""].concat(list.includes(cur) || !cur ? list : list.concat(cur)));
   sel.querySelector('option[value=""]').textContent = "(ninguno)";
   sel.onchange = () => onpick(sel.value);
-  const b = document.createElement("button");
-  b.textContent = "…"; b.title = "elegir un archivo de tu compu";
-  b.style.flex = "0 0 auto";
-  b.onclick = () => upload({op:"upload", apply}, accept);
+  const kind = accept && accept.startsWith("audio") ? "audio" : "img";
+  const b = fileBtn("Elegir archivo", kind, S.path || "",
+                    p => op({op:"import_asset", path:p, apply}),
+                    () => upload({op:"upload", apply}, accept));
   const w = document.createElement("div");
   w.style.cssText = "display:flex;gap:4px;flex:1"; w.append(sel, b);
   return w;
@@ -461,10 +517,9 @@ function renderProps(){
       const sel = select(cur, [""].concat(ASSETS));
       sel.querySelector('option[value=""]').textContent = "(placeholder)";
       sel.onchange = () => op({op:"set_sprite", id: s.id, file: sel.value});
-      const pick = document.createElement("button");           // elegir del sistema
-      pick.textContent = "…"; pick.title = "elegir una imagen de tu compu";
-      pick.style.flex = "0 0 auto";
-      pick.onclick = () => upload({op:"upload_sprite", id: s.id});
+      const pick = fileBtn("Elegir imagen del personaje", "img", S.path || "",
+                           p => op({op:"import_asset", path:p, id:s.id}),
+                           () => upload({op:"upload_sprite", id: s.id}));
       const wrap = document.createElement("div");
       wrap.style.cssText = "display:flex;gap:4px;flex:1";
       wrap.append(sel, pick);
@@ -558,18 +613,23 @@ const stepCount = () => (S.model.scenes[S.scene] || []).length;
 $("#b-new").onclick = async () => {
   if (await ask("Nuevo proyecto", [], "Se descarta lo que no hayas guardado.")) op({op:"new_project"}); };
 $("#b-open").onclick = async () => {
-  const p = await askOne("Abrir proyecto", "ruta del .vn", S.path || ""); if (p) op({op:"open_project", path:p}); };
+  const p = await browse("Abrir proyecto (.vn)", "vn", S.path || "");
+  if (p) op({op:"open_project", path:p}); };
 $("#b-play").onclick = () => op(S.play ? {op:"play_stop"} : {op:"play", scene:S.scene});
 $("#b-undo").onclick = () => op({op:"undo"});
 $("#b-redo").onclick = () => op({op:"redo"});
 $("#b-validate").onclick = () => op({op:"validate"});
 $("#b-save").onclick = async () => {
   if (S.path) return op({op:"save"});
-  const p = await askOne("Guardar proyecto", "ruta del .vn",
-                         (S.model.title || "historia").toLowerCase().replace(/\s+/g, "-") + ".vn");
+  const sug = (S.model.title || "historia").toLowerCase().replace(/\s+/g, "-") + ".vn";
+  const p = await browse("Guardar como (.vn)", "vn", VNS.joinPath(S.base || "", sug));
   if (p) op({op:"save", path:p});
 };
-$("#b-export").onclick = () => op({op:"export"});
+$("#b-export").onclick = async () => {
+  const p = await browse("Exportar player HTML", "any",
+                         VNS.joinPath(S.base || "", "player.html"));
+  if (p) op({op:"export", path:p});
+};
 $("#b-char").onclick = async () => {
   const r = await ask("Nuevo personaje", [
     {k:"id", label:"id"}, {k:"name", label:"nombre"},
@@ -615,7 +675,7 @@ $("#help-body").innerHTML = VNS.KEYMAP.map(
 
 addEventListener("keydown", e => {
   const t = e.target.tagName;
-  if (t === "INPUT" || t === "TEXTAREA" || t === "SELECT" || $("#dlg").open) return;
+  if (t === "INPUT" || t === "TEXTAREA" || t === "SELECT" || $("#dlg").open || $("#brw").open) return;
   if ($("#help").open) return;
   /* en Play, espacio/enter avanzan el diálogo */
   if (S.play && (e.key === " " || e.key === "Enter") && !(SG.choices||[]).length && !SG.done) {

@@ -243,8 +243,12 @@ Los tres paneles se redimensionan y el tamaño queda guardado.
 Atajos: Espacio (Play/avanzar), Esc, ←/→, Supr, G (guías), Ctrl+Z/Y/S, **?**
 (lista completa). Nuevo/abrir/personaje/escena usan diálogos propios.
 
-Funciones: **Play** (los choices saltan de escena), **orden Z**, selectores de
-sprite, fondo y audio con botón **"…"** para elegir un archivo de tu compu (se
-copia junto al `.vn`), y editar id/nombre/color del personaje.
+Funciones: **Play** (los choices saltan de escena), **orden Z**, y editar
+id/nombre/color del personaje.
+
+**Todo campo que apunte a un archivo tiene su botón 📁**: abrir, guardar como,
+exportar, sprite, fondo y audio. Abre un explorador del disco del server (con
+migas de pan, ↑, ⌂ y filtro por tipo) y, en los assets, además permite subir uno
+desde el diálogo del sistema; lo elegido se copia junto al `.vn`.
 
 `znt/web/` es opcional igual que `znt/gui/`: se puede borrar y el core sigue.
