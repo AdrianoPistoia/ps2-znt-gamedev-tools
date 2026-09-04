@@ -307,7 +307,7 @@
 <dialog id="dlg"><form method="dialog">
   <h3 id="dlg-title"></h3>
   <div id="dlg-body"></div>
-  <menu><button value="" id="dlg-cancel">Cancelar</button>
+  <menu><button type="button" id="dlg-cancel" onclick="this.closest('dialog').close('')">Cancelar</button>
         <button value="ok" id="dlg-ok" class="primary">Aceptar</button></menu>
 </form></dialog>
 
@@ -321,7 +321,7 @@
     <button type="button" id="brw-home" title="Ir a tu carpeta">⌂</button>
     <button type="button" id="brw-upload" title="Subir un archivo desde el diálogo del sistema">⇧ subir</button>
   </div>
-  <menu><button value="">Cancelar</button>
+  <menu><button type="button" onclick="this.closest('dialog').close('')">Cancelar</button>
         <button value="ok" class="primary">Elegir</button></menu>
 </form></dialog>
 

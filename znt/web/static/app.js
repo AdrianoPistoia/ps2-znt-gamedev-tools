@@ -26,14 +26,18 @@ function toast(msg, bad){
   t.textContent = msg; t.classList.toggle("bad", !!bad); t.hidden = false;
   clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, bad ? 7000 : 3000);
 }
+window.__vns = { busy: 0 };                        // ops en vuelo (lo mira el QA)
 async function op(o){
-  let res = null;
-  try { res = await api.op(o); }
-  catch (e) { res = { error: String(e) }; }         // el server se cayó / red
-  const m = VNS.mergeState(S, res);
-  S = m.state;
-  if (m.error) toast(m.error, true);
-  await refresh();
+  window.__vns.busy++;
+  try {
+    let res = null;
+    try { res = await api.op(o); }
+    catch (e) { res = { error: String(e) }; }       // el server se cayó / red
+    const m = VNS.mergeState(S, res);
+    S = m.state;
+    if (m.error) toast(m.error, true);
+    await refresh();
+  } finally { window.__vns.busy--; }
 }
 
 /* ---------- paneles: splitters con memoria ---------- */
@@ -531,9 +535,14 @@ function renderProps(){
   const steps = S.model.scenes[S.scene] || [];
   if (!(S.step >= 0 && S.step < steps.length)) {
     box.innerHTML = '<div class="hint">(elegí un paso en el timeline)</div>'; return; }
-  const s = steps[S.step], chars = Object.keys(S.model.characters), f = {};
+  const s = steps[S.step], chars = Object.keys(S.model.characters);
   const paso = sect("Paso", true); box.appendChild(paso);
-  const add = (k, label, el) => { f[k] = el; paso.add(field(label, el)); };
+  /* cada campo se aplica solo al cambiar (Enter o salir del campo): sin "Aplicar" */
+  const add = (k, label, el) => {
+    el.onchange = () => op({op:"set_props", props:{[k]: parseProp(k, el)}});
+    if (el.tagName === "INPUT") el.onkeydown = e => { if (e.key === "Enter") el.blur(); };
+    paso.add(field(label, el));
+  };
 
   if (s.op === "bg") {
     const p = s.spec||{};
@@ -569,7 +578,8 @@ function renderProps(){
     }
   } else if (s.op === "say") {
     const t = document.createElement("textarea"); t.rows = 3; t.value = s.text || "";
-    f.text = t; paso.add(field("texto", t));
+    add("text", "texto", t);
+    t.onkeydown = e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); t.blur(); } };
     box.appendChild(charSection(s.who, chars, v => op({op:"set_props", props:{who: v}}), true));
   } else if (s.op === "animate") {
     add("kind","tipo", select(s.kind, ["linear","accel","decel","move","wave","waveonce","jump","jumponce","fall","vibrate"]));
@@ -592,21 +602,15 @@ function renderProps(){
     paso.insertAdjacentHTML("beforeend", '<div class="hint">etiqueta -&gt; escena (una por línea)</div>');
   } else { paso.insertAdjacentHTML("beforeend", '<div class="hint">(sin propiedades)</div>'); return; }
 
-  const b = document.createElement("button"); b.textContent = "Aplicar";
-  b.style.margin = "8px 0 4px";
-  b.onclick = () => {
-    const props = {};
-    for (const [k, el] of Object.entries(f)) {
-      let v = el.type === "checkbox" ? el.checked : el.value;
-      if (k === "options") v = v.split("\n").filter(x=>x.includes("->"))
-            .map(x => ({label:x.split("->")[0].trim(), target:x.split("->")[1].trim()}));
-      else if (k === "params") { const o={}; v.split(/\s+/).filter(Boolean).forEach(kv=>{
-            const [a,bb]=kv.split("="); const n=Number(bb); o[a]= isNaN(n)?bb:n; }); v=o; }
-      props[k] = v;
-    }
-    op({op:"set_props", props});
-  };
-  paso.add(b);
+}
+/* valor de un campo del paso, con el tipo que espera el modelo */
+function parseProp(k, el){
+  let v = el.type === "checkbox" ? el.checked : el.value;
+  if (k === "options") return v.split("\n").filter(x => x.includes("->"))
+      .map(x => ({label: x.split("->")[0].trim(), target: x.split("->")[1].trim()}));
+  if (k === "params") { const o = {}; v.split(/\s+/).filter(Boolean).forEach(kv => {
+      const [a, bb] = kv.split("="); const n = Number(bb); o[a] = isNaN(n) ? bb : n; }); return o; }
+  return v;
 }
 
 async function refresh(){
@@ -656,7 +660,11 @@ $("#b-play").onclick = () => op(S.play ? {op:"play_stop"}
                                  : {op:"play", scene:S.scene, step: Math.max(0, S.step)});
 $("#b-undo").onclick = () => op({op:"undo"});
 $("#b-redo").onclick = () => op({op:"redo"});
-$("#b-validate").onclick = () => op({op:"validate"});
+$("#b-validate").onclick = async () => {
+  await op({op:"validate"});
+  if (!(S.problems || []).length) toast("✓ proyecto válido: sin problemas");
+  else toast(`${S.problems.length} problema(s) — mirá el panel de propiedades`, true);
+};
 $("#b-save").onclick = async () => {
   if (S.path) return op({op:"save"});
   const sug = (S.model.title || "historia").toLowerCase().replace(/\s+/g, "-") + ".vn";

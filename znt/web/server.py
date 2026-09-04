@@ -586,11 +586,11 @@ def serve(path=None, host="127.0.0.1", port=8765, open_browser=True, restart=Fal
     httpd = make_server(st, host, port)
     got = httpd.server_address[1]
     _write_pid(got)
-    if got != port:
+    if port and got != port:
         print(f"⚠ el puerto {port} ya estaba ocupado (¿otro VN Studio abierto?): "
               f"uso el {got}. Cerrá el viejo si no lo querés.")
     url = f"http://{host}:{got}/"
-    print(f"VN Studio (web) en {url}   — Ctrl+C para salir")
+    print(f"VN Studio (web) en {url}   — Ctrl+C para salir", flush=True)
     if open_browser:
         try:
             import webbrowser; webbrowser.open(url)

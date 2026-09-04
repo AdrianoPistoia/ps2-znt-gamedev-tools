@@ -50,6 +50,11 @@ if command -v chromium >/dev/null || command -v google-chrome-stable >/dev/null;
   run "estructura de la UI ya renderizada" python3 tests/browser/dom_check.py
 else skip "DOM" "no hay chromium"; fi
 
+echo "── QA con browser real (CDP: clicks, teclado, arrastre)"
+if command -v node >/dev/null && (command -v chromium >/dev/null || command -v google-chrome-stable >/dev/null); then
+  run "flujos de usuario en VN Studio" node tests/browser/qa.js
+else skip "QA browser" "falta node o chromium"; fi
+
 echo "── masterizado de ISO"
 if command -v genisoimage >/dev/null; then
   TMP=$(mktemp -d); printf '\x7fELF' > "$TMP/p.elf"
