@@ -122,7 +122,7 @@ function renderLists(){
   $("#m-path").classList.toggle("dirty", !!S.dirty);
   $("#m-path").title = S.dirty ? "hay cambios sin guardar (Ctrl+S)" : "";
   document.title = (S.dirty ? "● " : "") + "VN Studio";
-  renderChars();
+  renderChars(); renderQuickWho();
   $("#b-play").classList.toggle("on", !!S.play);
 }
 
@@ -514,6 +514,23 @@ function charSection(cid, chars, assign, withSprite){
   return sec;
 }
 
+/* parámetros de animación por tipo (los que usa el engine, ver vnstudio._animate) */
+const APARAMS = {
+  linear: ["x", "y", "time"], accel: ["x", "y", "time"], decel: ["x", "y", "time"],
+  move: ["x", "y", "time", "curve"],
+  wave: ["vib", "cycle"], waveonce: ["vib", "cycle"], jump: ["vib", "cycle"], jumponce: ["vib", "cycle"],
+  fall: ["dist", "falltime"], vibrate: ["vib", "wait"],
+};
+const ALABEL = { x: "x destino", y: "y destino", time: "tiempo ms", curve: "curva", vib: "amplitud",
+                 cycle: "ciclo ms", dist: "distancia", falltime: "tiempo ms", wait: "cada ms" };
+const ADEF = { x: 0, y: 0, time: 500, curve: "linear", vib: 18, cycle: 340, dist: 120, falltime: 600, wait: 40 };
+/* params completos para un tipo: conserva los que siguen aplicando, rellena el resto */
+function animDefaults(kind, cur){
+  const out = {};
+  (APARAMS[kind] || []).forEach(k => { out[k] = (cur && cur[k] != null) ? cur[k] : ADEF[k]; });
+  return out;
+}
+
 /* secciones plegables (recuerdan si quedaron abiertas) */
 function sect(title, open){
   const d = document.createElement("details"), k = "vnssec:" + title;
@@ -610,8 +627,21 @@ function renderProps(){
     t.onkeydown = e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); t.blur(); } };
     box.appendChild(charSection(s.who, chars, v => op({op:"set_props", props:{who: v}}), true));
   } else if (s.op === "animate") {
-    add("kind","tipo", select(s.kind, ["linear","accel","decel","move","wave","waveonce","jump","jumponce","fall","vibrate"]));
-    add("params","params", input(Object.entries(s.params||{}).map(([k,v])=>`${k}=${v}`).join(" ")));
+    const kind = select(s.kind, Object.keys(APARAMS)); kind.dataset.k = "kind";
+    kind.onchange = () => op({op:"set_props", props:{kind: kind.value, params: animDefaults(kind.value, s.params)}});
+    paso.add(field("tipo", kind));
+    const params = animDefaults(s.kind, s.params);   // campos según el tipo, no "k=v"
+    (APARAMS[s.kind] || []).forEach(k => {
+      if (k === "curve") {
+        const c = select(params.curve, ["linear", "accel", "decel"]); c.dataset.p = "curve";
+        c.onchange = () => { params.curve = c.value; op({op:"set_props", props:{params}}); };
+        paso.add(field(ALABEL[k], c)); return;
+      }
+      const row = num(ALABEL[k], params[k], {def: ADEF[k] || 0},
+                      (v, dragging) => { params[k] = v; if (!dragging) op({op:"set_props", props:{params}}); });
+      row.querySelector("input").dataset.p = k;
+      paso.add(row);
+    });
     paso.insertAdjacentHTML("beforeend",
       '<div class="hint">doble click en el timeline (o ▶ Probar paso) para verla</div>');
     box.appendChild(charSection(s.id, chars.filter(c => c !== "narrator"),
@@ -624,10 +654,26 @@ function renderProps(){
   } else if (s.op === "goto") {
     add("target","a", select(s.target, S.model.order));
   } else if (s.op === "choice") {
-    const t = document.createElement("textarea"); t.rows = 4;
-    t.value = (s.options||[]).map(o=>`${o.label} -> ${o.target}`).join("\n");
-    add("options","opciones", t);
-    paso.insertAdjacentHTML("beforeend", '<div class="hint">etiqueta -&gt; escena (una por línea)</div>');
+    /* una fila por opción: etiqueta + escena destino + ✕ */
+    const opts = (s.options || []).map(o => Object.assign({}, o));
+    const commit = () => op({op:"set_props", props:{options: opts}});
+    const wrap = document.createElement("div");
+    opts.forEach((o, i) => {
+      const row = document.createElement("div"); row.className = "opt";
+      const lbl = input(o.label); lbl.placeholder = "etiqueta";
+      lbl.onchange = () => { opts[i].label = lbl.value; commit(); };
+      lbl.onkeydown = e => { if (e.key === "Enter") lbl.blur(); };
+      const tgt = select(o.target, S.model.order);
+      tgt.onchange = () => { opts[i].target = tgt.value; commit(); };
+      const x = document.createElement("span"); x.className = "x"; x.textContent = "✕"; x.title = "sacar la opción";
+      x.onclick = () => { opts.splice(i, 1); commit(); };
+      row.append(lbl, tgt, x); wrap.appendChild(row);
+    });
+    const addb = document.createElement("button"); addb.textContent = "+ opción";
+    addb.onclick = () => { opts.push({label: "opción", target: S.model.order[0]}); commit(); };
+    wrap.appendChild(addb);
+    paso.add(wrap);
+    if (!opts.length) paso.insertAdjacentHTML("beforeend", '<div class="hint">sin opciones el choice no lleva a ningún lado</div>');
   } else { paso.insertAdjacentHTML("beforeend", '<div class="hint">(sin propiedades)</div>'); return; }
 
 }
@@ -726,6 +772,23 @@ $("#b-step-dup").onclick = () => op({op:"dup_step"});
 $("#b-step-up").onclick = () => op({op:"move_step", delta:-1});
 $("#b-step-dn").onclick = () => op({op:"move_step", delta:1});
 $("#b-step-del").onclick = () => op({op:"del_step"});
+/* diálogo rápido: la acción más común de una VN, sin pasar por el inspector */
+function renderQuickWho(){
+  const sel = $("#quick-who"), cur = sel.value;
+  const ids = Object.keys(S.model.characters);
+  sel.innerHTML = ids.map(id => `<option value="${id}">${S.model.characters[id].name || id}</option>`).join("");
+  const st = (S.model.scenes[S.scene] || [])[S.step];
+  sel.value = ids.includes(cur) ? cur : (st && st.op === "say" && st.who) || ids.find(c => c !== "narrator") || "narrator";
+}
+$("#quick").addEventListener("keydown", async e => {
+  if (e.key === "Escape") return $("#quick").blur();
+  if (e.key !== "Enter") return;
+  const text = $("#quick").value.trim(); if (!text) return;
+  e.preventDefault();
+  $("#quick").value = "";
+  await op({op:"add_step", kind:"say", props:{who: $("#quick-who").value, text}});
+  $("#quick").focus();                              // seguir escribiendo la siguiente línea
+});
 $("#b-prev").onclick = () => op({op:"select", scene:S.scene, step: Math.max(-1, S.step - 1)});
 $("#b-next").onclick = () => op({op:"select", scene:S.scene, step: Math.min(stepCount() - 1, S.step + 1)});
 /* preview AUTORITATIVO: lo renderiza Python con el engine real y llega como APNG */

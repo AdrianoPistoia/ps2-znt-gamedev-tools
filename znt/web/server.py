@@ -97,6 +97,7 @@ class Studio:
         elif o == "add_step":
             self._snapshot()
             s = vn.default_step(r.get("kind", "say"), self.model)
+            s.update(r.get("props") or {})           # p.ej. el diálogo rápido
             i = self.step + 1 if self.step >= 0 else len(self.steps())
             self.steps().insert(i, s); self.step = i
         elif o == "del_step":

@@ -391,6 +391,54 @@ async function main() {
     assert.ok((await text("#toast")).includes("paso"), "y se dice por qué: " + await text("#toast"));
   });
 
+  flow("choice-editor", async () => {
+    await click(`.clip[data-i="${await clipOf("choice")}"]`);
+    assert.strictEqual(await count("#props .opt"), 2, "una fila por opción");
+    assert.strictEqual(await count("#props .opt select"), 2, "el destino es un desplegable de escenas");
+    await selectValue("#props .opt:nth-of-type(2) select", "torre");
+    let opts = (await model()).model.scenes.inicio.find(s => s.op === "choice").options;
+    assert.strictEqual(opts[1].target, "torre", "cambiar el destino aplica");
+    await fillInput("#props .opt:nth-of-type(1) input", "Subir"); await key("Enter");
+    opts = (await model()).model.scenes.inicio.find(s => s.op === "choice").options;
+    assert.strictEqual(opts[0].label, "Subir", "cambiar la etiqueta aplica");
+    await clickText("#props button", "+ opción");
+    assert.strictEqual(await count("#props .opt"), 3, "se agrega una fila");
+    await js(`document.querySelector("#props .opt:nth-of-type(3) .x").click()`); await settle();
+    assert.strictEqual(await count("#props .opt"), 2, "y se saca");
+  });
+
+  flow("animate-campos", async () => {
+    await click(`.clip[data-i="${await clipOf("animate")}"]`);
+    assert.ok(await count('#props input[data-p="vib"]'), "wave: amplitud");
+    assert.ok(await count('#props input[data-p="cycle"]'), "wave: ciclo");
+    assert.strictEqual(await count('#props input[data-p="dist"]'), 0, "wave no tiene distancia");
+    await selectValue('#props select[data-k="kind"]', "fall");
+    assert.ok(await count('#props input[data-p="dist"]'), "fall: distancia");
+    assert.ok(await count('#props input[data-p="falltime"]'), "fall: tiempo");
+    await fillInput('#props input[data-p="dist"]', "200"); await key("Enter");
+    const st = (await model()).model.scenes.inicio.find(s => s.op === "animate");
+    assert.strictEqual(st.kind, "fall"); assert.strictEqual(st.params.dist, 200, "número, no texto");
+    await selectValue('#props select[data-k="kind"]', "move");
+    assert.ok(await count('#props select[data-p="curve"]'), "move: curva como desplegable");
+  });
+
+  flow("dialogo-rapido", async () => {
+    await click('.clip[data-i="1"]');
+    const n = await count(".clip");
+    await click("#quick"); await type("Hola QA"); await key("Enter");
+    assert.strictEqual(await count(".clip"), n + 1, "Enter agrega un say");
+    let sc = (await model()).model.scenes.inicio;
+    assert.strictEqual(sc[2].op, "say"); assert.strictEqual(sc[2].text, "Hola QA", "después del paso elegido");
+    assert.strictEqual(await js("document.activeElement.id"), "quick", "el foco se queda para seguir escribiendo");
+    assert.strictEqual(await js("document.querySelector('#quick').value"), "", "y el campo se vacía");
+    await selectValue("#quick-who", "leo");
+    await type("Y otra"); await key("Enter");
+    sc = (await model()).model.scenes.inicio;
+    assert.strictEqual(sc[3].text, "Y otra", "la siguiente va a continuación");
+    assert.strictEqual(sc[3].who, "leo", "con el hablante elegido");
+    await key("z", CTRL); await key("z", CTRL);
+  });
+
   /* ---------- correr ---------- */
   const names = Object.keys(flows).filter(n => !ONLY.length || ONLY.includes(n));
   let fails = 0;
