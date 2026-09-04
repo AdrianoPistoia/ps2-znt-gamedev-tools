@@ -228,6 +228,17 @@ Lógica de modelo testeable en `vn.py` (`validate`/`rename_character`/
 
 ### En el browser (`python -m znt web [proyecto.vn]`)
 
+```sh
+python -m znt web historia.vn            # abrir
+python -m znt web historia.vn --restart  # baja el que esté corriendo y levanta este
+python -m znt web --stop                 # sólo bajarlo
+python -m znt web historia.vn --port 8790 --no-browser
+```
+
+`--restart` es la salida cuando quedó un server viejo dando vueltas: lo encuentra
+(pidfile o barrido de procesos), lo baja y toma el puerto. Sin `--restart`, si el
+puerto está ocupado usa el siguiente libre y lo avisa.
+
 Mismo editor sin tkinter: el server (stdlib) es la fuente de verdad — corre el
 `VNRuntime` real y describe el layout; el browser lo compone con CSS en % (se
 reescala solo con la ventana) y las animaciones llegan como APNG del engine.

@@ -4,6 +4,7 @@
   python -m znt demo                                  # self-check de todo
   python -m znt container info|unpack|pack ...        # par .HD/.BIN crudo
   python -m znt extract SCENE_ID.HD SCENE_ID.BIN out/ [.nut]   # descomprime
+  python -m znt web [proyecto.vn] [--port N] [--restart|--stop]   # editor web
   python -m znt tim2 info|png ...
   python -m znt font info|png|widths ...
 """
@@ -72,7 +73,7 @@ def main(argv):
             from .web import server as websrv
         except ImportError:
             sys.exit("El front web (znt.web) no está disponible en esta distribución.")
-        return websrv.serve(rest[0] if rest else None)
+        return websrv.cli(rest)
     if group in ("play", "testbench", "studio"):    # front interactivo (opcional)
         try:
             from . import gui

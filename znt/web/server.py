@@ -2,7 +2,7 @@
 """Servidor del editor web (stdlib). `Studio` es el estado del editor (modelo,
 selección, historial) sin ninguna UI; el handler HTTP lo expone como API JSON.
 """
-import json, os, copy, base64, errno, mimetypes, urllib.parse
+import json, os, sys, copy, base64, errno, signal, time, mimetypes, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from .. import vn, frontends
@@ -21,6 +21,10 @@ class Studio:
     """Estado del editor, agnóstico de UI (lo usa el server; testeable solo)."""
 
     def __init__(self, path=None):
+        self.problems = []
+        if path and not os.path.exists(path):        # typo en la ruta: decilo
+            self.problems.append(f"no existe {path}: arranco un proyecto nuevo")
+            sys.stderr.write(f"⚠ no existe {path}: arranco un proyecto nuevo\n")
         if path and os.path.exists(path):
             self.model = vn._link_choices(vn.parse(open(path, encoding="utf-8").read()))
             self.base = os.path.dirname(os.path.abspath(path))
@@ -34,7 +38,6 @@ class Studio:
         self.step = -1
         self.prt = None                              # runtime de reproducción (Play)
         self.undo, self.redo = [], []
-        self.problems = []
 
     # --- helpers -----------------------------------------------------------
     def steps(self):
@@ -195,6 +198,9 @@ class Studio:
             if self.prt: self.prt.choose(int(r.get("i", 0)))
         elif o == "play_stop":
             self.prt = None
+        elif o == "open_project" and not os.path.exists(os.path.expanduser(r.get("path") or "")):
+            st = self.state(); st["error"] = f"no existe el archivo: {r.get('path')}"
+            return st
         elif o == "open_project":
             path = r.get("path")
             if path and os.path.exists(path):
@@ -473,10 +479,110 @@ def make_server(studio, host="127.0.0.1", port=8765):
     raise OSError("no hay puertos libres")
 
 
-def serve(path=None, host="127.0.0.1", port=8765, open_browser=True):
+# --- procesos: encontrar / bajar el server que está corriendo -----------------
+
+PIDDIR = os.path.join(os.environ.get("XDG_RUNTIME_DIR")
+                      or os.path.join(os.path.expanduser("~"), ".cache"), "znt")
+
+
+def _pidfile(port):
+    return os.path.join(PIDDIR, f"web-{port}.pid")
+
+
+def _alive(pid):
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
+def _write_pid(port):
+    try:
+        os.makedirs(PIDDIR, exist_ok=True)
+        open(_pidfile(port), "w").write(str(os.getpid()))
+    except OSError:
+        pass
+
+
+def _scan_proc(port):
+    """Barrido de /proc: encuentra `python -m znt web` aunque no dejara pidfile
+    (p.ej. un server viejo). Sólo Linux; en otros SO queda el pidfile nomás."""
+    out = []
+    try:
+        pids = [int(x) for x in os.listdir("/proc") if x.isdigit()]
+    except OSError:
+        return out
+    for pid in pids:
+        if pid == os.getpid():
+            continue
+        try:
+            argv = open(f"/proc/{pid}/cmdline", "rb").read().split(b"\0")
+        except OSError:
+            continue
+        argv = [a.decode("utf-8", "replace") for a in argv if a]
+        if "web" in argv and "znt" in argv:            # tokens exactos, no substrings
+            got = 8765
+            if "--port" in argv:
+                try:
+                    got = int(argv[argv.index("--port") + 1])
+                except (IndexError, ValueError):
+                    pass
+            out.append((pid, got))
+    return out
+
+
+def running(port=8765):
+    """[(pid, port)] de los VN Studio web que están corriendo en ese puerto."""
+    found = {}
+    f = _pidfile(port)
+    try:
+        pid = int(open(f).read().strip())
+        if _alive(pid):
+            found[pid] = port
+        else:
+            os.remove(f)                                # pidfile viejo
+    except (OSError, ValueError):
+        pass
+    for pid, p in _scan_proc(port):
+        if p == port:
+            found[pid] = p
+    return sorted(found.items())
+
+
+def stop(port=8765, timeout=5.0):
+    """Baja el server de ese puerto. Devuelve los pids que bajó."""
+    killed = []
+    for pid, _ in running(port):
+        try:
+            os.kill(pid, signal.SIGTERM); killed.append(pid)
+        except OSError:
+            pass
+    fin = time.time() + timeout
+    for pid in killed:
+        while _alive(pid) and time.time() < fin:
+            time.sleep(0.05)
+        if _alive(pid):
+            try:
+                os.kill(pid, signal.SIGKILL)            # no se fue por las buenas
+            except OSError:
+                pass
+    try:
+        os.remove(_pidfile(port))
+    except OSError:
+        pass
+    return killed
+
+
+def serve(path=None, host="127.0.0.1", port=8765, open_browser=True, restart=False):
+    if restart:
+        gone = stop(port)
+        print(f"bajé el server anterior (pid {', '.join(map(str, gone))})" if gone
+              else "no había ningún server corriendo en ese puerto")
     st = Studio(path)
     httpd = make_server(st, host, port)
     got = httpd.server_address[1]
+    _write_pid(got)
     if got != port:
         print(f"⚠ el puerto {port} ya estaba ocupado (¿otro VN Studio abierto?): "
               f"uso el {got}. Cerrá el viejo si no lo querés.")
@@ -491,6 +597,11 @@ def serve(path=None, host="127.0.0.1", port=8765, open_browser=True):
         httpd.serve_forever()
     except KeyboardInterrupt:
         print("\nchau")
+    finally:
+        try:
+            os.remove(_pidfile(got))
+        except OSError:
+            pass
 
 
 def demo():
@@ -560,3 +671,28 @@ def demo():
 
 if __name__ == "__main__":
     demo()
+
+
+def cli(args):
+    """znt web [proyecto.vn] [--port N] [--restart] [--stop] [--no-browser]"""
+    port, path, restart, browser, do_stop = 8765, None, False, True, False
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == "--port" and i + 1 < len(args):
+            i += 1; port = int(args[i])
+        elif a in ("--restart", "-r"):
+            restart = True
+        elif a == "--stop":
+            do_stop = True
+        elif a in ("--no-browser", "-n"):
+            browser = False
+        elif not a.startswith("-"):
+            path = a
+        i += 1
+    if do_stop:
+        gone = stop(port)
+        print(f"bajé el server (pid {', '.join(map(str, gone))})" if gone
+              else f"no había ningún VN Studio en el puerto {port}")
+        return
+    serve(path, port=port, open_browser=browser, restart=restart)

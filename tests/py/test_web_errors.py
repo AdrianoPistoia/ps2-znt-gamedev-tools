@@ -31,3 +31,14 @@ open(os.path.join(d, "ok.png"), "wb").write(
 st.op({"op": "set_sprite", "id": "a", "file": "ok.png"})
 assert not st.stage("s", 0).get("warnings"), st.stage("s", 0).get("warnings")
 print("ERRORS GREEN")
+
+# 3) abrir un .vn que no existe (typo en la ruta) no puede quedar mudo:
+#    arranca en blanco PERO lo dice
+st3 = ws.Studio("/no/existe/historia.vn~")
+assert st3.path is None and st3.model["order"], "arranca en blanco igual"
+assert any("no existe" in p for p in st3.problems), st3.problems
+assert st3.state()["problems"] == st3.problems
+
+r = ws.Studio(p).op({"op": "open_project", "path": "/tampoco/existe.vn"})
+assert r.get("error") and "existe" in r["error"], r.get("error")
+print("ERRORS+OPEN GREEN")
