@@ -90,6 +90,14 @@
   }
   const joinPath = (dir, name) => (dir.endsWith("/") ? dir : dir + "/") + name;
 
+  /* --- Play --- */
+
+  /* Escena/paso que muestra el timeline: los del runtime mientras se reproduce. */
+  function playCursor(S) {
+    if (S.play) return { scene: S.play.scene, step: S.play.step, playing: true };
+    return { scene: S.scene, step: S.step, playing: false };
+  }
+
   /* --- estado --- */
 
   /* Respuesta del server -> estado nuevo + error a mostrar. Una respuesta rota
@@ -226,5 +234,5 @@
   }
 
   return { layerStyle, bgStyle, stageXY, snap, snapTargets, dragTo, POS,
-           clampPane, fitRect, stageOverlay, crumbs, joinPath, mergeState, KEYMAP, resolveKey, scrubValue, resizeZoom, guides, nextGuide, GUIDES, outlineRows, showStepIndex, LANES, laneOf, clipRect, dropIndex };
+           clampPane, fitRect, playCursor, stageOverlay, crumbs, joinPath, mergeState, KEYMAP, resolveKey, scrubValue, resizeZoom, guides, nextGuide, GUIDES, outlineRows, showStepIndex, LANES, laneOf, clipRect, dropIndex };
 });

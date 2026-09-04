@@ -190,8 +190,10 @@ class Studio:
                                       for k, v in props.items()})
                 self.rt.invalidate()
         elif o == "play":
+            # arranca en el paso elegido (o el que mande el cliente), no en el 0
             self.prt = VNRuntime(self.model, self.base)
-            self.prt.enter(r.get("scene") or self.scene)
+            k = r.get("step", self.step if r.get("scene", self.scene) == self.scene else 0)
+            self.prt.enter_at(r.get("scene") or self.scene, k if k is not None else 0)
         elif o == "play_advance":
             if self.prt: self.prt.advance()
         elif o == "play_choose":
@@ -270,6 +272,7 @@ class Studio:
     def play_state(self):
         st = self._stage_from(self.prt)
         st["playing"] = True; st["done"] = self.prt.done
+        st["scene"], st["step"] = self.prt.scene_id, self.prt.cursor   # para el timeline
         return st
 
     def _stage_from(self, rt):

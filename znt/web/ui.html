@@ -50,6 +50,15 @@
   .hsplit{cursor:row-resize;background:var(--bg)}
   .vsplit:hover,.hsplit:hover,.vsplit.drag,.hsplit.drag{background:var(--acc2)}
 
+  /* ---------- modo Play: se apaga todo menos el juego y el timeline ---------- */
+  body.playing #outliner, body.playing #inspector,
+  body.playing #topbar > :not(#b-play):not(.grow){opacity:.28;pointer-events:none;
+       filter:saturate(.4);transition:opacity .15s}
+  body.playing #timeline{box-shadow:inset 0 2px 0 var(--acc)}
+  body.playing #timeline .bar{opacity:.28;pointer-events:none}   /* no se edita en Play */
+  .clip.playing{outline:2px solid var(--acc);outline-offset:-1px;filter:brightness(1.4)}
+  body.playing .playhead{width:2px;box-shadow:0 0 8px var(--acc)}
+
   /* ---------- outliner ---------- */
   ul.list{list-style:none;margin:0;padding:2px 0}
   ul.list li{display:flex;align-items:center;gap:6px;padding:3px 8px;cursor:pointer;

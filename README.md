@@ -254,8 +254,14 @@ Los tres paneles se redimensionan y el tamaño queda guardado.
 Atajos: Espacio (Play/avanzar), Esc, ←/→, Supr, G (guías), Ctrl+Z/Y/S, **?**
 (lista completa). Nuevo/abrir/personaje/escena usan diálogos propios.
 
-Funciones: **Play** (los choices saltan de escena), **orden Z**, y editar
-id/nombre/color del personaje.
+**Play** arranca en el paso seleccionado (lo anterior queda aplicado), cada
+click en la pantalla avanza un diálogo, y el timeline sigue al runtime: el clip
+en reproducción queda marcado y si un choice/goto salta de escena, el timeline
+cambia con él. Click en un clip durante Play = reproducir desde ahí. El resto de
+la UI se apaga mientras tanto; Esc o ⏹ vuelve a editar.
+
+Funciones: **orden Z**, y editar id/nombre/color del personaje en la sección
+Personaje del inspector (el único lugar donde se elige y se edita).
 
 **Todo campo que apunte a un archivo tiene su botón 📁**: abrir, guardar como,
 exportar, sprite, fondo y audio. Abre un explorador del disco del server (con

@@ -101,8 +101,8 @@ function renderLists(){
     const li = document.createElement("li");
     li.innerHTML = `<span>${id}</span><span class="grow"></span><span class="n">${S.model.scenes[id].length}</span>`;
     li.style.cssText = "display:flex";
-    if (id === S.scene) li.className = "sel";
-    li.onclick = () => op({op:"select", scene:id, step:0});
+    if (id === VNS.playCursor(S).scene) li.className = "sel";
+    li.onclick = () => op(S.play ? {op:"play", scene:id, step:0} : {op:"select", scene:id, step:0});
     sc.appendChild(li);
   });
   renderTimeline(); renderLayers();
@@ -111,7 +111,7 @@ function renderLists(){
   $("#probs").textContent = (S.problems||[]).concat((SG && SG.warnings) || []).join("\n");
   $("#m-count").textContent = S.model.order.length;
   $("#m-scene").textContent = S.play
-    ? `▶ ${S.scene}${S.play.done ? " · fin" : ""} — Esc para salir`
+    ? `▶ ${S.play.scene} · paso ${S.play.step + 1}${S.play.done ? " · fin" : ""} — Esc para salir`
     : `${S.scene} · paso ${S.step < 0 ? "—" : S.step + 1}/${steps.length}`;
   $("#m-op").textContent = S.step >= 0 && steps[S.step] ? steps[S.step].op : "";
   $("#m-path").textContent = S.path || "(sin guardar)";
@@ -212,7 +212,9 @@ const trackX = e => {
 };
 
 function renderTimeline(){
-  const steps = S.model.scenes[S.scene] || [];
+  const cur = VNS.playCursor(S);
+  const steps = S.model.scenes[cur.scene] || [];
+  document.body.classList.toggle("playing", cur.playing);
   const keep = $("#tlbody .tl-track"), sx = keep ? keep.scrollLeft : 0;
   const lab = VNS.LANES.map(l => `<div>${l.key}</div>`).join("");
   const H = TLV.ruler + VNS.LANES.length * TLV.lh;
@@ -240,7 +242,7 @@ function renderTimeline(){
 
   steps.forEach((st, i) => {
     const r = VNS.clipRect(st, i, TLV), c = document.createElement("div");
-    c.className = "clip" + (i === S.step ? " sel" : "");
+    c.className = "clip" + (i === cur.step ? (cur.playing ? " playing" : " sel") : "");
     c.dataset.i = i;
     Object.assign(c.style, {left: r.x + "px", top: (TLV.ruler + r.y) + "px",
                             width: r.w + "px", height: r.h + "px",
@@ -249,16 +251,27 @@ function renderTimeline(){
     inner.appendChild(c);
   });
 
-  if (S.step >= 0) {
+  if (cur.step >= 0) {
     const ph = document.createElement("div");
-    ph.className = "playhead"; ph.style.left = (S.step * TLV.cw) + "px";
+    ph.className = "playhead"; ph.style.left = (cur.step * TLV.cw) + "px";
     inner.appendChild(ph);
+    if (cur.playing) {                        // que el paso en curso quede a la vista
+      const t = $("#tlbody .tl-track"), x = cur.step * TLV.cw;
+      if (x < t.scrollLeft || x + TLV.cw > t.scrollLeft + t.clientWidth) t.scrollLeft = x - 40;
+    }
   }
   $("#tlbody .tl-track").scrollLeft = sx;
 }
 
 /* arrastrar un clip lo reordena; arrastrar la regla mueve el playhead */
 $("#tlbody").addEventListener("pointerdown", e => {
+  if (S.play) {                               // en Play: saltar a ese paso
+    const c = e.target.closest(".clip");
+    const n = (S.model.scenes[S.play.scene] || []).length;
+    const i = c ? +c.dataset.i : VNS.dropIndex(trackX(e), TLV, n);
+    if (n) op({op:"play", scene:S.play.scene, step:i});
+    return;
+  }
   const steps = S.model.scenes[S.scene] || [];
   const c = e.target.closest(".clip");
   if (c) {
@@ -639,7 +652,8 @@ $("#b-new").onclick = async () => {
 $("#b-open").onclick = async () => {
   const p = await browse("Abrir proyecto (.vn)", "vn", S.path || "");
   if (p) op({op:"open_project", path:p}); };
-$("#b-play").onclick = () => op(S.play ? {op:"play_stop"} : {op:"play", scene:S.scene});
+$("#b-play").onclick = () => op(S.play ? {op:"play_stop"}
+                                 : {op:"play", scene:S.scene, step: Math.max(0, S.step)});
 $("#b-undo").onclick = () => op({op:"undo"});
 $("#b-redo").onclick = () => op({op:"redo"});
 $("#b-validate").onclick = () => op({op:"validate"});

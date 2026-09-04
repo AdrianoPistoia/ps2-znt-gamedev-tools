@@ -134,6 +134,22 @@ class VNRuntime:
         self.scene_id = scene_id
         self._run()
 
+    def enter_at(self, scene_id, k):
+        """Play desde el paso k: lo anterior se aplica sin frenar (como el editor),
+        y de ahí en adelante corre normal."""
+        self.reset_state(); self.scene_id = scene_id
+        k = max(0, int(k))
+        for s in self._steps()[:k]:
+            self._exec(s, navigate=False)
+        self.settle()
+        self.ip = k
+        self._run()
+
+    @property
+    def cursor(self):
+        """Índice del paso en el que está parado el Play (el último ejecutado)."""
+        return max(0, self.ip - 1)
+
     def _steps(self):
         return self.model["scenes"].get(self.scene_id, [])
 

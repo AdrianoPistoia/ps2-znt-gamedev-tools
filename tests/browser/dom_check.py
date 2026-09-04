@@ -21,13 +21,16 @@ srv = ws.make_server(st, "127.0.0.1", 0)
 threading.Thread(target=srv.serve_forever, daemon=True).start()
 url = f"http://127.0.0.1:{srv.server_address[1]}/"
 
-def dom(step):
-    st.op({"op": "select", "scene": "s", "step": step})
+def dom_raw():
     out = os.path.join(d, "dom.html")
     subprocess.run([CHROME, "--headless=new", "--disable-gpu", "--dump-dom",
                     "--virtual-time-budget=4000", url],
                    stdout=open(out, "w"), stderr=subprocess.DEVNULL, timeout=60)
     return open(out, encoding="utf-8").read()
+
+def dom(step):
+    st.op({"op": "select", "scene": "s", "step": step})
+    return dom_raw()
 
 def ok(cond, msg):
     if not cond:
@@ -42,5 +45,15 @@ ok('id="layers"' in h and ">Ana<" in h, "la capa aparece en el outliner")
 
 h = dom(2)                                        # paso `say`
 ok(len(re.findall(r'data-role="char"', h)) == 1, "en say también, uno solo")
+# Play desde el paso elegido: la UI se apaga menos el timeline, y el clip que
+# se está reproduciendo queda marcado
+st.op({"op": "select", "scene": "s", "step": 1})
+st.op({"op": "play", "scene": "s", "step": 1})
+h = dom_raw()
+ok(re.search(r'<body[^>]*class="[^"]*playing', h), "body.playing mientras se reproduce")
+ok('class="clip playing' in h or 'class="clip sel playing' in h or 'clip playing' in h,
+   "el clip en reproducción está marcado")
+ok(">hola<" in h or "hola" in h, "el diálogo del paso 2 está en pantalla (arrancó en el 1 y avanzó)")
+st.op({"op": "play_stop"})
 srv.shutdown()
 print("DOM GREEN")
