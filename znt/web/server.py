@@ -2,7 +2,7 @@
 """Servidor del editor web (stdlib). `Studio` es el estado del editor (modelo,
 selección, historial) sin ninguna UI; el handler HTTP lo expone como API JSON.
 """
-import json, os, copy, base64, mimetypes, urllib.parse
+import json, os, copy, base64, errno, mimetypes, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from .. import vn, frontends
@@ -11,6 +11,8 @@ from ..vnstudio import VNRuntime
 UI = os.path.join(os.path.dirname(__file__), "ui.html")
 HIST_MAX = 60
 
+
+API = 4          # subilo cuando cambien las ops; la UI avisa si no coincide
 
 _NUM = ("x", "y", "z", "zoom", "opacity")
 
@@ -51,7 +53,8 @@ class Studio:
         self.step = min(self.step, len(self.steps()) - 1)
 
     def state(self):
-        return {"model": self.model, "scene": self.scene, "step": self.step,
+        return {"api": API,
+                "model": self.model, "scene": self.scene, "step": self.step,
                 "play": self.play_state() if self.prt else None,
                 "path": self.path, "base": self.base, "problems": self.problems,
                 "step_ops": vn.STEP_OPS,
@@ -189,8 +192,13 @@ class Studio:
             self.problems = vn.validate(self.model, self.base)
         elif o == "save":
             p = r.get("path") or self.path
-            if p:
-                open(p, "w", encoding="utf-8").write(vn.to_text(self.model)); self.path = p
+            if not p:
+                st = self.state(); st["error"] = "el proyecto no tiene ruta todavía: elegí dónde guardarlo"
+                return st
+            open(p, "w", encoding="utf-8").write(vn.to_text(self.model))
+            self.path = p
+            self.base = os.path.dirname(os.path.abspath(p)) or "."
+            self.rt.base = self.base
         elif o == "export":
             p = r.get("path") or os.path.join(self.base, "player.html")
             open(p, "w", encoding="utf-8").write(vn.render_html(self.model, self.base))
@@ -401,14 +409,26 @@ class _Handler(BaseHTTPRequestHandler):
 
 
 def make_server(studio, host="127.0.0.1", port=8765):
+    """Si el puerto está ocupado (típico: quedó otro VN Studio abierto), agarra
+    el siguiente libre en vez de morirse con un traceback."""
     handler = type("Handler", (_Handler,), {"studio": studio})
-    return ThreadingHTTPServer((host, port), handler)
+    for p in list(range(port, port + 10)) + [0]:
+        try:
+            return ThreadingHTTPServer((host, p), handler)
+        except OSError as e:
+            if e.errno != errno.EADDRINUSE:
+                raise
+    raise OSError("no hay puertos libres")
 
 
 def serve(path=None, host="127.0.0.1", port=8765, open_browser=True):
     st = Studio(path)
     httpd = make_server(st, host, port)
-    url = f"http://{host}:{httpd.server_address[1]}/"
+    got = httpd.server_address[1]
+    if got != port:
+        print(f"⚠ el puerto {port} ya estaba ocupado (¿otro VN Studio abierto?): "
+              f"uso el {got}. Cerrá el viejo si no lo querés.")
+    url = f"http://{host}:{got}/"
     print(f"VN Studio (web) en {url}   — Ctrl+C para salir")
     if open_browser:
         try:

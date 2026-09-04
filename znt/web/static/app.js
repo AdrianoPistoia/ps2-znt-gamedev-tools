@@ -3,6 +3,7 @@
  * mandamos ops. La lógica pura (layout, snap, geometría) vive en logic.js. */
 "use strict";
 const $ = s => document.querySelector(s);
+const API = 4;             // tiene que coincidir con znt/web/server.py
 let S = null;              // estado del servidor
 let SG = null;             // stage actual (layout que manda Python)
 let ASSETS = [], AUDIO = [];
@@ -562,7 +563,12 @@ $("#b-play").onclick = () => op(S.play ? {op:"play_stop"} : {op:"play", scene:S.
 $("#b-undo").onclick = () => op({op:"undo"});
 $("#b-redo").onclick = () => op({op:"redo"});
 $("#b-validate").onclick = () => op({op:"validate"});
-$("#b-save").onclick = () => op({op:"save"});
+$("#b-save").onclick = async () => {
+  if (S.path) return op({op:"save"});
+  const p = await askOne("Guardar proyecto", "ruta del .vn",
+                         (S.model.title || "historia").toLowerCase().replace(/\s+/g, "-") + ".vn");
+  if (p) op({op:"save", path:p});
+};
 $("#b-export").onclick = () => op({op:"export"});
 $("#b-char").onclick = async () => {
   const r = await ask("Nuevo personaje", [
@@ -601,7 +607,7 @@ const CMDS = {
   guides:   cycleGuides,
   undo:     () => op({op:"undo"}),
   redo:     () => op({op:"redo"}),
-  save:     () => op({op:"save"}),
+  save:     () => $("#b-save").click(),
   help:     () => { $("#help").showModal(); },
 };
 $("#help-body").innerHTML = VNS.KEYMAP.map(
@@ -674,6 +680,11 @@ $("#stage").addEventListener("pointercancel", endDrag);
 
 (async () => {
   S = await api.model();
+  if (S.api !== API) {
+    toast(`El server que está corriendo es de otra versión (server api=${S.api == null ? "viejo" : S.api},` +
+          ` UI api=${API}). Cerralo con Ctrl+C y volvé a correr: python3 -m znt web`, true);
+    $("#probs").textContent = "Server desactualizado: reinicialo (Ctrl+C y python3 -m znt web).";
+  }
   if (S.step < 0 && (S.model.scenes[S.scene] || []).length)
     S = await api.op({op:"select", scene:S.scene, step:0});
   $("#newop").innerHTML = S.step_ops.map(o => `<option>${o}</option>`).join("");
