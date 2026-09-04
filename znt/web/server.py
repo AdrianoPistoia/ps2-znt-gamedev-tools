@@ -328,7 +328,7 @@ class Studio:
         bg = {"kind": "img", "url": url(sp["file"])} if sp.get("kind") == "img" else dict(sp)
         layers = []
         for name, l in rt.stage.items():
-            if name == "bg" or not l.rows or not l.show:
+            if name in ("bg", "bg_prev") or not l.rows or not l.show:
                 continue
             c = self.model["characters"].get(name, {})
             spr = vn.sprite_file(c, getattr(l, "expr", None))
@@ -429,7 +429,7 @@ class Studio:
                 s["options"] = v
             elif k == "params":
                 s["params"] = v
-            elif v == "" and k in ("tint", "file", "expr", "pos"):
+            elif v in ("", 0, None) and k in ("tint", "file", "expr", "pos", "fade"):
                 s.pop(k, None)
             else:
                 s[k] = v

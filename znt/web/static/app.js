@@ -150,6 +150,34 @@ function renderChars(){
   $("#m-chars").textContent = ids.length || "";
 }
 
+/* ---------- efecto de tipeo (sólo en Play) ---------- */
+let CPS = 40;                                       // caracteres por segundo (0 = sin efecto)
+try { const v = localStorage.getItem("vnscps"); if (v !== null) CPS = +v; } catch (e) {}
+let typing = null;                                  // {text, t0, raf}
+function typeText(text, animate){
+  if (typing) cancelAnimationFrame(typing.raf);
+  typing = null;
+  const el = $("#text");
+  if (!animate || !CPS) { el.textContent = text; return; }
+  const t0 = performance.now();
+  const step = () => {
+    const n = VNS.typedChars(text, performance.now() - t0, CPS);
+    el.textContent = text.slice(0, n);
+    if (n < text.length) typing.raf = requestAnimationFrame(step); else typing = null;
+  };
+  typing = { text, t0, raf: 0 }; step();
+}
+const typingDone = () => !typing;
+function finishTyping(){                            // click mientras tipea: mostrar todo
+  if (!typing) return false;
+  cancelAnimationFrame(typing.raf); $("#text").textContent = typing.text; typing = null; return true;
+}
+function cycleCps(){
+  CPS = ({0: 20, 20: 40, 40: 80, 80: 0})[CPS] ?? 40;
+  try { localStorage.setItem("vnscps", CPS); } catch (e) {}
+  $("#b-cps").textContent = "⌨ " + (CPS ? CPS + " cps" : "sin tipeo");
+}
+
 /* ---------- capas del escenario ---------- */
 function selectLayer(id){
   SEL = SEL === id ? null : id;
@@ -357,7 +385,7 @@ function renderStage(){
   const say = SG.say;
   $("#dbox").hidden = !(ov.dialog && say);
   if (say){ $("#who").textContent = say.name || ""; $("#who").style.color = say.color;
-            $("#text").textContent = say.text; }
+            typeText(say.text, !!S.play); }
   const ch = $("#choices");
   ch.hidden = !ov.choices;
   ch.className = ov.interactive ? "" : "edit";
@@ -369,7 +397,7 @@ function renderStage(){
     ch.appendChild(b);
   });
   $("#b-overlay").classList.toggle("on", SHOWDLG);
-  $("#b-adv").hidden = $("#b-exit").hidden = !S.play;
+  $("#b-adv").hidden = $("#b-exit").hidden = $("#b-cps").hidden = !S.play;
   $("#m-bgm").textContent = SG.bgm ? `♪ ${SG.bgm}` : "";
   $("#vptag").textContent = S.play
     ? (SG.done ? "▶ PLAY · fin" : "▶ PLAY · click o Espacio para avanzar") : "";
@@ -620,7 +648,11 @@ function renderProps(){
     add("bg","fondo", input(p.kind==="grad" ? `grad:${p.a},${p.b}` : p.kind==="solid" ? p.color : (p.file||"")));
     paso.add(field("imagen", picker(p.file || "", ASSETS,
       v => op({op:"set_props", props:{bg: v || "#000000"}}), "bg", "image/*")));
-    paso.insertAdjacentHTML("beforeend", '<div class="hint">grad:#a,#b · #rrggbb · archivo.png</div>');
+    const fr = num("fade ms", s.fade, {def: 0, min: 0, max: 5000, step: 10},
+                   (v, dragging) => { if (!dragging) op({op:"set_props", props:{fade: v}}); });
+    fr.querySelector("input").dataset.p = "fade";
+    paso.add(fr);
+    paso.insertAdjacentHTML("beforeend", '<div class="hint">grad:#a,#b · #rrggbb · archivo.png · fade 0 = corte seco</div>');
   } else if (s.op === "show" || s.op === "hide") {
     box.appendChild(charSection(s.id, chars, v => op({op:"set_props", props:{id: v}}),
                                 s.op === "show"));
@@ -842,7 +874,9 @@ $("#b-probar").onclick = () => {
   animT = setTimeout(closeAnim, ANIM_MS + 600);      // se va sola, no hay que adivinar
 };
 $("#b-anim-x").onclick = closeAnim;
-$("#b-adv").onclick = () => op({op:"play_advance"});
+$("#b-adv").onclick = () => { if (!finishTyping()) op({op:"play_advance"}); };
+$("#b-cps").onclick = cycleCps;
+$("#b-cps").textContent = "⌨ " + (CPS ? CPS + " cps" : "sin tipeo");
 $("#b-exit").onclick = () => op({op:"play_stop"});
 $("#b-help").onclick = () => $("#help").showModal();
 $("#anim").onclick = closeAnim;
@@ -869,7 +903,7 @@ addEventListener("keydown", e => {
   if ($("#help").open) return;
   /* en Play, espacio/enter avanzan el diálogo */
   if (S.play && (e.key === " " || e.key === "Enter") && !(SG.choices||[]).length && !SG.done) {
-    e.preventDefault(); op({op:"play_advance"}); return; }
+    e.preventDefault(); if (!finishTyping()) op({op:"play_advance"}); return; }
   const cmd = VNS.resolveKey(e);
   if (!cmd || !CMDS[cmd]) return;
   e.preventDefault(); CMDS[cmd]();
@@ -887,7 +921,8 @@ function showGuides(gx, gy){
 }
 
 $("#stage").addEventListener("pointerdown", e => {
-  if (S.play) {                            // en Play el click avanza el diálogo
+  if (S.play) {                            // en Play el click completa el texto, después avanza
+    if (finishTyping()) return;
     if (!SG.done && !(SG.choices||[]).length) op({op:"play_advance"});
     return;
   }

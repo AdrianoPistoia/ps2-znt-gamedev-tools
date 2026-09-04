@@ -349,6 +349,7 @@ async function main() {
       for (const d of document.querySelectorAll("dialog[open]")) d.close("");
       if (typeof closeAnim === "function") closeAnim();
       if (S.play) await op({op:"play_stop"});
+      CPS = 0;                                   // sin tipeo: los flujos avanzan de un click
       if (S.scene !== "inicio" || S.step !== 1) await op({op:"select", scene:"inicio", step:1});
     })()`);
     await settle();
@@ -463,6 +464,31 @@ async function main() {
     await js(`document.querySelector("#props .expr .x").click()`); await settle();
     c = (await model()).model.characters.ana;
     assert.ok(!c.expr, "✕ quita la expresión del personaje");
+  });
+
+  flow("tipeo", async () => {
+    await js(`localStorage.setItem("vnscps", "3"); CPS = 3;`);   // lento, para verlo
+    await click('.clip[data-i="1"]');
+    await click("#b-play");
+    const full = await js("S.play.say.text");
+    const shown = await text("#text");
+    assert.ok(shown.length < full.length, `mientras tipea se ve parcial: "${shown}"`);
+    const r = await rect("#stage"); await clickAt(r.x, r.y - 80);
+    assert.strictEqual(await text("#text"), full, "el primer click completa el texto");
+    const step = await js("S.play.step");
+    assert.strictEqual(await js("S.play.step"), step, "y no avanza");
+    await clickAt(r.x, r.y - 80);
+    assert.ok((await js("S.play.step")) > step, "el siguiente click avanza");
+    await js(`localStorage.removeItem("vnscps"); CPS = 0;`);
+  });
+
+  flow("fade-fondo", async () => {
+    await click('.clip[data-i="0"]');                 // bg
+    assert.ok(await count('#props input[data-p="fade"]'), "el fondo tiene campo de fade");
+    await fillInput('#props input[data-p="fade"]', "300"); await key("Enter");
+    const st = (await model()).model.scenes.inicio[0];
+    assert.strictEqual(st.fade, 300, "quedó en el paso");
+    await key("z", CTRL);
   });
 
   /* ---------- correr ---------- */

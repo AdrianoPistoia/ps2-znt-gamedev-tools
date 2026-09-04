@@ -92,6 +92,12 @@
 
   /* --- Play --- */
 
+  /* Efecto de tipeo: caracteres visibles a los t ms (cps 0 = todo de una). */
+  function typedChars(text, t, cps) {
+    if (!cps) return text.length;
+    return Math.min(text.length, Math.floor(t * cps / 1000));
+  }
+
   /* Escena/paso que muestra el timeline: los del runtime mientras se reproduce. */
   function playCursor(S) {
     if (S.play) return { scene: S.play.scene, step: S.play.step, playing: true };
@@ -234,5 +240,5 @@
   }
 
   return { layerStyle, bgStyle, stageXY, snap, snapTargets, dragTo, POS,
-           clampPane, fitRect, playCursor, stageOverlay, crumbs, joinPath, mergeState, KEYMAP, resolveKey, scrubValue, resizeZoom, guides, nextGuide, GUIDES, outlineRows, showStepIndex, LANES, laneOf, clipRect, dropIndex };
+           clampPane, fitRect, typedChars, playCursor, stageOverlay, crumbs, joinPath, mergeState, KEYMAP, resolveKey, scrubValue, resizeZoom, guides, nextGuide, GUIDES, outlineRows, showStepIndex, LANES, laneOf, clipRect, dropIndex };
 });

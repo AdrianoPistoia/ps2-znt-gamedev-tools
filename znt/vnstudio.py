@@ -169,8 +169,17 @@ class VNRuntime:
         """Aplica un paso. Devuelve True si es bloqueante (say/choice/goto/end)."""
         op = s["op"]
         if op == "bg":
+            fade, old = int(s.get("fade") or 0), self.stage.get("bg")
+            if fade and old is not None and old.rows:      # crossfade: el viejo queda abajo
+                prev = self.stage.setdefault("bg_prev", LayerState())
+                prev.rows, prev.level, prev.opacity, prev.show = old.rows, -1, 100.0, True
+                prev.x = prev.y = 0.0
             l = self.stage.setdefault("bg", LayerState()); l.level = 0
             l.rows = self._bg_rows(s["spec"]); l.x = l.y = 0.0
+            if fade and self.stage.get("bg_prev") is not None and self.stage["bg_prev"].show:
+                l.opacity = 0.0; l.target("opacity", 100, frm=0, dur=fade)
+            else:
+                l.opacity = 100.0
             self.bg_spec = s["spec"]
         elif op == "show":
             l = self.stage.setdefault(s["id"], LayerState())
@@ -251,6 +260,9 @@ class VNRuntime:
     def tick(self, dt):
         for l in self.stage.values():
             l.tick(dt)
+        prev = self.stage.get("bg_prev")               # terminó el fade: el viejo se va
+        if prev is not None and prev.show and not self.stage["bg"].tw:
+            prev.show = False
 
     def animating(self):
         return any(l.animating for l in self.stage.values())

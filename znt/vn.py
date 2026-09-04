@@ -93,8 +93,14 @@ def parse(text):
 def _step(line, chars):
     head = line.split(" ", 1)[0]
     arg = line[len(head):].strip()
-    if head == "bg":
-        return {"op": "bg", "spec": _bg(arg)}
+    if head == "bg":                     # bg <spec> [fade=ms]
+        parts = arg.split()
+        step = {"op": "bg", "spec": _bg(parts[0])}
+        for p in parts[1:]:
+            if p.startswith("fade="):
+                try: step["fade"] = int(p[5:])
+                except ValueError: pass
+        return step
     if head == "show":
         parts = arg.split()
         cid = parts[0]; pos = None; step = {"op": "show", "id": cid}
@@ -343,10 +349,10 @@ def to_text(model):
 def _step_text(s):
     op = s["op"]
     if op == "bg":
-        sp = s["spec"]
-        if sp["kind"] == "grad": return f"bg grad:{sp['a']},{sp['b']}"
-        if sp["kind"] == "solid": return f"bg {sp['color']}"
-        return f"bg {sp.get('file', '?.png')}"          # ver nota en build()
+        sp = s["spec"]; fade = f" fade={s['fade']}" if s.get("fade") else ""
+        if sp["kind"] == "grad": return f"bg grad:{sp['a']},{sp['b']}" + fade
+        if sp["kind"] == "solid": return f"bg {sp['color']}" + fade
+        return f"bg {sp.get('file', '?.png')}" + fade   # ver nota en build()
     if op == "show":
         t = f"show {s['id']}" + (f" {s['expr']}" if s.get("expr") else "") \
             + (f" {s['pos']}" if s.get("pos") else "")
@@ -433,6 +439,7 @@ _TEMPLATE = r"""<!doctype html><html lang="es"><head><meta charset="utf-8">
   #stage{position:relative;width:min(96vw,912px);aspect-ratio:640/448;
          background:var(--stage);border-radius:12px;overflow:hidden;user-select:none;
          box-shadow:0 24px 70px #000c,0 0 0 1px #ffffff10 inset}
+  #bg2{position:absolute;inset:0;background-size:cover;background-position:center;opacity:0;pointer-events:none}
   #bg{position:absolute;inset:0;background-size:cover;background-position:center;
       transition:opacity .4s,background .4s}
   #vignette{position:absolute;inset:0;pointer-events:none;
@@ -484,7 +491,7 @@ _TEMPLATE = r"""<!doctype html><html lang="es"><head><meta charset="utf-8">
   @media (prefers-reduced-motion:reduce){#cursor{animation:none}*{transition:none!important}}
 </style></head><body>
 <div id="stage">
-  <div id="bg"></div>
+  <div id="bg"></div><div id="bg2"></div>
   <div id="sprites"></div>
   <div id="box"><div id="who"></div><div id="text"></div><div id="cursor">▼</div></div>
   <div id="choices" hidden></div>
@@ -498,11 +505,19 @@ const $ = s => document.querySelector(s);
 const sprites = {};   // id -> elemento
 let scene, ip;
 
-function setBg(spec){
-  const bg = $("#bg");
-  if(spec.kind==="img"){ bg.style.background = `center/cover url(${spec.data})`; }
-  else if(spec.kind==="grad"){ bg.style.background = `linear-gradient(160deg,${spec.a},${spec.b})`; }
-  else { bg.style.background = spec.color; }
+function bgCss(spec){
+  if(spec.kind==="img") return `center/cover url(${spec.data})`;
+  if(spec.kind==="grad") return `linear-gradient(160deg,${spec.a},${spec.b})`;
+  return spec.color;
+}
+function setBg(spec, fade){
+  const bg = $("#bg"), old = $("#bg2");
+  if(fade && bg.style.background){          // crossfade: el viejo se desvanece encima del nuevo
+    old.style.transition = "none"; old.style.background = bg.style.background; old.style.opacity = 1;
+    void old.offsetWidth;
+    old.style.transition = `opacity ${fade}ms linear`; old.style.opacity = 0;
+  }
+  bg.style.background = bgCss(spec);
 }
 function charColor(id){ return (M.characters[id]||{}).color || "#ccc"; }
 function show(id,pos,expr){
@@ -536,7 +551,7 @@ function step(){
   $("#choices").hidden = true;
   while(ip < scene.length){
     const s = scene[ip++];
-    if(s.op==="bg"){ setBg(s.spec); continue; }
+    if(s.op==="bg"){ setBg(s.spec, s.fade); continue; }
     if(s.op==="show"){ show(s.id, s.pos, s.expr); continue; }
     if(s.op==="animate"){ animate(s.id,s.kind); continue; }
     if(s.op==="hide"){ hide(s.id); continue; }
