@@ -161,12 +161,10 @@ class Studio:
                 self.model["characters"][cid] = {"name": r.get("name") or cid,
                                                  "color": r.get("color") or "#7cc4ff"}
         elif o == "set_sprite":
-            cid, f = r.get("id"), (r.get("file") or "").strip()
-            c = self.model["characters"].get(cid)
+            c = self.model["characters"].get(r.get("id"))
             if c is not None:
                 self._snapshot()
-                if f: c["sprite"] = f
-                else: c.pop("sprite", None)      # sin archivo -> vuelve al placeholder
+                self._assign_sprite(c, (r.get("file") or "").strip(), r.get("expr"))
         elif o == "set_char":
             c = self.model["characters"].get(r.get("id"))
             if c is not None:
@@ -191,7 +189,7 @@ class Studio:
             c = self.model["characters"].get(r.get("id"))
             steps, ap = self.steps(), r.get("apply")
             if c is not None:
-                c["sprite"] = name
+                self._assign_sprite(c, name, r.get("expr"))
             elif ap and 0 <= self.step < len(steps):
                 self._set_props(steps[self.step], {ap: name})
             self.rt.invalidate()
@@ -200,7 +198,7 @@ class Studio:
             c = self.model["characters"].get(r.get("id"))
             name = self._save_upload(r)
             if c is not None and name:
-                self._snapshot(); c["sprite"] = name
+                self._snapshot(); self._assign_sprite(c, name, r.get("expr"))
                 self.rt.invalidate()
         elif o == "upload":
             # sube un archivo y (opcional) lo aplica a una prop del paso elegido.
@@ -333,8 +331,9 @@ class Studio:
             if name == "bg" or not l.rows or not l.show:
                 continue
             c = self.model["characters"].get(name, {})
-            spr = c.get("sprite")
+            spr = vn.sprite_file(c, getattr(l, "expr", None))
             layers.append({"id": name, "name": c.get("name", name), "color": c.get("color", "#888888"),
+                           "expr": getattr(l, "expr", None),
                            "x": l.x, "y": l.y, "z": l.level, "zoom": l.zoom,
                            "opacity": l.opacity, "tint": l.tint,
                            "w": len(l.rows[0]) // 4, "h": len(l.rows),
@@ -389,6 +388,20 @@ class Studio:
                 base64.b64decode(r.get("data") or ""))
         return name
 
+    @staticmethod
+    def _assign_sprite(c, f, expr=None):
+        """Sprite base (expr vacío) o de una expresión; sin archivo = quitarlo."""
+        expr = (expr or "").strip()
+        if expr:
+            ex = c.setdefault("expr", {})
+            if f: ex[expr] = f
+            else: ex.pop(expr, None)
+            if not ex: c.pop("expr", None)
+        elif f:
+            c["sprite"] = f
+        else:
+            c.pop("sprite", None)                 # vuelve al placeholder
+
     def _show_of(self, cid):
         """El último `show` de ese personaje en o antes del paso seleccionado."""
         steps = self.steps()
@@ -416,7 +429,7 @@ class Studio:
                 s["options"] = v
             elif k == "params":
                 s["params"] = v
-            elif v == "" and k in ("tint", "file"):
+            elif v == "" and k in ("tint", "file", "expr", "pos"):
                 s.pop(k, None)
             else:
                 s[k] = v

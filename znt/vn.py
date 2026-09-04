@@ -33,6 +33,24 @@ Formato (línea por línea):
 import sys, os, json, base64, html
 
 
+POS_NAMES = ("left", "center", "right")
+
+
+def _sprite_line(chars, rest):
+    """`ana ana.png` (sprite base) o `ana feliz feliz.png` (expresión)."""
+    parts = rest.split()
+    c = chars.setdefault(parts[0], {"name": parts[0], "color": "#ccc"})
+    if len(parts) >= 3:
+        c.setdefault("expr", {})[parts[1]] = " ".join(parts[2:])
+    elif len(parts) == 2:
+        c["sprite"] = parts[1]
+
+
+def sprite_file(char, expr=None):
+    """Archivo del sprite para esa expresión (o el base si no hay/no existe)."""
+    return (char.get("expr") or {}).get(expr) or char.get("sprite")
+
+
 def parse(text):
     title = "Visual Novel"
     chars = {"narrator": {"name": "", "color": "#cccccc"}}
@@ -57,8 +75,7 @@ def parse(text):
             chars[cid] = {"name": name.strip().strip('"'), "color": color}
             continue
         if line.startswith("sprite "):                # arte del personaje (top-level)
-            _, cid, f = line.split(None, 2)
-            chars.setdefault(cid, {"name": cid, "color": "#ccc"})["sprite"] = f.strip()
+            _sprite_line(chars, line[7:])
             continue
         if line.startswith("scene "):
             cur = line[6:].strip(); scenes[cur] = []; order.append(cur); continue
@@ -80,7 +97,7 @@ def _step(line, chars):
         return {"op": "bg", "spec": _bg(arg)}
     if head == "show":
         parts = arg.split()
-        cid = parts[0]; pos = "center"; step = {"op": "show", "id": cid}
+        cid = parts[0]; pos = None; step = {"op": "show", "id": cid}
         for p in parts[1:]:
             if "=" in p:                       # x/y/z/zoom/opacity + tint : capa
                 k, v = p.split("=", 1)
@@ -89,13 +106,15 @@ def _step(line, chars):
                     except ValueError: pass
                 elif k == "tint":
                     step["tint"] = v
-            else:
+            elif p in POS_NAMES:
                 pos = p
-        step["pos"] = pos
+            else:                              # una palabra suelta: expresión
+                step["expr"] = p
+        if pos:
+            step["pos"] = pos
         return step
-    if head == "sprite":                 # sprite <char> <file.png>: define arte del personaje
-        cid, f = arg.split(None, 1)
-        chars.setdefault(cid, {"name": cid, "color": "#ccc"})["sprite"] = f.strip()
+    if head == "sprite":                 # sprite <char> [expresión] <file.png>
+        _sprite_line(chars, arg)
         return None
     if head == "animate":
         parts = arg.split()
@@ -225,6 +244,8 @@ def validate(model, base=None):
             op = s["op"]
             if op in ("show", "hide", "animate") and s.get("id") not in chars:
                 probs.append(f"escena {sid}: personaje '{s.get('id')}' no existe")
+            elif op == "show" and s.get("expr") and s["expr"] not in (chars[s["id"]].get("expr") or {}):
+                probs.append(f"escena {sid}: {s['id']} no tiene la expresión '{s['expr']}'")
             if op == "say" and s.get("who") not in chars:
                 probs.append(f"escena {sid}: personaje '{s.get('who')}' no existe")
             if op == "goto":
@@ -250,6 +271,9 @@ def validate(model, base=None):
         for cid, c in chars.items():
             if c.get("sprite") and not os.path.exists(os.path.join(base, c["sprite"])):
                 probs.append(f"personaje {cid}: falta el sprite '{c['sprite']}'")
+            for ex, f in (c.get("expr") or {}).items():
+                if not os.path.exists(os.path.join(base, f)):
+                    probs.append(f"personaje {cid}: falta el sprite de '{ex}': '{f}'")
     return probs
 
 
@@ -305,6 +329,8 @@ def to_text(model):
         if c.get("color"): line += f' color={c["color"]}'
         out.append(line)
         if c.get("sprite"): out.append(f'sprite {cid} {c["sprite"]}')
+        for ex, f in (c.get("expr") or {}).items():
+            out.append(f'sprite {cid} {ex} {f}')
     out.append("")
     for sid in model.get("order", model["scenes"]):
         out.append(f"scene {sid}")
@@ -322,7 +348,8 @@ def _step_text(s):
         if sp["kind"] == "solid": return f"bg {sp['color']}"
         return f"bg {sp.get('file', '?.png')}"          # ver nota en build()
     if op == "show":
-        t = f"show {s['id']} {s.get('pos','center')}"
+        t = f"show {s['id']}" + (f" {s['expr']}" if s.get("expr") else "") \
+            + (f" {s['pos']}" if s.get("pos") else "")
         if "x" in s: t += f" x={s['x']}"
         if "y" in s: t += f" y={s['y']}"
         if "z" in s: t += f" z={s['z']}"

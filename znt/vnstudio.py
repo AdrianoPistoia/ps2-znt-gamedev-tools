@@ -120,10 +120,11 @@ class VNRuntime:
             return _grad_rows(self.W, self.H, spec["a"], spec["b"])
         return self._load_asset(spec.get("file", "")) or _solid_rows(self.W, self.H, (20, 22, 34))
 
-    def _sprite_rows(self, cid):
+    def _sprite_rows(self, cid, expr=None):
         c = self.model["characters"].get(cid, {})
-        if c.get("sprite"):
-            rows = self._load_asset(c["sprite"])
+        f = vn.sprite_file(c, expr)
+        if f:
+            rows = self._load_asset(f)
             if rows:
                 return rows
         return _block_rows(200, 300, _hex(c.get("color")))
@@ -173,12 +174,18 @@ class VNRuntime:
             self.bg_spec = s["spec"]
         elif op == "show":
             l = self.stage.setdefault(s["id"], LayerState())
-            l.rows = self._sprite_rows(s["id"])
-            l.x = float(s["x"]) if "x" in s else float(POS.get(s.get("pos", "center"), 0))
-            l.y = float(s.get("y", 0))
-            l.level = int(s["z"]) if "z" in s else 10 + len([k for k in self.stage if k != "bg"])
-            l.zoom = float(s.get("zoom", 100)); l._zc = None
-            l.opacity = float(s.get("opacity", 100)); l.tint = s.get("tint")
+            was = bool(getattr(l, "show", False) and l.rows)   # ya estaba en escena
+            l.rows = self._sprite_rows(s["id"], s.get("expr")); l.expr = s.get("expr")
+            # re-mostrar (cambio de expresión) sin decir dónde: se queda donde está
+            if "x" in s: l.x = float(s["x"])
+            elif "pos" in s or not was: l.x = float(POS.get(s.get("pos", "center"), 0))
+            if "y" in s or not was: l.y = float(s.get("y", 0))
+            if "z" in s: l.level = int(s["z"])
+            elif not was: l.level = 10 + len([k for k in self.stage if k != "bg"])
+            if "zoom" in s or not was: l.zoom = float(s.get("zoom", 100))
+            l._zc = None
+            if "opacity" in s or not was: l.opacity = float(s.get("opacity", 100))
+            if "tint" in s or not was: l.tint = s.get("tint")
             l.show = True
         elif op == "hide":
             if s["id"] in self.stage: self.stage[s["id"]].show = False
