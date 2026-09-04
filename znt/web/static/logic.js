@@ -126,6 +126,9 @@
     { keys: "Ctrl+Z",     cmd: "undo",     desc: "Deshacer" },
     { keys: "Ctrl+Y",     cmd: "redo",     desc: "Rehacer" },
     { keys: "Ctrl+S",     cmd: "save",     desc: "Guardar el .vn" },
+    { keys: "Ctrl+C / Ctrl+V", cmd: "copy", desc: "Copiar / pegar pasos (también entre escenas)" },
+    { keys: "Ctrl+F",     cmd: "find",     desc: "Buscar en diálogos y opciones" },
+    { keys: "Shift / Ctrl + click", cmd: null, desc: "Selección múltiple en el timeline" },
     { keys: "?",          cmd: "help",     desc: "Esta ayuda" },
     { keys: "Shift",      cmd: null,       desc: "Arrastrar sin imán / scrub fino" },
     { keys: "Ctrl+rueda", cmd: null,       desc: "Zoom del timeline" },
@@ -138,6 +141,9 @@
       if (low === "z") return e.shiftKey ? "redo" : "undo";
       if (low === "y") return "redo";
       if (low === "s") return "save";
+      if (low === "c") return "copy";
+      if (low === "v") return "paste";
+      if (low === "f") return "find";
       return null;
     }
     if (k === " ") return "play";
@@ -180,6 +186,71 @@
     return { xs: [], ys: [], rect: null };
   }
   const nextGuide = k => GUIDES[(GUIDES.indexOf(k) + 1) % GUIDES.length];
+
+  /* --- grafo de escenas --- */
+
+  /* Nodos por profundidad desde `start` (BFS por goto/choice); lo inalcanzable
+     va al final. Devuelve posiciones listas para dibujar. */
+  function sceneGraph(model) {
+    const edges = [];
+    for (const sc of model.order) {
+      for (const s of model.scenes[sc] || []) {
+        if (s.op === "goto" && s.target) edges.push({ from: sc, to: s.target, label: "", kind: "goto" });
+        if (s.op === "choice") (s.options || []).forEach(o => edges.push({ from: sc, to: o.target, label: o.label || "", kind: "choice" }));
+      }
+    }
+    const depth = {}, start = model.start || model.order[0];
+    if (model.scenes[start]) depth[start] = 0;
+    const q = [start];
+    while (q.length) {
+      const cur = q.shift();
+      for (const e of edges) if (e.from === cur && model.scenes[e.to] && depth[e.to] === undefined) {
+        depth[e.to] = depth[cur] + 1; q.push(e.to);
+      }
+    }
+    const maxD = Math.max(-1, ...Object.values(depth));
+    const rows = {};
+    const nodes = model.order.map(id => {
+      const steps = model.scenes[id] || [];
+      const d = depth[id] === undefined ? maxD + 1 : depth[id];
+      const k = (rows[d] = (rows[d] || 0) + 1) - 1;
+      return { id, depth: d, x: 80 + k * 170, y: 40 + d * 90, start: id === start,
+               dead: !steps.some(s => s.op === "end" || s.op === "goto" || s.op === "choice") };
+    });
+    return { nodes, edges: edges.filter(e => model.scenes[e.to]) };
+  }
+
+  /* --- selección múltiple y búsqueda --- */
+
+  /* Click en el clip i con la selección actual: simple, Shift = rango desde el
+     ancla, Ctrl = sumar/sacar. Devuelve la selección nueva (ordenada) y el ancla. */
+  function clickSelect(sel, anchor, i, mods) {
+    if (mods.shift && anchor >= 0) {
+      const a = Math.min(anchor, i), b = Math.max(anchor, i), out = [];
+      for (let k = a; k <= b; k++) out.push(k);
+      return { sel: out, anchor };
+    }
+    if (mods.ctrl) {
+      const out = sel.includes(i) ? sel.filter(k => k !== i) : sel.concat(i);
+      return { sel: out.sort((x, y) => x - y), anchor: i };
+    }
+    return { sel: [i], anchor: i };
+  }
+
+  /* Busca en diálogos y etiquetas de opciones, sin distinguir mayúsculas. */
+  function searchSteps(model, q) {
+    q = (q || "").trim().toLowerCase();
+    if (!q) return [];
+    const out = [];
+    for (const sc of model.order) {
+      (model.scenes[sc] || []).forEach((s, i) => {
+        const t = s.op === "say" ? (s.text || "")
+              : s.op === "choice" ? (s.options || []).map(o => o.label).join(" / ") : "";
+        if (t.toLowerCase().includes(q)) out.push({ scene: sc, step: i, text: t });
+      });
+    }
+    return out;
+  }
 
   /* --- outliner --- */
 
@@ -240,5 +311,5 @@
   }
 
   return { layerStyle, bgStyle, stageXY, snap, snapTargets, dragTo, POS,
-           clampPane, fitRect, typedChars, playCursor, stageOverlay, crumbs, joinPath, mergeState, KEYMAP, resolveKey, scrubValue, resizeZoom, guides, nextGuide, GUIDES, outlineRows, showStepIndex, LANES, laneOf, clipRect, dropIndex };
+           clampPane, fitRect, sceneGraph, clickSelect, searchSteps, typedChars, playCursor, stageOverlay, crumbs, joinPath, mergeState, KEYMAP, resolveKey, scrubValue, resizeZoom, guides, nextGuide, GUIDES, outlineRows, showStepIndex, LANES, laneOf, clipRect, dropIndex };
 });

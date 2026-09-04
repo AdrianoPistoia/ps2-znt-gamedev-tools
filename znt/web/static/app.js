@@ -8,6 +8,8 @@ let S = null;              // estado del servidor
 let SG = null;             // stage actual (layout que manda Python)
 let ASSETS = [], AUDIO = [];
 let SEL = null;            // capa seleccionada (sólo del cliente)
+let SELS = [], ANCHOR = -1; // selección múltiple de pasos (timeline) y ancla del Shift
+let CLIP = [];             // portapapeles de pasos (JSON), vive entre escenas
 let GUIDE = "off", SHOWDLG = true;
 try { GUIDE = localStorage.getItem("vnsguide") || "off";
       SHOWDLG = localStorage.getItem("vnsdlg") !== "0"; } catch (e) {}
@@ -36,6 +38,7 @@ async function op(o){
     const m = VNS.mergeState(S, res);
     S = m.state;
     if (m.error) toast(m.error, true);
+    else if (res && res.notice) toast(res.notice);
     await refresh();
   } finally { window.__vns.busy--; }
 }
@@ -292,6 +295,7 @@ function renderTimeline(){
   const cur = VNS.playCursor(S);
   const steps = S.model.scenes[cur.scene] || [];
   document.body.classList.toggle("playing", cur.playing);
+  if (!SELS.includes(cur.step)) { SELS = cur.step >= 0 ? [cur.step] : []; ANCHOR = cur.step; }
   const keep = $("#tlbody .tl-track"), sx = keep ? keep.scrollLeft : 0;
   const lab = VNS.LANES.map(l => `<div>${l.key}</div>`).join("");
   const H = TLV.ruler + VNS.LANES.length * TLV.lh;
@@ -319,7 +323,8 @@ function renderTimeline(){
 
   steps.forEach((st, i) => {
     const r = VNS.clipRect(st, i, TLV), c = document.createElement("div");
-    c.className = "clip" + (i === cur.step ? (cur.playing ? " playing" : " sel") : "");
+    c.className = "clip" + (cur.playing ? (i === cur.step ? " playing" : "")
+                                        : (SELS.includes(i) ? " sel" : ""));
     c.dataset.i = i;
     Object.assign(c.style, {left: r.x + "px", top: (TLV.ruler + r.y) + "px",
                             width: r.w + "px", height: r.h + "px",
@@ -351,8 +356,15 @@ $("#tlbody").addEventListener("pointerdown", e => {
   }
   const steps = S.model.scenes[S.scene] || [];
   const c = e.target.closest(".clip");
+  if (c && (e.shiftKey || e.ctrlKey || e.metaKey)) {
+    const r = VNS.clickSelect(SELS, ANCHOR, +c.dataset.i, {shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey});
+    SELS = r.sel; ANCHOR = r.anchor;
+    op({op:"select", scene:S.scene, step:+c.dataset.i});
+    e.preventDefault(); return;
+  }
   if (c) {
     const i = +c.dataset.i, x0 = trackX(e), left0 = i * TLV.cw;
+    SELS = [i]; ANCHOR = i;
     let moved = false;
     c.setPointerCapture(e.pointerId); c.classList.add("drag");
     const move = ev => { moved = true; c.style.left = (left0 + trackX(ev) - x0) + "px"; };
@@ -802,6 +814,8 @@ function ask(title, fields, msg){
   dlg.showModal();
   const first = body.querySelector("input,select");
   (first || $("#dlg-ok")).focus();                  // sin campos: Enter = Sí, no Cancelar
+  dlg.onkeydown = e => {                            // Enter acepta aunque el foco esté en un select
+    if (e.key === "Enter" && e.target.tagName !== "TEXTAREA") { e.preventDefault(); dlg.close("ok"); } };
   return new Promise(res => {
     dlg.addEventListener("close", () => {
       if (dlg.returnValue !== "ok") return res(null);
@@ -837,10 +851,48 @@ $("#b-save").onclick = async () => {
   if (p) op({op:"save", path:p});
 };
 $("#b-export").onclick = async () => {
-  const p = await browse("Exportar player HTML", "any",
-                         VNS.joinPath(S.base || "", "player.html"));
-  if (p) op({op:"export", path:p});
+  const r = await ask("Exportar", [{k:"kind", label:"formato", v:"html", list:["html", "vnp", "iso"]}],
+                      "html = player web · vnp = blob para la PS2 · iso = imagen booteable (necesita el ELF)");
+  if (!r) return;
+  if (r.kind === "html") {
+    const p = await browse("Exportar player HTML", "any", VNS.joinPath(S.base || "", "player.html"));
+    if (p) op({op:"export", path:p});
+  } else if (r.kind === "vnp") {
+    const p = await browse("Exportar blob PS2 (.vnp)", "any", VNS.joinPath(S.base || "", "game.vnp"));
+    if (p) op({op:"export_ps2", path:p});
+  } else {
+    const elf = await browse("ELF del player (ps2/ZNTVN.ELF)", "any", S.base || "");
+    if (!elf) return;
+    const p = await browse("Exportar ISO", "any", VNS.joinPath(S.base || "", "historia.iso"));
+    if (p) op({op:"export_ps2", path:p, elf});
+  }
 };
+/* vista de flujo: SVG desde sceneGraph, click en un nodo va a la escena */
+function renderGraph(){
+  const g = VNS.sceneGraph(S.model), svg = $("#graph-svg");
+  const W = Math.max(...g.nodes.map(n => n.x)) + 120, H = Math.max(...g.nodes.map(n => n.y)) + 60;
+  svg.setAttribute("width", W); svg.setAttribute("height", H);
+  const pos = Object.fromEntries(g.nodes.map(n => [n.id, n]));
+  let out = `<defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+    <path d="M0,0 L10,5 L0,10 z" fill="#868ea0"/></marker></defs>`;
+  g.edges.forEach(e => {
+    const a = pos[e.from], b = pos[e.to];
+    const x1 = a.x, y1 = a.y + 16, x2 = b.x, y2 = b.y - 16 - (b === a ? 0 : 0);
+    const loop = a === b;
+    const d = loop ? `M${x1 + 40},${y1 - 16} C${x1 + 90},${y1 - 40} ${x1 + 90},${y1 + 10} ${x1 + 40},${y1}`
+                   : `M${x1},${y1} C${x1},${(y1 + y2) / 2} ${x2},${(y1 + y2) / 2} ${x2},${y2}`;
+    out += `<path class="edge" d="${d}" marker-end="url(#arr)"/>`;
+    if (e.label) out += `<text class="elabel" x="${(x1 + x2) / 2 + 4}" y="${(y1 + y2) / 2}">${e.label.slice(0, 18)}</text>`;
+  });
+  g.nodes.forEach(n => {
+    out += `<g class="node${n.start ? " start" : ""}${n.dead ? " dead" : ""}" data-id="${n.id}" transform="translate(${n.x - 60},${n.y - 16})">
+      <rect width="120" height="32"/><text x="60" y="21" text-anchor="middle">${n.id}</text></g>`;
+  });
+  svg.innerHTML = out;
+  svg.querySelectorAll(".node").forEach(el => el.addEventListener("click", () => {
+    $("#graph").close(""); op({op:"select", scene: el.dataset.id, step: 0}); }));
+}
+$("#b-graph").onclick = () => { renderGraph(); $("#graph").showModal(); };
 $("#b-char").onclick = async () => {
   const r = await ask("Nuevo personaje", [
     {k:"id", label:"id"}, {k:"name", label:"nombre"},
@@ -861,7 +913,7 @@ $("#b-step-add").onclick = () => op({op:"add_step", kind: $("#newop").value});
 $("#b-step-dup").onclick = () => op({op:"dup_step"});
 $("#b-step-up").onclick = () => op({op:"move_step", delta:-1});
 $("#b-step-dn").onclick = () => op({op:"move_step", delta:1});
-$("#b-step-del").onclick = () => op({op:"del_step"});
+$("#b-step-del").onclick = () => SELS.length > 1 ? op({op:"del_steps", indices: SELS}) : op({op:"del_step"});
 /* diálogo rápido: la acción más común de una VN, sin pasar por el inspector */
 function renderQuickWho(){
   const sel = $("#quick-who"), cur = sel.value;
@@ -903,6 +955,18 @@ $("#b-cps").onclick = cycleCps;
 $("#b-cps").textContent = "⌨ " + (CPS ? CPS + " cps" : "sin tipeo");
 $("#b-exit").onclick = () => op({op:"play_stop"});
 $("#b-help").onclick = () => $("#help").showModal();
+function goFind(r){ $("#find").close(""); op({op:"select", scene:r.scene, step:r.step}); }
+$("#find-q").addEventListener("input", () => {
+  const ul = $("#find-list"); ul.innerHTML = "";
+  VNS.searchSteps(S.model, $("#find-q").value).slice(0, 60).forEach(r => {
+    const li = document.createElement("li");
+    li.innerHTML = `<span class="n">${r.scene} · ${r.step + 1}</span>${r.text.slice(0, 90)}`;
+    li.onclick = () => goFind(r); ul.appendChild(li);
+  });
+});
+$("#find-q").addEventListener("keydown", e => {
+  if (e.key === "Enter") { e.preventDefault(); const r = VNS.searchSteps(S.model, $("#find-q").value)[0]; if (r) goFind(r); }
+});
 $("#anim").onclick = closeAnim;
 
 const CMDS = {
@@ -911,7 +975,13 @@ const CMDS = {
                     if (S.play) op({op:"play_stop"}); },
   prev:     () => $("#b-prev").click(),
   next:     () => $("#b-next").click(),
-  del_step: () => $("#b-step-del").click(),
+  del_step: () => { if (SELS.length > 1) op({op:"del_steps", indices: SELS}); else $("#b-step-del").click(); },
+  copy:     () => {
+    const steps = S.model.scenes[S.scene] || [];
+    CLIP = SELS.filter(i => steps[i]).map(i => JSON.parse(JSON.stringify(steps[i])));
+    if (CLIP.length) toast(`${CLIP.length} paso(s) copiado(s)`); },
+  paste:    () => { if (CLIP.length) op({op:"paste_steps", steps: CLIP}); else toast("no hay pasos copiados"); },
+  find:     () => { $("#find-q").value = ""; $("#find-list").innerHTML = ""; $("#find").showModal(); $("#find-q").focus(); },
   guides:   cycleGuides,
   undo:     () => op({op:"undo"}),
   redo:     () => op({op:"redo"}),
@@ -923,7 +993,7 @@ $("#help-body").innerHTML = VNS.KEYMAP.map(
 
 addEventListener("keydown", e => {
   const t = e.target.tagName;
-  if (t === "INPUT" || t === "TEXTAREA" || t === "SELECT" || $("#dlg").open || $("#brw").open) return;
+  if (t === "INPUT" || t === "TEXTAREA" || t === "SELECT" || $("#dlg").open || $("#brw").open || $("#find").open || $("#graph").open) return;
   if ($("#help").open) return;
   /* en Play, espacio/enter avanzan el diálogo */
   if (S.play && (e.key === " " || e.key === "Enter") && !(SG.choices||[]).length && !SG.done) {

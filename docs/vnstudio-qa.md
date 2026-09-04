@@ -11,7 +11,9 @@ falta para la visión.
 | Feature | Dónde | Cómo |
 |---|---|---|
 | Nuevo / Abrir / Guardar / Guardar como / Exportar HTML | topbar | diálogos propios + explorador de archivos 📁 |
-| Validar (gotos rotos, personajes inexistentes, escenas sin salida, assets) | topbar | panel de problemas en el inspector |
+| Validar (gotos rotos, personajes/expresiones inexistentes, escenas sin salida, assets) | topbar | panel de problemas en el inspector |
+| **⌥ flujo**: grafo de escenas | topbar | SVG, click va a la escena |
+| Exportar **html / vnp / iso** | topbar | diálogo de formato + explorador |
 | Undo / Redo | topbar, Ctrl+Z / Ctrl+Y | historial en el server |
 | Server: `--restart`, `--stop`, `--port`, aviso de versión de API | CLI | pidfile + barrido de /proc |
 
@@ -19,7 +21,7 @@ falta para la visión.
 | Feature | Dónde |
 |---|---|
 | Escenas: agregar, duplicar, renombrar, subir/bajar | outliner |
-| Pasos: agregar (10 tipos), duplicar, borrar, mover, reordenar arrastrando | timeline |
+| Pasos: agregar (10 tipos), duplicar, borrar, mover, reordenar arrastrando, **multi-selección, Ctrl+C/V, Ctrl+F** | timeline |
 | Timeline con pistas por tipo, regla, playhead, scrub, Ctrl+rueda zoom | timeline |
 | Inspector por tipo de paso con secciones plegables | inspector |
 | Campos numéricos con scrub (arrastrar la etiqueta, Shift fino) | inspector |
@@ -28,7 +30,7 @@ falta para la visión.
 | Feature | Dónde |
 |---|---|
 | Crear personaje (id, nombre, color) | topbar ＋ Personaje |
-| Sección Personaje única: elegir, nombre, color, sprite (📁/⇧ subir), renombrar id | inspector |
+| Sección Personaje única: elegir, nombre, color, sprite (📁/⇧ subir), **expresiones**, renombrar id | inspector |
 | Capas del paso (al frente primero), selección sincronizada, doble click → su `show` | outliner |
 | Arrastrar sprite con snap y guías (Shift libre); handles de esquina = zoom | viewport |
 | Orden Z ▲/▼, opacidad, tinte, x/y/z/zoom | inspector |
@@ -36,7 +38,7 @@ falta para la visión.
 ### Reproducción
 | Feature | Dónde |
 |---|---|
-| Play desde el paso elegido; click/Espacio/⏭ avanza; choices funcionan | viewport |
+| Play desde el paso elegido; click/Espacio/⏭ avanza; choices funcionan; tipeo ⌨; bgm/se | viewport |
 | El timeline sigue al runtime (escena y paso), click en clip = reproducir desde ahí | timeline |
 | UI apagada en Play salvo juego + timeline | todo |
 | ▶ Probar paso: transición renderizada por el engine (APNG), se cierra sola | viewport |
@@ -78,21 +80,27 @@ conteo de pasos del proyecto de prueba, Enter sintético sin `text`, flujos que
 dependían del orden (ahora cada flujo arranca limpio), la escena nueva trae un
 `end` por diseño.
 
-## 4. Gaps para la visión (backlog, por valor)
+## 4. Backlog de la visión — hecho (2026-09-04, TDD + QA real por item)
 
-1. **Expresiones por personaje** (`show ana feliz`): hoy hay un sprite por
-   personaje. Es lo que más le falta a una VN real. Toca formato `.vn`, engine,
-   inspector (selector de expresión) y player HTML/PS2.
-2. **Transiciones de fondo** (fade/crossfade) y **efecto de tipeo** del texto en
-   Play y en el player exportado.
-3. **Audio en el browser**: escuchar bgm/se al elegirlos y durante Play.
-4. **Copiar/pegar y multi-selección** de pasos (también entre escenas).
-5. **Búsqueda** de texto en diálogos (ir al paso).
-6. **Vista de flujo** (grafo de escenas con gotos/choices); validar cubre lo básico.
-7. **Exportar ISO/ELF desde la UI** (hoy `python -m znt iso build`).
-8. **Atajos de tipo de paso** (p.ej. B fondo, H hide) y **arrastrar un archivo**
-   al escenario para crear/asignar sprite o fondo.
-9. Tema claro y escalado de UI; i18n del editor.
+| # | Feature | Dónde quedó |
+|---|---|---|
+| 1 | **Expresiones por personaje** — `sprite ana feliz feliz.png`, `show ana feliz [pos]`; pos opcional (mantiene posición) | formato + validate, runtime, server, inspector (sección Personaje / selector en show), outliner, player HTML, blob PS2 **v4** + lector C |
+| 2 | **Transición de fondo** `bg X fade=ms` (crossfade real) y **efecto de tipeo** en Play (⌨ cps; click completa, después avanza) | runtime (tween), preview APNG, player HTML (#bg2), inspector |
+| 3 | **Audio en el browser**: bgm en loop y se por disparo (se_seq) durante Play; ▶ para escuchar en los selectores | runtime, estado de Play, UI |
+| 4 | **Multi-selección** (Shift/Ctrl+click), **Ctrl+C/V** entre escenas, Supr múltiple | logic.js clickSelect, server paste_steps/del_steps |
+| 5 | **Ctrl+F** búsqueda en diálogos y opciones, resultados en vivo | logic.js searchSteps, diálogo |
+| 6 | **Vista de flujo** ⌥: grafo de escenas (BFS desde start, rojo = sin salida), click va a la escena | logic.js sceneGraph, SVG |
+| 7 | **Exportar** html / **vnp** / **iso** desde la UI (blob del proyecto en memoria; ISO pide el ELF y genisoimage) | server export_ps2, diálogo de formato + explorador |
+
+Hallazgos extra que salieron en esta ronda: Enter en un diálogo con el foco en
+un `<select>` no aceptaba (ahora Enter acepta desde cualquier campo); el efecto
+de tipeo hacía que el primer click no avanzara (por diseño: completa el texto;
+el QA lo modela y el flujo `tipeo` lo verifica).
+
+Queda para después (sin bloquear nada): tema claro / escalado de UI, i18n del
+editor, arrastrar archivos al escenario, atajos por tipo de paso, expresiones
+y fade en el player PS2 (el blob ya lleva la imagen por expresión; el fade y el
+tipeo del ELF son trabajo de `ps2/main.c`).
 
 ## 5. Cómo correr el QA
 

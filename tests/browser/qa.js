@@ -102,7 +102,10 @@ async function main() {
     for (let i = 0; i < 100; i++) { await sleep(40); if (!(await js("window.__vns && window.__vns.busy"))) break; }
     await js("new Promise(r => requestAnimationFrame(() => setTimeout(r, 30)))");
   };
+  /* un clip fuera de la parte visible del timeline se trae a la vista antes de medirlo
+     (como haría una persona); el escenario no se toca (overflow hidden) */
   const rect = async sel => js(`(() => { const e = document.querySelector(${JSON.stringify(sel)}); if (!e) return null;
+    if (e.closest("#tlbody")) e.scrollIntoView({ block: "nearest", inline: "nearest" });
     const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, h: r.height }; })()`);
   const mouse = (type, x, y, extra = {}) => send("Input.dispatchMouseEvent", { type, x, y, button: "left", clickCount: 1, ...extra });
   const clickAt = async (x, y) => { await mouse("mouseMoved", x, y); await mouse("mousePressed", x, y); await mouse("mouseReleased", x, y); await settle(); };
@@ -136,6 +139,7 @@ async function main() {
     assert(i >= 0, "no hay clip " + op); return i;
   };
   const dump = () => js(`JSON.stringify({step: S.step, scene: S.scene, play: !!S.play, sel: typeof SEL !== "undefined" ? SEL : null,
+    sels: typeof SELS !== "undefined" ? SELS : null, clips: document.querySelectorAll(".clip").length,
     dlg: document.querySelector("#dlg").open, brw: document.querySelector("#brw").open, help: document.querySelector("#help").open,
     toast: document.querySelector("#toast").hidden ? "" : document.querySelector("#toast").textContent,
     active: document.activeElement && (document.activeElement.id || document.activeElement.tagName),
@@ -515,6 +519,71 @@ async function main() {
     assert.ok((await js("document.querySelector('#sfx').getAttribute('src') || ''")).includes("tema.wav"),
               "▶ escucha el archivo del paso");
     await clickText("#scenes li", "inicio");
+  });
+
+  flow("multi-seleccion-copiar-pegar", async () => {
+    const n = await count(".clip");
+    await click('.clip[data-i="1"]');
+    const r3 = await rect('.clip[data-i="3"]');
+    await mouse("mouseMoved", r3.x, r3.y);
+    await mouse("mousePressed", r3.x, r3.y, { modifiers: SHIFT }); await mouse("mouseReleased", r3.x, r3.y, { modifiers: SHIFT });
+    await settle();
+    assert.strictEqual(await count(".clip.sel"), 3, "Shift+click selecciona el rango 1..3");
+    assert.strictEqual(await js("S.step"), 3, "el cursor queda en el último");
+    await key("c", CTRL);
+    await click(`.clip[data-i="${n - 1}"]`);                    // al final
+    await key("v", CTRL);
+    assert.strictEqual(await count(".clip"), n + 3, "Ctrl+V pega los 3 después del cursor");
+    const sc = (await model()).model.scenes.inicio;
+    assert.strictEqual(sc[n].op, sc[1].op, "en el mismo orden");
+    await click(`.clip[data-i="${n}"]`);
+    const rl = await rect(`.clip[data-i="${n + 2}"]`);
+    await mouse("mouseMoved", rl.x, rl.y);
+    await mouse("mousePressed", rl.x, rl.y, { modifiers: SHIFT }); await mouse("mouseReleased", rl.x, rl.y, { modifiers: SHIFT });
+    await settle();
+    await key("Delete");
+    assert.strictEqual(await count(".clip"), n, "Supr borra la selección múltiple");
+    await clickText("#scenes li", "torre");                     // portapapeles entre escenas
+    const m = await count(".clip");
+    await click('.clip[data-i="0"]'); await key("v", CTRL);
+    assert.strictEqual(await count(".clip"), m + 3, "pega en otra escena");
+    await key("z", CTRL); await clickText("#scenes li", "inicio");
+  });
+
+  flow("buscar", async () => {
+    await key("f", CTRL);
+    assert.ok(await isOpen("#find"), "Ctrl+F abre la búsqueda");
+    await type("Llegamos"); await settle();
+    assert.ok((await count("#find-list li")) >= 1, "lista resultados mientras escribís");
+    await click("#find-list li");
+    assert.ok(!(await isOpen("#find")), "elegir cierra");
+    assert.strictEqual(await js("S.scene"), "torre", "y va a la escena");
+    assert.ok((await text("#text")).includes("Llegamos"), "al paso");
+    await clickText("#scenes li", "inicio");
+  });
+
+  flow("grafo-de-escenas", async () => {
+    await click("#b-graph");
+    assert.ok(await isOpen("#graph"), "se abre la vista de flujo");
+    assert.ok((await count("#graph svg .node")) >= 2, "un nodo por escena");
+    assert.ok((await count("#graph svg .edge")) >= 1, "las aristas de los choices/gotos");
+    const ok = await js(`(() => { const n = [...document.querySelectorAll("#graph svg .node")].find(n => n.textContent.includes("torre")); n.dispatchEvent(new MouseEvent("click", {bubbles:true})); return !!n; })()`);
+    assert.ok(ok); await settle();
+    assert.ok(!(await isOpen("#graph")), "click en un nodo cierra");
+    assert.strictEqual(await js("S.scene"), "torre", "y va a esa escena");
+    await clickText("#scenes li", "inicio");
+  });
+
+  flow("exportar-ps2", async () => {
+    await click("#b-export");
+    assert.ok(await isOpen("#dlg"), "Exportar pregunta el formato");
+    await selectValue("#dlg select", "vnp");
+    await key("Enter"); await settle();
+    assert.ok(await isOpen("#brw"), "y después dónde");
+    await js(`document.querySelector("#brw-path").value = ${JSON.stringify(path.join(DIR, "salida.vnp"))}`);
+    await clickText("#brw menu button", "Elegir");
+    assert.ok(fs.existsSync(path.join(DIR, "salida.vnp")), "escribió el blob PS2");
+    assert.ok((await text("#toast")).includes("salida.vnp"), "y lo dice");
   });
 
   /* ---------- correr ---------- */

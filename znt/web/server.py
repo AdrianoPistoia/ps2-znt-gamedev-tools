@@ -104,6 +104,22 @@ class Studio:
             if 0 <= self.step < len(self.steps()):
                 self._snapshot(); self.steps().pop(self.step)
                 self.step = min(self.step, len(self.steps()) - 1)
+        elif o == "paste_steps":
+            # portapapeles del cliente (JSON de pasos): copias independientes, un solo undo
+            new = copy.deepcopy(r.get("steps") or [])
+            if not new or any(not isinstance(x, dict) or x.get("op") not in vn.STEP_OPS for x in new):
+                st = self.state(); st["error"] = "no hay pasos válidos para pegar"; return st
+            self._snapshot()
+            steps = self.steps()
+            i = self.step + 1 if 0 <= self.step < len(steps) else len(steps)
+            steps[i:i] = new; self.step = i + len(new) - 1
+        elif o == "del_steps":
+            steps = self.steps()
+            idx = sorted({int(i) for i in (r.get("indices") or []) if 0 <= int(i) < len(steps)}, reverse=True)
+            if idx:
+                self._snapshot()
+                for i in idx: steps.pop(i)
+                self.step = max(-1, min(idx[-1], len(steps) - 1))
         elif o == "dup_step":
             if 0 <= self.step < len(self.steps()):
                 self._snapshot(); vn.duplicate_step(self.steps(), self.step); self.step += 1
@@ -275,10 +291,35 @@ class Studio:
         elif o == "export":
             p = r.get("path") or os.path.join(self.base, "player.html")
             open(p, "w", encoding="utf-8").write(vn.render_html(self.model, self.base))
+            st = self.state(); st["notice"] = f"player HTML escrito: {p}"; return st
+        elif o == "export_ps2":
+            # blob .vnp del proyecto EN MEMORIA (no del .vn del disco); .iso si hay ELF
+            from .. import vniso, psf
+            p = r.get("path") or os.path.join(self.base, "game.vnp")
+            try:
+                blob = vniso.compile_blob(self.model, base=self.base, font=psf.find_default())
+            except Exception as e:
+                st = self.state(); st["error"] = f"no se pudo compilar el blob: {e}"; return st
+            if p.lower().endswith(".iso"):
+                elf = os.path.expanduser(r.get("elf") or "")
+                if not os.path.isfile(elf):
+                    st = self.state(); st["error"] = "para un ISO hace falta el ELF del player (ps2/ZNTVN.ELF): elegilo"; return st
+                import shutil
+                if not shutil.which("genisoimage"):
+                    st = self.state(); st["error"] = "falta genisoimage (masteriza el ISO): instalalo"; return st
+                bp = p[:-4] + ".vnp"
+                open(bp, "wb").write(blob)
+                try:
+                    vniso.build_iso(elf, bp, p, name=r.get("name") or "ZNTVN")
+                except Exception as e:
+                    st = self.state(); st["error"] = f"genisoimage falló: {e}"; return st
+                st = self.state(); st["notice"] = f"ISO escrito: {p} (y el blob {bp})"; return st
+            open(p, "wb").write(blob)
+            st = self.state(); st["notice"] = f"blob PS2 escrito: {p}"; return st
         else:
             st = self.state(); st["error"] = f"op desconocida: {o}"
             return st
-        if o not in ("select", "validate", "save", "export"):
+        if o not in ("select", "validate", "save", "export", "export_ps2"):
             self.rt.invalidate()
             self._autosave()
         return self.state()

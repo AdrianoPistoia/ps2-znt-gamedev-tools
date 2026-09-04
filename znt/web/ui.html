@@ -208,6 +208,19 @@
   #brw-list li:hover{background:#222736}
   #brw-list li.sel{background:var(--sel);color:#fff}
   #brw-list li.dir{color:var(--acc)}
+  #graph{min-width:min(760px,94vw)}
+  #graph-box{max-height:60vh;overflow:auto;padding:10px 14px 0}
+  #graph svg{display:block;font:12px var(--mono)}
+  #graph .node rect{fill:var(--panel2);stroke:var(--edge);rx:6}
+  #graph .node:hover rect{stroke:var(--acc2)} #graph .node{cursor:pointer}
+  #graph .node.start rect{stroke:var(--acc)} #graph .node.dead rect{stroke:#e2586a}
+  #graph .node text{fill:var(--ink)} #graph .edge{fill:none;stroke:var(--mut);stroke-width:1.3}
+  #graph .elabel{fill:var(--acc2);font-size:10px}
+  #find{min-width:min(520px,92vw)}
+  #find-list{list-style:none;margin:8px 14px 0;padding:0;max-height:40vh;overflow:auto}
+  #find-list li{padding:5px 8px;cursor:pointer;border-radius:4px;font-size:12px}
+  #find-list li:hover{background:var(--sel)}
+  #find-list li .n{color:var(--mut);font:11px var(--mono);margin-right:8px}
   #brw-foot{display:flex;gap:5px;padding:8px 14px 0}
   #brw-foot input{font:12px var(--mono)}
 </style></head>
@@ -226,6 +239,7 @@
     <div class="sep"></div>
     <button id="b-char" title="Nuevo personaje">＋ Personaje</button>
     <button id="b-validate" title="Validar el proyecto">Validar</button>
+    <button id="b-graph" title="Vista de flujo: qué escena lleva a cuál">⌥ flujo</button>
     <div class="grow"></div>
     <button id="b-help" class="ico" title="Atajos (?)">?</button>
     <button id="b-probar" title="Previsualizar la transición del paso">▶ Probar paso</button>
@@ -342,6 +356,20 @@
   </div>
   <menu><button type="button" onclick="this.closest('dialog').close('')">Cancelar</button>
         <button value="ok" class="primary">Elegir</button></menu>
+</form></dialog>
+
+<dialog id="find"><form method="dialog">
+  <h3>Buscar</h3>
+  <div id="dlg-body-find" style="padding:12px 14px 0"><input id="find-q" placeholder="texto de un diálogo o de una opción" autocomplete="off"></div>
+  <ul id="find-list"></ul>
+  <menu><button type="button" onclick="this.closest('dialog').close('')">Cerrar</button></menu>
+</form></dialog>
+
+<dialog id="graph"><form method="dialog">
+  <h3>Flujo de escenas</h3>
+  <div id="graph-box"><svg id="graph-svg" xmlns="http://www.w3.org/2000/svg"></svg></div>
+  <menu><span class="hint" style="margin:0 auto 0 0">click en una escena para ir · rojo = sin salida</span>
+        <button type="button" onclick="this.closest('dialog').close('')">Cerrar</button></menu>
 </form></dialog>
 
 <dialog id="help"><form method="dialog">
