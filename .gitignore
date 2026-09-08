@@ -23,3 +23,4 @@ dist/
 ps2/*.o
 ps2/*.ELF
 ps2/test_vnp
+ps2/audsrv_irx.c

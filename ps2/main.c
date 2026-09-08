@@ -2,7 +2,7 @@
  *
  * Estado: el LECTOR del blob (vnp.c) está verificado en host contra vniso.py.
  * Este main.c es un esqueleto gsKit para COMPILAR con ps2dev e ITERAR en PCSX2.
- * La lógica del intérprete (nuestra) es sólida; el glue de gsKit (marcado /*GSKIT*/)
+ * La lógica del intérprete (nuestra) es sólida; el glue de gsKit (marcado [GSKIT])
  * puede necesitar ajustes según tu versión de gsKit — verificá esos puntos al build.
  *
  * Cubre: bg (solid/grad/img), sprites (Z, zoom, opacidad), caja de diálogo, avance
@@ -13,7 +13,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <malloc.h>
 #include <kernel.h>
+#include <sbv_patches.h>
 #include <gsKit.h>
 #include <dmaKit.h>
 #include <libpad.h>
@@ -25,6 +27,8 @@
 #define SCR_W 640
 #define SCR_H 448
 #define MAX_LAYERS 16
+
+static VnpDoc doc;                 /* el blob abierto (vnp.c parsea in-place) */
 
 /* --- carga del blob: proba host: (PCSX2), mass: (USB) y cdrom0: (ISO) --- */
 static uint8_t *load_blob(uint32_t *size)
@@ -67,7 +71,7 @@ static void audio_set_bgm(uint16_t idx)
 {
     if (idx == VNP_NONE16) { g_bgm_play = 0; return; }
     VnpAudio a; vnp_audio(&doc, idx, &a);
-    const uint8_t *pcm; int plen, freq, bits, ch;
+    const uint8_t *pcm; int plen = 0, freq = 0, bits = 16, ch = 2;
     if (!wav_parse(a.data, a.len, &pcm, &plen, &freq, &bits, &ch)) return;  /* sólo WAV por ahora */
     struct audsrv_fmt_t f; f.freq = freq; f.bits = bits; f.channels = ch;
     audsrv_set_format(&f);                              /*AUDIO*/
@@ -82,13 +86,15 @@ static void bgm_thread(void *arg)
         if (g_bgm_play && g_bgm_pcm)
             audsrv_play_audio((char *)g_bgm_pcm, g_bgm_len);   /*AUDIO: bloquea hasta consumir -> loop*/
         else
-            DelayThread(50 * 1000);
+            for (int k = 0; k < 20000; k++) nopdelay();
     }
 }
 
+extern unsigned char audsrv_irx[]; extern unsigned int size_audsrv_irx;   /* embebido (bin2c) */
 static void audio_init(void)
 {
-    /* NOTA: cargar freesd.irx + audsrv.irx acá (SifLoadModule) según tu entorno. */
+    SifLoadModule("rom0:LIBSD", 0, 0);
+    if (SifExecModuleBuffer(audsrv_irx, size_audsrv_irx, 0, 0, 0) < 0) return;
     if (audsrv_init() != 0) return;                    /*AUDIO*/
     ee_thread_t t; memset(&t, 0, sizeof(t));
     t.func = bgm_thread; t.stack = g_bgm_stack; t.stack_size = sizeof(g_bgm_stack);
@@ -107,7 +113,7 @@ static void build_font_atlas(GSGLOBAL *gs)
     int cols = 1024 / w; if (cols > n) cols = n; if (cols < 1) cols = 1;
     int rows = (n + cols - 1) / cols;
     int aw = cols * w, ah = rows * h, stride = (w + 7) / 8;
-    uint32_t *px = memalign(128, (uint32_t)aw * ah * 4);
+    u32 *px = memalign(128, (uint32_t)aw * ah * 4);
     memset(px, 0, (uint32_t)aw * ah * 4);
     for (int g = 0; g < n; g++) {
         const uint8_t *bmp = doc.font_bmp + (uint32_t)g * h * stride;
@@ -148,7 +154,7 @@ static uint32_t utf8_next(const char *s, int len, int *i)
     return '?';
 }
 
-/* dibuja texto (UTF-8) desde (x,y) con wrap simple. /*GSKIT*/ */
+/* dibuja texto (UTF-8) desde (x,y) con wrap simple.  [GSKIT] */
 static void draw_text(GSGLOBAL *gs, float x, float y, const char *s, int len, uint8_t r, uint8_t g_, uint8_t b)
 {
     if (!g_have_font) return;
@@ -221,11 +227,10 @@ static void layer_tick(Layer *L, float dt)
     action_tick(L, dt);
 }
 
-static VnpDoc doc;
 static Layer layers[MAX_LAYERS];
 static uint32_t cur_scene;
 
-/* sube una imagen RGBA del blob a una GSTEXTURE (PSMCT32). /*GSKIT*/ */
+/* sube una imagen RGBA del blob a una GSTEXTURE (PSMCT32).  [GSKIT] */
 static void upload_image(GSGLOBAL *gs, uint16_t img_idx, GSTEXTURE *t)
 {
     VnpImage im; vnp_image(&doc, img_idx, &im);
@@ -235,7 +240,7 @@ static void upload_image(GSGLOBAL *gs, uint16_t img_idx, GSTEXTURE *t)
     t->Filter = GS_FILTER_LINEAR;
     /* El GS quiere RGBA con alfa 0..0x80. Nuestro alfa es 0..255 -> escalar /2. */
     uint32_t n = (uint32_t)im.w * im.h;
-    uint32_t *px = memalign(128, n * 4);
+    u32 *px = memalign(128, n * 4);
     for (uint32_t i = 0; i < n; i++) {
         const uint8_t *s = im.rgba + i * 4;
         uint8_t a = s[3] >> 1;                 /* 0..127 (0x80 = opaco en PS2) */
@@ -319,7 +324,7 @@ static Block advance(GSGLOBAL *gs)
     blk.kind = 3; return blk;
 }
 
-/* dibuja el frame: capas por Z (mayor Z al fondo) + caja de diálogo. /*GSKIT*/ */
+/* dibuja el frame: capas por Z (mayor Z al fondo) + caja de diálogo.  [GSKIT] */
 static void draw_frame(GSGLOBAL *gs, const Block *blk)
 {
     gsKit_clear(gs, GS_SETREG_RGBAQ(0x10, 0x18, 0x30, 0x80, 0));
@@ -373,6 +378,7 @@ static int pad_pressed(u32 *prev)
 int main(void)
 {
     SifInitRpc(0);
+    sbv_patch_enable_lmb(); sbv_patch_disable_prefix_check();   /* para SifExecModuleBuffer */
     uint32_t size; uint8_t *blob = load_blob(&size);
     if (!blob || vnp_open(&doc, blob, size)) { printf("VNP no encontrado/invalido\n"); SleepThread(); }
 
