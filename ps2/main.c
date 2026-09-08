@@ -15,6 +15,7 @@
 #include <math.h>
 #include <malloc.h>
 #include <kernel.h>
+#include <delaythread.h>
 #include <sbv_patches.h>
 #include <gsKit.h>
 #include <dmaKit.h>
@@ -62,12 +63,30 @@ static void *blob_read(uint32_t off, uint32_t len)
     return b;
 }
 
-/* --- AUDIO (audsrv). PARTE MÁS CRUDA / SIN TESTEAR: verificar al build. -----
- * BGM: se reproduce WAV/PCM en un thread, en loop. SE: TODO (audsrv es un solo
- * stream PCM; un SE simultáneo necesita canal ADPCM/VAG en la SPU2). La carga del
- * módulo audsrv.irx depende de tu entorno (ver README). */
-static const uint8_t *g_bgm_pcm; static int g_bgm_len, g_bgm_play, g_bgm_gen;
-static uint8_t *g_bgm_buf, *g_bgm_old;   /* buffer del BGM actual y el anterior (se libera al próximo cambio) */
+/* --- AUDIO (audsrv) ------------------------------------------------------
+ * BGM: stream PCM (WAV) en loop. SE: ADPCM en canales de la SPU2, encima del BGM.
+ * audsrv.irx va embebido en el ELF (bin2c).
+ *
+ * DOS REGLAS QUE COSTARON UN BGM MUDO Y UN CUELGUE:
+ *
+ * 1. PRIORIDADES. El main corre a 0 (la más alta) y `gsKit_sync_flip` hace busy-spin
+ *    sobre el registro del GS: nunca cede la CPU. Un thread de audio de prioridad
+ *    menor no se ejecuta jamás (el BGM quedaba mudo mientras el SE, que suena en la
+ *    SPU2 sin thread, andaba). audio_init() baja el main a PRIO_MAIN y deja el
+ *    thread de audio arriba; ese thread sólo despierta para llenar el ring buffer y
+ *    vuelve a bloquearse en audsrv_wait_audio()/DelayThread(), que sí ceden.
+ *
+ * 2. UN SOLO THREAD HABLA CON audsrv. El cliente RPC de audsrv no es reentrante:
+ *    con el main disparando un SE mientras el thread streameaba, la consola se
+ *    colgaba. Acá el main NO llama a audsrv: lee el archivo del blob (el único que
+ *    toca el FILE*) y deja el pedido en un slot; el thread hace todas las llamadas.
+ */
+#define PRIO_MAIN 60
+#define PRIO_BGM  40
+#define BGM_CHUNK 2048            /* ~46 ms a 22 kHz 16-bit mono: latencia del SE entre chunks */
+#define MAX_SE 64
+
+static int g_audio_ok;
 static u32 le32(const uint8_t *p){ return p[0]|(p[1]<<8)|(p[2]<<16)|((u32)p[3]<<24); }
 
 /* parsea un WAV PCM: devuelve ptr/len de los samples y el formato. 0 si no es WAV. */
@@ -85,41 +104,79 @@ static int wav_parse(const uint8_t *d, int n, const uint8_t **pcm, int *plen,
     return 0;
 }
 
+/* --- slots de pedido: los escribe el main, los consume el thread de audio --- */
+static volatile int g_req_bgm;               /* 1 = hay un BGM nuevo (o un stop) esperando */
+static uint8_t *g_req_bgm_buf; static const uint8_t *g_req_bgm_pcm;
+static int g_req_bgm_len, g_req_bgm_freq, g_req_bgm_bits, g_req_bgm_ch;
+static volatile int g_req_se = -1;           /* índice del SE a disparar (-1 = ninguno) */
+static uint8_t *g_req_se_buf; static int g_req_se_len;
+
+/* --- estado del thread de audio (sólo lo toca él) --- */
+static uint8_t *g_bgm_buf; static const uint8_t *g_bgm_pcm;
+static int g_bgm_len, g_bgm_play, g_bgm_gen, g_bgm_fed;
+static audsrv_adpcm_t g_se[MAX_SE]; static int g_se_loaded[MAX_SE];
+
+/* MAIN: deja el BGM pedido (VNP_NONE16 = parar). Lee el archivo acá, no en el thread. */
 static void audio_set_bgm(uint16_t idx)
 {
-    g_bgm_play = 0; g_bgm_gen++;
-    if (idx == VNP_NONE16) return;
-    VnpAudio a; vnp_audio(&doc, idx, &a);
-    uint8_t *buf = blob_read(a.off, a.len);            /* por demanda: sólo el BGM que suena */
-    if (!buf) return;
-    const uint8_t *pcm; int plen = 0, freq = 0, bits = 16, ch = 2;
-    if (!wav_parse(buf, a.len, &pcm, &plen, &freq, &bits, &ch)) { free(buf); return; }  /* sólo WAV */
-    free(g_bgm_old); g_bgm_old = g_bgm_buf; g_bgm_buf = buf;   /* el viejo puede estar sonando un chunk más */
-    struct audsrv_fmt_t f; f.freq = freq; f.bits = bits; f.channels = ch;
-    audsrv_set_format(&f);                              /*AUDIO*/
-    g_bgm_pcm = pcm; g_bgm_len = plen; g_bgm_play = 1;
+    if (!g_audio_ok) return;
+    uint8_t *buf = 0; const uint8_t *pcm = 0;
+    int plen = 0, freq = 0, bits = 16, ch = 2;
+    if (idx != VNP_NONE16) {
+        VnpAudio a; vnp_audio(&doc, idx, &a);
+        buf = blob_read(a.off, a.len);
+        if (!buf) return;
+        if (!wav_parse(buf, a.len, &pcm, &plen, &freq, &bits, &ch)) { free(buf); return; }  /* sólo WAV PCM */
+    }
+    while (g_req_bgm) DelayThread(1000);      /* el thread todavía no tomó el anterior */
+    g_req_bgm_buf = buf; g_req_bgm_pcm = pcm; g_req_bgm_len = plen;
+    g_req_bgm_freq = freq; g_req_bgm_bits = bits; g_req_bgm_ch = ch;
+    g_req_bgm = 1;
 }
 
-/* SE: ADPCM en la SPU2 por audsrv (un canal por efecto, encima del stream PCM del BGM).
- * Cada audio se sube una sola vez y queda en RAM de la SPU2 (2 MB). */
-#define MAX_SE 64
-static audsrv_adpcm_t g_se[MAX_SE]; static int g_se_loaded[MAX_SE];
-static int g_audio_ok;
+/* MAIN: deja un SE pedido. La primera vez adjunta el .adp para que el thread lo suba. */
 static void audio_play_se(uint16_t idx)
 {
     if (!g_audio_ok || idx == VNP_NONE16 || idx >= MAX_SE) return;
+    if (g_req_se >= 0) return;                /* pedido anterior sin consumir: se descarta */
+    uint8_t *buf = 0; int len = 0;
     if (!g_se_loaded[idx]) {
         VnpAudio a; vnp_audio(&doc, idx, &a);
-        uint8_t *buf = blob_read(a.off, a.len);
-        if (!buf || a.len < 16 || memcmp(buf, "APCM", 4)) { free(buf); return; }   /* no es .adp: nada */
-        int r = audsrv_load_adpcm(&g_se[idx], buf, a.len);      /*AUDIO*/
-        free(buf);                                              /* ya está en la SPU2 */
-        if (r != 0) { printf("ZNTVN: se %u no cargo (%d)\n", (unsigned)idx, r); return; }
-        g_se_loaded[idx] = 1;
+        buf = blob_read(a.off, a.len);
+        if (!buf || a.len < 16 || memcmp(buf, "APCM", 4)) { free(buf); return; }   /* no es .adp */
+        len = a.len;
     }
-    int ch = audsrv_ch_play_adpcm(-1, &g_se[idx]);              /*AUDIO*/
-    if (ch >= 0) audsrv_adpcm_set_volume_and_pan(ch, MAX_VOLUME, 0);
-    printf("ZNTVN: se %u canal %d\n", (unsigned)idx, ch);
+    g_req_se_buf = buf; g_req_se_len = len; g_req_se = idx;
+}
+
+/* --- THREAD: el único que llama a audsrv --- */
+static void bgm_take_request(void)
+{
+    if (!g_req_bgm) return;
+    audsrv_stop_audio();                                  /*AUDIO: vaciar antes de cambiar formato*/
+    free(g_bgm_buf);
+    g_bgm_buf = g_req_bgm_buf; g_bgm_pcm = g_req_bgm_pcm; g_bgm_len = g_req_bgm_len;
+    if (g_bgm_pcm) {
+        struct audsrv_fmt_t f; f.freq = g_req_bgm_freq; f.bits = g_req_bgm_bits; f.channels = g_req_bgm_ch;
+        audsrv_set_format(&f);                            /*AUDIO*/
+    }
+    g_bgm_play = g_bgm_pcm != 0; g_bgm_gen++; g_req_bgm = 0;
+}
+
+static void se_take_request(void)
+{
+    int idx = g_req_se;
+    if (idx < 0) return;
+    if (!g_se_loaded[idx] && g_req_se_buf) {
+        if (audsrv_load_adpcm(&g_se[idx], g_req_se_buf, g_req_se_len) == 0) g_se_loaded[idx] = 1;  /*AUDIO*/
+        free(g_req_se_buf); g_req_se_buf = 0;             /* ya está en la RAM de la SPU2 */
+    }
+    if (g_se_loaded[idx]) {
+        int ch = audsrv_ch_play_adpcm(-1, &g_se[idx]);    /*AUDIO*/
+        if (ch >= 0) audsrv_adpcm_set_volume_and_pan(ch, MAX_VOLUME, 0);
+        printf("ZNTVN: se %d canal %d\n", idx, ch);
+    }
+    g_req_se = -1;
 }
 
 static char g_bgm_stack[16 * 1024] __attribute__((aligned(16)));
@@ -127,15 +184,20 @@ static void bgm_thread(void *arg)
 {
     (void)arg;
     while (1) {
-        if (g_bgm_play && g_bgm_pcm) {                  /* por chunks: un cambio de BGM corta enseguida */
+        bgm_take_request(); se_take_request();
+        if (g_bgm_play && g_bgm_pcm) {
             int gen = g_bgm_gen, pos = 0;
-            while (g_bgm_play && gen == g_bgm_gen && pos < g_bgm_len) {
-                int n = g_bgm_len - pos; if (n > 4096) n = 4096;
-                audsrv_wait_audio(n); audsrv_play_audio((char *)g_bgm_pcm + pos, n);   /*AUDIO*/
+            while (gen == g_bgm_gen && pos < g_bgm_len) {
+                bgm_take_request(); se_take_request();    /* pedidos nuevos entre chunk y chunk */
+                if (gen != g_bgm_gen) break;
+                int n = g_bgm_len - pos; if (n > BGM_CHUNK) n = BGM_CHUNK;
+                audsrv_wait_audio(n);                     /*AUDIO: bloquea y cede la CPU*/
+                audsrv_play_audio((char *)g_bgm_pcm + pos, n);
+                if (!g_bgm_fed++) printf("ZNTVN: bgm suena (chunk de %d bytes)\n", n);
                 pos += n;
-            }                                           /* al terminar: loop */
+            }                                             /* al terminar: loop */
         } else
-            for (int k = 0; k < 20000; k++) nopdelay();
+            DelayThread(20 * 1000);                       /* dormir de verdad: el main necesita la CPU */
     }
 }
 
@@ -146,9 +208,10 @@ static void audio_init(void)
     if (SifExecModuleBuffer(audsrv_irx, size_audsrv_irx, 0, 0, 0) < 0) return;
     if (audsrv_init() != 0) return;                    /*AUDIO*/
     audsrv_adpcm_init(); audsrv_set_volume(MAX_VOLUME); g_audio_ok = 1;
+    ChangeThreadPriority(GetThreadId(), PRIO_MAIN);    /* ver la nota 1 arriba */
     ee_thread_t t; memset(&t, 0, sizeof(t));
     t.func = bgm_thread; t.stack = g_bgm_stack; t.stack_size = sizeof(g_bgm_stack);
-    t.gp_reg = &_gp; t.initial_priority = 0x40;
+    t.gp_reg = &_gp; t.initial_priority = PRIO_BGM;
     int id = CreateThread(&t); if (id >= 0) StartThread(id, 0);
 }
 

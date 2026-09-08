@@ -24,4 +24,7 @@ item 5 "Fade de fondo en el blob"                                      python3 t
 item 6 "Tween en y en el blob"                                         python3 tests/py/test_blob_fade_y.py
 item 7 "Tipeo, fade, tween, BGM: la VN de features bootea y dibuja"    bash -c "python3 tests/py/mkfeature.py '$T/f' >/dev/null && tests/pcsx2_boot.sh 12 | grep -q 'frame OK'"
 item 8 "SE por ADPCM: encoder + el ELF lo dispara en la SPU2"          bash -c "python3 tests/py/test_adpcm.py && grep -aq 'ZNTVN: se .* canal' /tmp/znt-pcsx2-\$USER/PCSX2/logs/emulog.txt"
+# El BGM es un thread aparte: si el main lo starvea o los dos hablan con audsrv, queda
+# mudo o cuelga sin que nada más falle. El log del boot del ítem 7 es la única prueba.
+item 11 "BGM: el thread alimenta el stream PCM (no queda mudo)"        bash -c "grep -aq 'ZNTVN: bgm suena' /tmp/znt-pcsx2-\$USER/PCSX2/logs/emulog.txt"
 printf '\n\033[1mCHECKLIST COMPLETO: %d ítems ok\033[0m\n' "$PASS"
