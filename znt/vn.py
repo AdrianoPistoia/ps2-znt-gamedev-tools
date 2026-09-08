@@ -46,6 +46,20 @@ def _sprite_line(chars, rest):
         c["sprite"] = parts[1]
 
 
+def groups(steps):
+    """Corridas de pasos con el mismo grupo: [(nombre, desde, hasta)]."""
+    out, cur = [], None
+    for i, s in enumerate(steps):
+        g = s.get("group")
+        if g and cur and cur[0] == g:
+            cur[2] = i
+        else:
+            if cur: out.append(tuple(cur))
+            cur = [g, i, i] if g else None
+    if cur: out.append(tuple(cur))
+    return out
+
+
 def sprite_file(char, expr=None):
     """Archivo del sprite para esa expresión (o el base si no hay/no existe)."""
     return (char.get("expr") or {}).get(expr) or char.get("sprite")
@@ -56,7 +70,7 @@ def parse(text):
     chars = {"narrator": {"name": "", "color": "#cccccc"}}
     scenes = {}          # id -> lista de pasos
     order = []
-    cur = None
+    cur = None; group = None
     for raw in text.splitlines():
         line = raw.strip()
         if not line or line.startswith("#"):
@@ -78,11 +92,16 @@ def parse(text):
             _sprite_line(chars, line[7:])
             continue
         if line.startswith("scene "):
-            cur = line[6:].strip(); scenes[cur] = []; order.append(cur); continue
+            cur = line[6:].strip(); scenes[cur] = []; order.append(cur); group = None; continue
         if cur is None:
             raise SyntaxError(f"paso fuera de una escena: {line!r}")
+        if line.startswith("group "):                 # group nombre … endgroup: un click en Play
+            group = line[6:].strip().replace(" ", "_"); continue
+        if line == "endgroup":
+            group = None; continue
         step = _step(line, chars)
         if step:
+            if group: step["group"] = group
             scenes[cur].append(step)
     if not scenes:
         raise SyntaxError("no hay escenas")
@@ -340,8 +359,15 @@ def to_text(model):
     out.append("")
     for sid in model.get("order", model["scenes"]):
         out.append(f"scene {sid}")
+        cur_g = None
         for s in model["scenes"][sid]:
+            g = s.get("group")
+            if g != cur_g:                              # marcadores alrededor de cada corrida
+                if cur_g: out.append("  endgroup")
+                if g: out.append(f"  group {g}")
+                cur_g = g
             out.append("  " + _step_text(s))
+        if cur_g: out.append("  endgroup")
         out.append("")
     return "\n".join(out).rstrip() + "\n"
 

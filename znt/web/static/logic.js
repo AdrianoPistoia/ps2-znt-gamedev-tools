@@ -128,6 +128,7 @@
     { keys: "Ctrl+S",     cmd: "save",     desc: "Guardar el .vn" },
     { keys: "Ctrl+C / Ctrl+V", cmd: "copy", desc: "Copiar / pegar pasos (también entre escenas)" },
     { keys: "Ctrl+F",     cmd: "find",     desc: "Buscar en diálogos y opciones" },
+    { keys: "Ctrl+G",     cmd: "group",    desc: "Agrupar los pasos elegidos (un click en Play) / desagrupar" },
     { keys: "Shift / Ctrl + click", cmd: null, desc: "Selección múltiple en el timeline" },
     { keys: "?",          cmd: "help",     desc: "Esta ayuda" },
     { keys: "Shift",      cmd: null,       desc: "Arrastrar sin imán / scrub fino" },
@@ -144,6 +145,7 @@
       if (low === "c") return "copy";
       if (low === "v") return "paste";
       if (low === "f") return "find";
+      if (low === "g") return "group";
       return null;
     }
     if (k === " ") return "play";
@@ -218,6 +220,18 @@
                dead: !steps.some(s => s.op === "end" || s.op === "goto" || s.op === "choice") };
     });
     return { nodes, edges: edges.filter(e => model.scenes[e.to]) };
+  }
+
+  /* --- grupos de pasos (corridas con el mismo `group`) --- */
+  function groupRuns(steps) {
+    const out = []; let cur = null;
+    steps.forEach((s, i) => {
+      const g = s.group || null;
+      if (g && cur && cur.name === g) cur.b = i;
+      else { if (cur) out.push(cur); cur = g ? { name: g, a: i, b: i } : null; }
+    });
+    if (cur) out.push(cur);
+    return out;
   }
 
   /* --- selección múltiple y búsqueda --- */
@@ -311,5 +325,5 @@
   }
 
   return { layerStyle, bgStyle, stageXY, snap, snapTargets, dragTo, POS,
-           clampPane, fitRect, sceneGraph, clickSelect, searchSteps, typedChars, playCursor, stageOverlay, crumbs, joinPath, mergeState, KEYMAP, resolveKey, scrubValue, resizeZoom, guides, nextGuide, GUIDES, outlineRows, showStepIndex, LANES, laneOf, clipRect, dropIndex };
+           clampPane, fitRect, groupRuns, sceneGraph, clickSelect, searchSteps, typedChars, playCursor, stageOverlay, crumbs, joinPath, mergeState, KEYMAP, resolveKey, scrubValue, resizeZoom, guides, nextGuide, GUIDES, outlineRows, showStepIndex, LANES, laneOf, clipRect, dropIndex };
 });

@@ -256,7 +256,8 @@ Atajos: Espacio (Play/avanzar), Esc, ←/→, Supr, G (guías), Ctrl+Z/Y/S, **?*
 
 **Play** arranca en el paso seleccionado (lo anterior queda aplicado) y va
 **paso a paso**: cada click en la pantalla ejecuta el siguiente paso (fondo,
-personaje, diálogo…), y el timeline sigue al runtime: el clip
+personaje, diálogo…) — o un **grupo** entero (Ctrl+G sobre varios pasos:
+`group intro … endgroup` en el .vn) —, y el timeline sigue al runtime: el clip
 en reproducción queda marcado y si un choice/goto salta de escena, el timeline
 cambia con él. Click en un clip durante Play = reproducir desde ahí. El resto de
 la UI se apaga mientras tanto; Esc o ⏹ vuelve a editar.

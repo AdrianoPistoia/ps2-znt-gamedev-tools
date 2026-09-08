@@ -113,6 +113,15 @@ class Studio:
             steps = self.steps()
             i = self.step + 1 if 0 <= self.step < len(steps) else len(steps)
             steps[i:i] = new; self.step = i + len(new) - 1
+        elif o == "set_group":
+            steps = self.steps()
+            name = (r.get("name") or "").strip().replace(" ", "_")
+            idx = [int(i) for i in (r.get("indices") or []) if 0 <= int(i) < len(steps)]
+            if idx:
+                self._snapshot()
+                for i in idx:
+                    if name: steps[i]["group"] = name
+                    else: steps[i].pop("group", None)
         elif o == "del_steps":
             steps = self.steps()
             idx = sorted({int(i) for i in (r.get("indices") or []) if 0 <= int(i) < len(steps)}, reverse=True)

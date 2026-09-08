@@ -154,13 +154,17 @@ class VNRuntime:
         self.speaker = self.text = None; self.choices = []
         if self.done or self.ip >= len(steps):
             self.done = True; return
-        s = steps[self.ip]; self.ip += 1
-        if s["op"] == "goto":
-            self.enter_at(s["target"], 0)             # entra y muestra su primer paso
-        elif s["op"] == "end":
-            self.done = True
-        else:
+        while True:                                  # un grupo entero es un click
+            s = steps[self.ip]; self.ip += 1
+            if s["op"] == "goto":
+                self.enter_at(s["target"], 0); return     # entra y muestra su primer paso
+            if s["op"] == "end":
+                self.done = True; return
             self._exec(s)
+            g = s.get("group")
+            if (s["op"] in ("say", "choice") or not g or self.ip >= len(steps)
+                    or steps[self.ip].get("group") != g):
+                break
         if self.ip >= len(self._steps()) and not self.text and not self.choices:
             self.done = True
 

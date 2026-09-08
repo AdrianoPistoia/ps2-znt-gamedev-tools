@@ -125,9 +125,38 @@ function renderLists(){
   $("#m-path").classList.toggle("dirty", !!S.dirty);
   $("#m-path").title = S.dirty ? "hay cambios sin guardar (Ctrl+S)" : "";
   document.title = (S.dirty ? "● " : "") + "VN Studio";
-  renderChars(); renderQuickWho();
+  renderChars(); renderQuickWho(); renderGroups();
   $("#b-play").classList.toggle("on", !!S.play);
 }
+
+/* ---------- grupos de la escena ---------- */
+function renderGroups(){
+  const ul = $("#groups"); ul.innerHTML = "";
+  const runs = VNS.groupRuns(S.model.scenes[S.scene] || []);
+  runs.forEach(g => {
+    const li = document.createElement("li");
+    li.innerHTML = `<span>⧈ ${g.name}</span><span class="grow"></span><span class="n">${g.a + 1}–${g.b + 1}</span>`;
+    li.title = "click: seleccionar los pasos del grupo";
+    li.onclick = () => { SELS = []; for (let i = g.a; i <= g.b; i++) SELS.push(i); ANCHOR = g.a;
+                         op({op:"select", scene:S.scene, step:g.b}); };
+    ul.appendChild(li);
+  });
+  $("#m-groups").textContent = runs.length || "";
+}
+async function groupCmd(){
+  const steps = S.model.scenes[S.scene] || [];
+  const idx = SELS.length ? SELS : (S.step >= 0 ? [S.step] : []);
+  if (!idx.length) return toast("elegí pasos en el timeline (Shift+click para varios)");
+  const inGroup = idx.every(i => steps[i] && steps[i].group);
+  if (inGroup) {
+    if (await ask("Desagrupar", [], `¿Sacar ${idx.length} paso(s) del grupo "${steps[idx[0]].group}"?`))
+      op({op:"set_group", indices: idx, name: ""});
+    return;
+  }
+  const n = await askOne("Agrupar pasos", "nombre del grupo", "grupo" + (VNS.groupRuns(steps).length + 1));
+  if (n) op({op:"set_group", indices: idx, name: n});
+}
+$("#b-group").onclick = groupCmd;
 
 /* ---------- personajes del proyecto (roster) ---------- */
 function renderChars(){
@@ -333,6 +362,13 @@ function renderTimeline(){
     inner.appendChild(c);
   });
 
+  VNS.groupRuns(steps).forEach(g => {                // banda del grupo sobre la regla
+    const band = document.createElement("div"); band.className = "gband";
+    band.style.left = (g.a * TLV.cw + 2) + "px"; band.style.width = ((g.b - g.a + 1) * TLV.cw - 4) + "px";
+    const lab = document.createElement("div"); lab.className = "glabel"; lab.textContent = "⧈ " + g.name;
+    lab.style.left = (g.a * TLV.cw + 18) + "px"; lab.style.width = ((g.b - g.a + 1) * TLV.cw - 22) + "px";
+    inner.append(band, lab);
+  });
   if (cur.step >= 0) {
     const ph = document.createElement("div");
     ph.className = "playhead"; ph.style.left = (cur.step * TLV.cw) + "px";
@@ -981,6 +1017,7 @@ const CMDS = {
     CLIP = SELS.filter(i => steps[i]).map(i => JSON.parse(JSON.stringify(steps[i])));
     if (CLIP.length) toast(`${CLIP.length} paso(s) copiado(s)`); },
   paste:    () => { if (CLIP.length) op({op:"paste_steps", steps: CLIP}); else toast("no hay pasos copiados"); },
+  group:    () => groupCmd(),
   find:     () => { $("#find-q").value = ""; $("#find-list").innerHTML = ""; $("#find").showModal(); $("#find-q").focus(); },
   guides:   cycleGuides,
   undo:     () => op({op:"undo"}),

@@ -13,7 +13,7 @@ const ONLY = process.argv.slice(2);
 /* ---------- proyecto de prueba ---------- */
 const DIR = fs.mkdtempSync(path.join(os.tmpdir(), "vnqa-"));
 const VN = path.join(DIR, "demo.vn");
-fs.writeFileSync(VN, `title: QA
+const VN_TEXT = `title: QA
 character ana "Ana" #7cc4ff
 character leo "Leo" #f0a92e
 sprite ana ana.png
@@ -35,7 +35,8 @@ scene torre
   se golpe.wav
   leo: Fin.
   end
-`);
+`;
+fs.writeFileSync(VN, VN_TEXT);
 for (const f of ["tema.wav", "golpe.wav"])                  // WAV mínimo (cabecera)
   fs.writeFileSync(path.join(DIR, f), Buffer.from("RIFF\x24\x00\x00\x00WAVEfmt ", "latin1"));
 { // PNG 40x60 opaco, sin deps
@@ -314,6 +315,8 @@ async function main() {
   });
 
   flow("guardar-y-validar", async () => {
+    await click("#b-scene-add"); await type("final2"); await key("Enter"); await settle();   // escena sin salida
+    while (await count(".clip")) { await click(`.clip[data-i="${(await count(".clip")) - 1}"]`); await key("Delete"); }
     const before = fs.statSync(VN).mtimeMs;
     await sleep(20);
     await key("s", CTRL);
@@ -361,8 +364,10 @@ async function main() {
       if (typeof closeAnim === "function") closeAnim();
       if (S.play) await op({op:"play_stop"});
       CPS = 0;                                   // sin tipeo: los flujos avanzan de un click
-      if (S.scene !== "inicio" || S.step !== 1) await op({op:"select", scene:"inicio", step:1});
     })()`);
+    fs.writeFileSync(VN, VN_TEXT);               // el proyecto vuelve al original: cada flujo arranca limpio de verdad
+    for (const f of fs.readdirSync(DIR)) if (f.includes("autosave")) fs.unlinkSync(path.join(DIR, f));
+    await js(`op({op:"open_project", path:${JSON.stringify(VN)}}).then(() => op({op:"select", scene:"inicio", step:1}))`);
     await settle();
   };
 
@@ -588,6 +593,30 @@ async function main() {
     await clickText("#brw menu button", "Elegir");
     assert.ok(fs.existsSync(path.join(DIR, "salida.vnp")), "escribió el blob PS2");
     assert.ok((await text("#toast")).includes("salida.vnp"), "y lo dice");
+  });
+
+  flow("grupos", async () => {
+    await click('.clip[data-i="0"]');
+    const r2 = await rect('.clip[data-i="2"]');
+    await mouse("mouseMoved", r2.x, r2.y);
+    await mouse("mousePressed", r2.x, r2.y, { modifiers: SHIFT }); await mouse("mouseReleased", r2.x, r2.y, { modifiers: SHIFT });
+    await settle();
+    await key("g", CTRL);
+    assert.ok(await isOpen("#dlg"), "Ctrl+G pide el nombre");
+    await js(`document.querySelector("#dlg input").select()`); await type("intro"); await key("Enter"); await settle();
+    assert.strictEqual(await count(".gband"), 1, "banda del grupo en el timeline");
+    assert.ok((await text("#groups")).includes("intro"), "y en el outliner");
+    let sc = (await model()).model.scenes.inicio;
+    assert.deepStrictEqual(sc.slice(0, 3).map(s => s.group), ["intro", "intro", "intro"]);
+    await click('.clip[data-i="0"]'); await click("#b-play");
+    assert.strictEqual(await js("S.play.step"), 2, "Play: el grupo entero es un click");
+    assert.strictEqual(await count("#stage .layer"), 2, "los dos personajes ya están");
+    await key("Escape");
+    await click('.clip[data-i="1"]'); await key("g", CTRL);          // dentro de un grupo = desagrupar
+    assert.ok(await isOpen("#dlg")); await key("Enter"); await settle();
+    sc = (await model()).model.scenes.inicio;
+    assert.ok(!sc[1].group && sc[0].group === "intro", "sacó sólo ese paso");
+    await key("z", CTRL); await key("z", CTRL);
   });
 
   /* ---------- correr ---------- */

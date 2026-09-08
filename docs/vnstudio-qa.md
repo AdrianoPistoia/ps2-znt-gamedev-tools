@@ -22,6 +22,7 @@ falta para la visión.
 |---|---|
 | Escenas: agregar, duplicar, renombrar, subir/bajar | outliner |
 | Pasos: agregar (10 tipos), duplicar, borrar, mover, reordenar arrastrando, **multi-selección, Ctrl+C/V, Ctrl+F** | timeline |
+| **Grupos** (Ctrl+G): varios pasos = un click en Play; banda en el timeline y lista en el outliner; `group x … endgroup` en el .vn | timeline / outliner |
 | Timeline con pistas por tipo, regla, playhead, scrub, Ctrl+rueda zoom | timeline |
 | Inspector por tipo de paso con secciones plegables | inspector |
 | Campos numéricos con scrub (arrastrar la etiqueta, Shift fino) | inspector |
@@ -38,7 +39,7 @@ falta para la visión.
 ### Reproducción
 | Feature | Dónde |
 |---|---|
-| Play desde el paso elegido; click/Espacio/⏭ avanza; choices funcionan; tipeo ⌨; bgm/se | viewport |
+| Play **paso a paso** desde el paso elegido (click/Espacio/⏭ = siguiente paso; un grupo = un click); choices; tipeo ⌨; bgm/se | viewport |
 | El timeline sigue al runtime (escena y paso), click en clip = reproducir desde ahí | timeline |
 | UI apagada en Play salvo juego + timeline | todo |
 | ▶ Probar paso: transición renderizada por el engine (APNG), se cierra sola | viewport |
