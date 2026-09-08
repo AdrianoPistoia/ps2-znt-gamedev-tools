@@ -11,7 +11,7 @@
 import os, sys
 
 from . import (container, codec, tim2, font, scriptscan, render, sqparse,
-               sqtranspile, sqrt, sqrun, vn, engine, frontends, image, vnstudio, psf, vniso)
+               sqtranspile, sqrt, sqrun, vn, engine, frontends, image, vnstudio, psf, vniso, adpcm)
 # El front interactivo (znt.gui) se importa de forma perezosa: el core no depende de él.
 
 
@@ -35,7 +35,7 @@ def extract(hd, bn, outdir, ext=".bin"):
 
 def demo(*a):
     for m in (codec, container, tim2, font, scriptscan, render, sqparse, sqrt,
-              sqtranspile, sqrun, vn, engine, frontends, image, vnstudio, psf, vniso):
+              sqtranspile, sqrun, vn, engine, frontends, image, vnstudio, psf, vniso, adpcm):
         print(f"{m.__name__}:", end=" ")
         m.demo()
     for name, mod in (("znt.gui", "gui"), ("znt.web", "web")):   # fronts opcionales

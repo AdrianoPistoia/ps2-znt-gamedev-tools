@@ -25,7 +25,7 @@ sin data embebida todavía (diferido, ver spike).
 """
 import struct, os, shutil, subprocess, tempfile
 
-from . import vn, image, psf
+from . import vn, image, psf, adpcm
 
 SYSTEM_CNF = "BOOT2 = cdrom0:\\{name}.ELF;1\r\nVER = 1.00\r\nVMODE = {vmode}\r\n"
 
@@ -135,19 +135,22 @@ def compile_blob(model, base=".", font=None):
         f = (c.get("expr") or {}).get(ex) if ex else None
         return IMG(f) if f else NONE16
 
-    # --- audio (bgm/se): embebe los archivos que existen ---
+    # --- audio: bgm embebe el WAV tal cual (stream PCM); se va como ADPCM de SPU2 ---
     aud_idx = {}
     audios = []
-    def AUD(fname):
+    def AUD(fname, se=False):
         if not fname:
             return NONE16
-        if fname not in aud_idx:
+        key = (fname, se)
+        if key not in aud_idx:
             try:
                 data = open(f"{base}/{fname}", "rb").read()
-            except OSError:
-                aud_idx[fname] = NONE16; return NONE16     # falta: sin audio
-            aud_idx[fname] = len(audios); audios.append((S(fname), data))  # nombre al pool
-        return aud_idx[fname]
+                if se:
+                    data = adpcm.from_wav(data)
+            except (OSError, ValueError):
+                aud_idx[key] = NONE16; return NONE16     # falta o no es WAV PCM: sin audio
+            aud_idx[key] = len(audios); audios.append((S(fname), data))  # nombre al pool
+        return aud_idx[key]
 
     S(model["title"])                                    # reservar título como string 0
 
@@ -252,7 +255,7 @@ def _emit_step(w, s, S, char_idx, scene_idx, IMG, AUD, expr_img=lambda s: NONE16
     elif op == "bgm":
         w.u8(1 if s.get("stop") else 0); w.u16(AUD(s.get("file")))
     elif op == "se":
-        w.u16(AUD(s.get("file")))
+        w.u16(AUD(s.get("file"), se=True))
     elif op == "choice":
         opts = s.get("options", []); w.u8(len(opts))
         for o in opts:

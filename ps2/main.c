@@ -100,6 +100,28 @@ static void audio_set_bgm(uint16_t idx)
     g_bgm_pcm = pcm; g_bgm_len = plen; g_bgm_play = 1;
 }
 
+/* SE: ADPCM en la SPU2 por audsrv (un canal por efecto, encima del stream PCM del BGM).
+ * Cada audio se sube una sola vez y queda en RAM de la SPU2 (2 MB). */
+#define MAX_SE 64
+static audsrv_adpcm_t g_se[MAX_SE]; static int g_se_loaded[MAX_SE];
+static int g_audio_ok;
+static void audio_play_se(uint16_t idx)
+{
+    if (!g_audio_ok || idx == VNP_NONE16 || idx >= MAX_SE) return;
+    if (!g_se_loaded[idx]) {
+        VnpAudio a; vnp_audio(&doc, idx, &a);
+        uint8_t *buf = blob_read(a.off, a.len);
+        if (!buf || a.len < 16 || memcmp(buf, "APCM", 4)) { free(buf); return; }   /* no es .adp: nada */
+        int r = audsrv_load_adpcm(&g_se[idx], buf, a.len);      /*AUDIO*/
+        free(buf);                                              /* ya está en la SPU2 */
+        if (r != 0) { printf("ZNTVN: se %u no cargo (%d)\n", (unsigned)idx, r); return; }
+        g_se_loaded[idx] = 1;
+    }
+    int ch = audsrv_ch_play_adpcm(-1, &g_se[idx]);              /*AUDIO*/
+    if (ch >= 0) audsrv_adpcm_set_volume_and_pan(ch, MAX_VOLUME, 0);
+    printf("ZNTVN: se %u canal %d\n", (unsigned)idx, ch);
+}
+
 static char g_bgm_stack[16 * 1024] __attribute__((aligned(16)));
 static void bgm_thread(void *arg)
 {
@@ -123,6 +145,7 @@ static void audio_init(void)
     SifLoadModule("rom0:LIBSD", 0, 0);
     if (SifExecModuleBuffer(audsrv_irx, size_audsrv_irx, 0, 0, 0) < 0) return;
     if (audsrv_init() != 0) return;                    /*AUDIO*/
+    audsrv_adpcm_init(); audsrv_set_volume(MAX_VOLUME); g_audio_ok = 1;
     ee_thread_t t; memset(&t, 0, sizeof(t));
     t.func = bgm_thread; t.stack = g_bgm_stack; t.stack_size = sizeof(g_bgm_stack);
     t.gp_reg = &_gp; t.initial_priority = 0x40;
@@ -368,7 +391,7 @@ static Block advance(GSGLOBAL *gs)
             break;
         }
         case OP_BGM:   audio_set_bgm(s.bgm_stop ? VNP_NONE16 : s.audio); break;
-        case OP_SE:    /* TODO: SE necesita un canal ADPCM/VAG en la SPU2 */ break;
+        case OP_SE:    audio_play_se(s.audio); break;
         case OP_GOTO:  return enter_scene(gs, s.target);
         case OP_END:   blk.kind = 3; return blk;
         default: break;
