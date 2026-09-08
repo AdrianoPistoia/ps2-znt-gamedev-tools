@@ -229,6 +229,8 @@ static void layer_tick(Layer *L, float dt)
 
 static Layer layers[MAX_LAYERS];
 static uint32_t cur_scene;
+static int g_bg_kind = -1; static uint32_t g_bg_a, g_bg_b;   /* fondo solid/grad (kind 0/1) */
+static uint32_t g_frames;
 
 /* sube una imagen RGBA del blob a una GSTEXTURE (PSMCT32).  [GSKIT] */
 static void upload_image(GSGLOBAL *gs, uint16_t img_idx, GSTEXTURE *t)
@@ -275,6 +277,8 @@ static Block advance(GSGLOBAL *gs)
         switch (s.op) {
         case OP_BG:
             /* solid/grad: color de fondo; img: textura full-screen (capa 0). */
+            g_bg_kind = s.bg_kind; g_bg_a = s.bg_a; g_bg_b = s.bg_b;
+            if (s.bg_kind != 2) layers[0].used = 0;
             if (s.bg_kind == 2) {
                 Layer *L = &layers[0]; L->used = 1; L->chr = -1;
                 L->x = 0; L->y = 0; L->z = -1000; L->zoom = 100; L->opacity = 100;
@@ -327,7 +331,12 @@ static Block advance(GSGLOBAL *gs)
 /* dibuja el frame: capas por Z (mayor Z al fondo) + caja de diálogo.  [GSKIT] */
 static void draw_frame(GSGLOBAL *gs, const Block *blk)
 {
-    gsKit_clear(gs, GS_SETREG_RGBAQ(0x10, 0x18, 0x30, 0x80, 0));
+    /* fondo solid/grad: color plano o quad gouraud (colores del blob: 0xRRGGBBAA) */
+    #define BGCOL(c) GS_SETREG_RGBAQ(((c) >> 24) & 0xff, ((c) >> 16) & 0xff, ((c) >> 8) & 0xff, 0x80, 0)
+    gsKit_clear(gs, g_bg_kind >= 0 ? BGCOL(g_bg_a) : GS_SETREG_RGBAQ(0x10, 0x18, 0x30, 0x80, 0));
+    if (g_bg_kind == 1)
+        gsKit_prim_quad_gouraud(gs, 0, 0, SCR_W, 0, 0, SCR_H, SCR_W, SCR_H, 1,
+                                BGCOL(g_bg_a), BGCOL(g_bg_a), BGCOL(g_bg_b), BGCOL(g_bg_b));
     /* orden: dibujar de mayor z (fondo) a menor z (frente) */
     for (int pass = 1000; pass >= -1000; pass--) {
         for (int i = 0; i < MAX_LAYERS; i++) {
@@ -371,7 +380,8 @@ static void draw_frame(GSGLOBAL *gs, const Block *blk)
 static char pad_buf[256] __attribute__((aligned(64)));
 static int pad_pressed(u32 *prev)
 {
-    struct padButtonStatus b; padRead(0, 0, &b);
+    struct padButtonStatus b;
+    if (padGetState(0, 0) != PAD_STATE_STABLE || !padRead(0, 0, &b)) return 0;   /* sin pad listo: nada apretado */
     u32 now = 0xffff ^ b.btns; u32 hit = now & ~(*prev); *prev = now; return hit;
 }
 
@@ -381,6 +391,7 @@ int main(void)
     sbv_patch_enable_lmb(); sbv_patch_disable_prefix_check();   /* para SifExecModuleBuffer */
     uint32_t size; uint8_t *blob = load_blob(&size);
     if (!blob || vnp_open(&doc, blob, size)) { printf("VNP no encontrado/invalido\n"); SleepThread(); }
+    printf("ZNTVN: blob OK v%u, %u escenas, %u imagenes, fuente %ux%u x%u\n", (unsigned)doc.version, (unsigned)doc.n_scenes, (unsigned)doc.n_images, (unsigned)doc.font_w, (unsigned)doc.font_h, (unsigned)doc.font_n);
 
     GSGLOBAL *gs = gsKit_init_global();                   /*GSKIT*/
     dmaKit_init(D_CTRL_RELE_OFF, D_CTRL_MFD_OFF, D_CTRL_STS_UNSPEC,
@@ -414,6 +425,7 @@ int main(void)
         gsKit_TexManager_nextFrame(gs);
         draw_frame(gs, &blk);
         gsKit_queue_exec(gs); gsKit_sync_flip(gs);
+        if (++g_frames == 1) printf("ZNTVN: frame OK (escena %u, bloque %d)\n", (unsigned)cur_scene, blk.kind);
     }
     /* fin */
     while (1) { gsKit_clear(gs, GS_SETREG_RGBAQ(0,0,0,0x80,0)); gsKit_sync_flip(gs); }
