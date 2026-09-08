@@ -28,22 +28,7 @@ else skip "tests node" "node no instalado"; fi
 echo "── lector del blob en C (host)"
 if command -v cc >/dev/null; then
   TMP=$(mktemp -d)
-  python3 - "$TMP" <<'PY'
-import sys, struct, zlib
-from znt import vn, vniso, psf
-px = bytes((10, 20, 30, 255)) * 4                                  # PNG RGBA 2x2
-raw = b"".join(b"\0" + px[y*8:(y+1)*8] for y in range(2))
-chunk = lambda t, b: struct.pack(">I", len(b)) + t + b + struct.pack(">I", zlib.crc32(t + b))
-open(sys.argv[1] + "/s.png", "wb").write(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 2, 2, 8, 6, 0, 0, 0))
-                                        + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
-m = vn._link_choices(vn.parse(
-    'title: T\ncharacter a "Ana" color=#e79ab0\nsprite a s.png\n'
-    'scene uno\n  bg grad:#101828,#304060 fade=300\n  show a right x=40 z=5 zoom=150 opacity=80\n'
-    '  a: Hola.\n  choice\n    - Seguir -> dos\n    - Fin -> dos\n'
-    'scene dos\n  * chau\n  bgm t.wav\n  animate a move y=-30 time=100\n  end\n'))
-open(sys.argv[1] + "/t.wav", "wb").write(b"RIFFxxxxWAVE")
-open(sys.argv[1] + "/k.vnp", "wb").write(vniso.compile_blob(m, base=sys.argv[1], font=psf.find_default()))
-PY
+  PYTHONPATH="$PWD" python3 tests/py/mkblob.py "$TMP"
   if cc -Wall -I ps2 ps2/test_vnp_host.c ps2/vnp.c -o "$TMP/tv" 2>/dev/null; then
     run "vnp.c contra un blob real" "$TMP/tv" "$TMP/k.vnp"
   else bad "compilar el test del lector C"; fi

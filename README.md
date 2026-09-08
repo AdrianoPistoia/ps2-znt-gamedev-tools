@@ -74,6 +74,11 @@ El engine se saca en tres capas apiladas. Este repo cubre la **2** y la **2b**.
 
   Falta para runtime completo: los módulos de animación `LayerModule` (curvas
   accel/decel/wave, no solo tween lineal), audio, y entrada más allá de avanzar.
+
+  **Player nativo de PS2** (`ps2/`, C con gsKit/audsrv): la misma `.vn` compilada a
+  blob (`znt iso build`) **bootea en PCSX2** con fondos, sprites, crossfade, tweens,
+  tipeo, BGM y SE. Ver [`docs/build-ps2.md`](docs/build-ps2.md) y
+  [`docs/checklist.md`](docs/checklist.md) (`tests/checklist.sh` corre todo en orden).
 - **Capa 3** — autoría de una VN nueva. Formato de texto `.vn` (personajes,
   escenas, `bg`/`show`/`say`/`choice`/`goto`) que `vn` compila a un player HTML
   autocontenido y compartible. Ver [`docs/authoring.md`](docs/authoring.md).
@@ -189,6 +194,9 @@ znt/            el SDK (paquete importable, stdlib)
   frontends.py  frontend headless del engine: export APNG
   # framework de creación de VN (headless)
   image.py      lector PNG stdlib -> filas RGBA (assets propios)
+  psf.py        fuentes .psf de consola (se hornean en el blob PS2)
+  vniso.py      .vn -> blob .vnp v5 (cabecera + data por demanda) e ISO booteable
+  adpcm.py      WAV -> ADPCM de SPU2 (los `se` del blob)
   vnstudio.py   VNRuntime: reproduce un modelo autoral con el render/animación real
   # capa 3 — autoría
   vn.py         DSL .vn -> player HTML + ops de modelo (validate/rename/...)

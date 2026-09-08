@@ -27,13 +27,27 @@ sprite saito saito.png            # opcional: arte del personaje (si no, placeho
 ### Escenas y pasos
 ```
 scene intro                       # abre una escena; los pasos siguen hasta el próximo 'scene'
-  bg grad:#101830,#2a4a80         # fondo: degradé
+  bg grad:#101830,#2a4a80         # fondo: degradé vertical (arriba,abajo)
   bg #223                         #   o color sólido
-  bg cuarto.png                   #   o imagen (se embebe en el HTML)
-  show louise left                # mostrar sprite: left | center | right
+  bg cuarto.png                   #   o imagen (se embebe en el HTML / va al blob PS2)
+  bg noche.png fade=600           #   fade=ms: crossfade desde el fondo anterior
+  show louise left                # mostrar sprite: left | center | right (x=-180 / 0 / 180)
+  show louise feliz right         # con expresión (ver 'sprite'); sin posición mantiene la que tenía
+  show louise x=40 y=0 z=5 zoom=120 opacity=80 tint=#ff8080   # capa: x/y en px desde el centro/piso,
+                                  #   z mayor = al frente, zoom y opacity en %, tint color
   hide louise
+  animate louise move x=200 y=-40 curve=accel time=400   # tween a esa x/y (curve: linear|accel|decel)
+  animate louise wave vib=16 cycle=340                    # acciones: wave | waveonce | jump | jumponce
+  animate louise fall dist=120 time=600                   #   | fall (dist, time) | vibrate (vib, wait)
   louise: ¿Otra vez despierto?    # diálogo: <personaje>: texto
   * Un silencio llenó la sala.    # narración (equivale a  narrator: ...)
+  bgm tema.wav                    # música en loop (WAV PCM para PS2; el HTML acepta lo que el browser toque)
+  bgm stop
+  se golpe.wav                    # efecto (WAV PCM; en PS2 se convierte a ADPCM al compilar)
+  group intro                     # group … endgroup: en Play, todos esos pasos corren con un click
+    show saito right
+    saito: ¡Hola!
+  endgroup
   choice                          # elección ramificada
     - Insistir -> acerca          #   - etiqueta -> escena_destino
     - Cambiar de tema -> tema
@@ -41,9 +55,18 @@ scene intro                       # abre una escena; los pasos siguen hasta el p
   end                             # fin del juego
 ```
 
+Cabecera (antes de la primera `scene`):
+
+```
+title: Mi novela
+character louise "Louise" color=#ff9ec2   # id, nombre visible y color del nombre
+sprite louise louise.png                  # sprite base del personaje
+sprite louise feliz louise_feliz.png      # una expresión: `show louise feliz`
+```
+
 Reglas: cada `- opción` se engancha al `choice` inmediatamente anterior; `goto`
 y `end` cortan el flujo de la escena; el juego arranca en la **primera** escena
-declarada.
+declarada. Las líneas que empiezan con `#` son comentarios.
 
 ## Assets
 
@@ -65,6 +88,6 @@ scene uno
   end
 ```
 
-*Alcance:* player PC (browser). Empaquetar la misma `.vn` al formato del juego
-(.HD/.BIN para PS2) requeriría un encoder PNG→TIM2 y emitir Squirrel del engine
-— es la extensión "motor real" de la capa 3, no incluida.
+*Alcance:* la misma `.vn` sale como player HTML (`znt vn build`) o como blob para el
+player nativo de PS2 (`znt iso build`, ver [`build-ps2.md`](build-ps2.md)). Empaquetarla
+al formato del juego original (.HD/.BIN, Squirrel del engine) no está incluido.

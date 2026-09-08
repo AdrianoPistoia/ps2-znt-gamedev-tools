@@ -19,8 +19,7 @@ Lo más simple es la imagen oficial (trae PS2SDK, gsKit, audsrv):
 
 ```sh
 cd ~/Projects/ps2-znt-gamedev-tools
-docker run --rm -v "$PWD:/src" -w /src/ps2 ps2dev/ps2dev sh -c 'make'
-# -> ps2/ZNTVN.ELF
+ps2/build.sh            # docker run … ps2dev/ps2dev (instala make en el contenedor) -> ps2/ZNTVN.ELF
 ```
 
 Con ps2dev instalado local (`$PS2DEV`, `$PS2SDK`, `$PS2DEV/bin` en el PATH):
@@ -66,5 +65,5 @@ host; lo que suele necesitar ajuste al primer build es el glue marcado `/*GSKIT*
 (sprites/atlas/mode) y `/*AUDIO*/` (carga de módulos, formato audsrv). Editás
 `ps2/main.c`, recompilás (paso 1) y volvés a PCSX2.
 
-Pendiente conocido: **SE** (efectos) — necesita canal ADPCM/VAG en la SPU2, no el
-stream PCM de audsrv.
+Verificación automática: `tests/pcsx2_boot.sh` (boot por log) y `tests/checklist.sh`
+(todo el plan de `docs/checklist.md` en orden, con build + boot + VN de features).

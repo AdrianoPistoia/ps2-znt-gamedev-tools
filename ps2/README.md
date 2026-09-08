@@ -6,21 +6,19 @@ en el SDK Python.
 
 ## Estado
 
-- **`vnp.c` (lector del blob): verificado** — compila en el host y parsea correctamente
-  un blob generado por `znt.vniso` (`make host && ./test_vnp <blob.vnp>` → `C READER OK`).
-- **`main.c` (gsKit): sin compilar en este entorno (sin toolchain).** Cubre fondo
-  (solid/grad/img), sprites (Z, zoom, opacidad), caja de diálogo, **texto con fuente
-  (nombre + diálogo + opciones, UTF-8, acentos)** desde el atlas horneado en el blob,
-  avance y choices con el pad. Los puntos `/*GSKIT*/` pueden necesitar ajustes según
-  tu versión de gsKit, **animación por tiempo** (tween con curvas + los 6
-  action-offsets, math portada de `engine.py`) y **audio BGM** (WAV/PCM por audsrv
-  en un thread, en loop).
+**Compila y bootea en PCSX2** (`ps2/build.sh` con la imagen docker `ps2dev/ps2dev`;
+`tests/pcsx2_boot.sh` lo bootea y verifica por el log; `ZNT_SHOT=x.png` captura).
 
-  **Audio — lo más crudo/sin testear.** Sólo BGM WAV/PCM por ahora (los `.vnp`
-  embeben el archivo tal cual; para PS2 conviene WAV PCM: ogg/mp3 no se decodifican
-  en consola). **SE** queda como TODO (necesita un canal ADPCM/VAG en la SPU2, no el
-  stream PCM de audsrv). Cargá `freesd.irx` + `audsrv.irx` en `audio_init()` según
-  tu entorno (`SifLoadModule`), y verificá los puntos `/*AUDIO*/` y `/*GSKIT*/`.
+- **`vnp.c`** (lector del blob v5): verificado en host (`tests/py/mkblob.py` + `make host`).
+  Carga **sólo la cabecera** (~2 KB); imágenes y audio se leen por demanda con `fseek`.
+- **`main.c`** (gsKit + audsrv): fondo sólido/degradé/imagen con **crossfade** (`fade=`),
+  sprites RGBA32 con alfa (Z, zoom, opacidad), **tween en x/y** con curvas y las 6
+  acciones, caja de diálogo, **texto UTF-8 con tipeo** (40 cps; X completa, X avanza),
+  choices con el pad, **BGM** WAV/PCM por chunks (loop, corta al cambiar) y **SE por
+  ADPCM** en canales de la SPU2 (`audsrv_load_adpcm`, el SDK lo convierte al compilar).
+- VRAM: un solo framebuffer y sin Z → ~3 MB para texturas (fondo 640x448 = 1.1 MB).
+  Pendiente: cuantizar a 8 bpp (CLUT) para escenas con muchos sprites.
+- Sin probar en consola real. Sin saves/menú/skip/log de texto.
 
 La **fuente** se hornea en el blob desde un `.psf` de consola (`znt iso build` la
 autodetecta; `--font ruta.psf` para elegirla, `--no-font` para omitirla). Solo se
