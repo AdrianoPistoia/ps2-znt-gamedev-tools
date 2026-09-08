@@ -181,14 +181,18 @@ static uint32_t utf8_next(const char *s, int len, int *i)
     return '?';
 }
 
-/* dibuja texto (UTF-8) desde (x,y) con wrap simple.  [GSKIT] */
-static void draw_text(GSGLOBAL *gs, float x, float y, const char *s, int len, uint8_t r, uint8_t g_, uint8_t b)
+#define TYPING_CPS 40                /* caracteres por segundo (mismo default que el editor) */
+static float g_say_ms;               /* ms desde que empezó el diálogo actual (tipeo) */
+static int utf8_count(const char *s, int len) { int i = 0, n = 0; while (i < len) { utf8_next(s, len, &i); n++; } return n; }
+
+/* dibuja texto (UTF-8) desde (x,y) con wrap simple; `maxcp` = cuántos codepoints mostrar (-1 todos).  [GSKIT] */
+static void draw_text(GSGLOBAL *gs, float x, float y, const char *s, int len, uint8_t r, uint8_t g_, uint8_t b, int maxcp)
 {
     if (!g_have_font) return;
     int fw = doc.font_w, fh = doc.font_h;
     float pen = x, py = y, maxx = SCR_W - 32;
-    int i = 0;
-    while (i < len) {
+    int i = 0, shown = 0;
+    while (i < len && (maxcp < 0 || shown++ < maxcp)) {
         uint32_t cp = utf8_next(s, len, &i);
         if (cp == '\n' || pen > maxx) { pen = x; py += fh + 2; if (cp == '\n') continue; }
         int cell = font_cell(cp);
@@ -206,8 +210,8 @@ typedef struct {
     int used, chr;
     float x, y; int z, zoom, opacity;
     GSTEXTURE tex;      /*GSKIT*/  int has_tex;
-    /* animación (mismo modelo que engine.py) */
-    int   tw_active, tw_curve; float tw_from, tw_to, tw_dur, tw_t;      /* tween de x */
+    /* animación (mismo modelo que engine.py): un tween por coordenada */
+    struct { int active, curve; float from, to, dur, t; } twx, twy;
     int   ac_kind, ac_done;    float ac_vib, ac_cycle, ac_dist, ac_time, ac_now, ac_next, ac_ox, ac_oy;
 } Layer;
 
@@ -244,19 +248,32 @@ static void action_tick(Layer *L, float dt)
     }
 }
 
+typedef struct { int active, curve; float from, to, dur, t; } Tween;
+static float tween_tick(Tween *tw, float dt, float cur)
+{
+    if (!tw->active) return cur;
+    tw->t += dt; float k = tw->t / tw->dur;
+    if (k >= 1.0f) { k = 1.0f; tw->active = 0; }
+    return tw->from + (tw->to - tw->from) * easef(tw->curve, k);
+}
+static void tween_start(Tween *tw, float from, float to, float dur, int curve)
+{
+    tw->active = 1; tw->from = from; tw->to = to; tw->dur = dur > 0 ? dur : 1; tw->t = 0; tw->curve = curve;
+}
 static void layer_tick(Layer *L, float dt)
 {
-    if (L->tw_active) {
-        L->tw_t += dt; float k = L->tw_t / L->tw_dur;
-        if (k >= 1.0f) { k = 1.0f; L->tw_active = 0; }
-        L->x = L->tw_from + (L->tw_to - L->tw_from) * easef(L->tw_curve, k);
-    }
+    L->x = tween_tick((Tween *)&L->twx, dt, L->x);
+    L->y = tween_tick((Tween *)&L->twy, dt, L->y);
     action_tick(L, dt);
 }
 
 static Layer layers[MAX_LAYERS];
 static uint32_t cur_scene;
-static int g_bg_kind = -1; static uint32_t g_bg_a, g_bg_b;   /* fondo solid/grad (kind 0/1) */
+/* fondo actual y anterior (crossfade): kind -1 = nada, 0 solid, 1 grad, 2 imagen */
+typedef struct { int kind; uint32_t a, b; GSTEXTURE tex; int has_tex; } Bg;
+static Bg g_bg = { -1 }, g_bgprev = { -1 };
+static Tween g_fade;                       /* opacidad del fondo nuevo sobre el anterior */
+static float g_bg_alpha = 1.0f;
 static uint32_t g_frames;
 
 /* sube una imagen RGBA del blob a una GSTEXTURE (PSMCT32).  [GSKIT] */
@@ -292,7 +309,7 @@ static Block advance(GSGLOBAL *gs);   /* continúa el cursor actual */
 static Block enter_scene(GSGLOBAL *gs, uint32_t scene)
 {
     for (int i = 0; i < MAX_LAYERS; i++) if (layers[i].has_tex) free(layers[i].tex.Mem);
-    memset(layers, 0, sizeof(layers));
+    memset(layers, 0, sizeof(layers));                  /* el fondo persiste entre escenas */
     cur_scene = scene;
     Block blk; memset(&blk, 0, sizeof(blk));
     if (vnp_scene_begin(&doc, scene, &g_sc)) { blk.kind = 3; return blk; }
@@ -306,13 +323,16 @@ static Block advance(GSGLOBAL *gs)
         switch (s.op) {
         case OP_BG:
             /* solid/grad: color de fondo; img: textura full-screen (capa 0). */
-            g_bg_kind = s.bg_kind; g_bg_a = s.bg_a; g_bg_b = s.bg_b;
-            if (s.bg_kind != 2) layers[0].used = 0;
-            if (s.bg_kind == 2) {
-                Layer *L = &layers[0]; L->used = 1; L->chr = -1;
-                L->x = 0; L->y = 0; L->z = -1000; L->zoom = 100; L->opacity = 100;
-                upload_image(gs, s.bg_img, &L->tex); L->has_tex = L->tex.Mem != 0;
+            if (g_bgprev.has_tex) free(g_bgprev.tex.Mem);
+            if (s.bg_fade && g_bg.kind >= 0) {          /* el fondo viejo queda abajo mientras dura el fade */
+                g_bgprev = g_bg; tween_start(&g_fade, 0.0f, 1.0f, s.bg_fade, AN_LINEAR); g_bg_alpha = 0.0f;
+            } else {
+                if (g_bg.has_tex) free(g_bg.tex.Mem);
+                g_bgprev.kind = -1; g_bgprev.has_tex = 0; g_fade.active = 0; g_bg_alpha = 1.0f;
             }
+            memset(&g_bg, 0, sizeof(g_bg));
+            g_bg.kind = s.bg_kind; g_bg.a = s.bg_a; g_bg.b = s.bg_b;
+            if (s.bg_kind == 2) { upload_image(gs, s.bg_img, &g_bg.tex); g_bg.has_tex = g_bg.tex.Mem != 0; }
             break;
         case OP_SHOW: {
             int slot = -1;
@@ -336,10 +356,10 @@ static Block advance(GSGLOBAL *gs)
             Layer *L = 0;
             for (int i = 1; i < MAX_LAYERS; i++) if (layers[i].used && layers[i].chr == s.chr) L = &layers[i];
             if (!L) break;
-            if (s.an_kind <= AN_MOVE) {                 /* movimiento con curva */
+            if (s.an_kind <= AN_MOVE) {                 /* movimiento con curva, por coordenada dada */
                 int curve = (s.an_kind == AN_MOVE) ? s.an_curve : s.an_kind;
-                L->tw_active = 1; L->tw_from = L->x; L->tw_to = s.an_x;
-                L->tw_dur = s.an_time ? s.an_time : 1; L->tw_t = 0; L->tw_curve = curve;
+                if (s.an_x != VNP_NOCOORD) tween_start((Tween *)&L->twx, L->x, s.an_x, s.an_time, curve);
+                if (s.an_y != VNP_NOCOORD) tween_start((Tween *)&L->twy, L->y, s.an_y, s.an_time, curve);
             } else {                                    /* action offset */
                 L->ac_kind = s.an_kind; L->ac_done = 0; L->ac_now = 0; L->ac_next = 0;
                 L->ac_vib = s.an_vib; L->ac_cycle = s.an_cycle ? s.an_cycle : 1;
@@ -357,15 +377,29 @@ static Block advance(GSGLOBAL *gs)
     blk.kind = 3; return blk;
 }
 
+/* fondo: color plano, degradé vertical o imagen, con alfa (colores del blob: 0xRRGGBBAA) */
+#define BGCOL(c, a) GS_SETREG_RGBAQ(((c) >> 24) & 0xff, ((c) >> 16) & 0xff, ((c) >> 8) & 0xff, (a), 0)
+static void draw_bg(GSGLOBAL *gs, Bg *bg, float alpha)
+{
+    uint8_t a = (uint8_t)(alpha * 0x80);
+    if (bg->kind == 0) {
+        gsKit_prim_sprite(gs, 0, 0, SCR_W, SCR_H, 1, BGCOL(bg->a, a));
+    } else if (bg->kind == 1) {          /* (las prims de gsKit son macros con ';' propio: llaves) */
+        gsKit_prim_quad_gouraud(gs, 0, 0, SCR_W, 0, 0, SCR_H, SCR_W, SCR_H, 1,
+                                BGCOL(bg->a, a), BGCOL(bg->a, a), BGCOL(bg->b, a), BGCOL(bg->b, a));
+    } else if (bg->has_tex) {
+        gsKit_TexManager_bind(gs, &bg->tex);
+        gsKit_prim_sprite_texture(gs, &bg->tex, 0, 0, 0, 0, SCR_W, SCR_H, bg->tex.Width, bg->tex.Height,
+                                  1, GS_SETREG_RGBAQ(0x80, 0x80, 0x80, a, 0));
+    }
+}
+
 /* dibuja el frame: capas por Z (mayor Z al frente) + caja de diálogo.  [GSKIT] */
 static void draw_frame(GSGLOBAL *gs, const Block *blk)
 {
-    /* fondo solid/grad: color plano o quad gouraud (colores del blob: 0xRRGGBBAA) */
-    #define BGCOL(c) GS_SETREG_RGBAQ(((c) >> 24) & 0xff, ((c) >> 16) & 0xff, ((c) >> 8) & 0xff, 0x80, 0)
-    gsKit_clear(gs, g_bg_kind >= 0 ? BGCOL(g_bg_a) : GS_SETREG_RGBAQ(0x10, 0x18, 0x30, 0x80, 0));
-    if (g_bg_kind == 1)
-        gsKit_prim_quad_gouraud(gs, 0, 0, SCR_W, 0, 0, SCR_H, SCR_W, SCR_H, 1,
-                                BGCOL(g_bg_a), BGCOL(g_bg_a), BGCOL(g_bg_b), BGCOL(g_bg_b));
+    gsKit_clear(gs, GS_SETREG_RGBAQ(0, 0, 0, 0x80, 0));
+    if (g_bgprev.kind >= 0) draw_bg(gs, &g_bgprev, 1.0f);   /* crossfade: el viejo abajo, el nuevo con alfa */
+    if (g_bg.kind >= 0) draw_bg(gs, &g_bg, g_bg_alpha);
     /* orden: menor z primero (fondo, z=-1000) y mayor z al frente (misma convención que el editor) */
     for (int pass = -1000; pass <= 1000; pass++) {
         for (int i = 0; i < MAX_LAYERS; i++) {
@@ -391,16 +425,16 @@ static void draw_frame(GSGLOBAL *gs, const Block *blk)
         if (blk->step.who != VNP_NONE16) {
             VnpChar c; vnp_char(&doc, blk->step.who, &c);
             VnpStr nm = vnp_str(&doc, c.name);
-            draw_text(gs, 36, SCR_H - 102, nm.ptr, nm.len, 0xe8, 0xb0, 0x4b);
+            draw_text(gs, 36, SCR_H - 102, nm.ptr, nm.len, 0xe8, 0xb0, 0x4b, -1);
         }
         VnpStr t = vnp_str(&doc, blk->step.text);
-        draw_text(gs, 36, SCR_H - 82, t.ptr, t.len, 0xff, 0xff, 0xff);
+        draw_text(gs, 36, SCR_H - 82, t.ptr, t.len, 0xff, 0xff, 0xff, (int)(g_say_ms * TYPING_CPS / 1000.0f));
     } else if (blk->kind == 2) {                                   /* opciones */
         for (int i = 0; i < blk->step.n_opts; i++) {
             VnpStr l = vnp_str(&doc, blk->step.opt_label[i]);
             int sel = (i == g_choice_sel);
             draw_text(gs, sel ? 52 : 40, SCR_H - 100 + i * 20, l.ptr, l.len,
-                      sel ? 0xff : 0xa0, sel ? 0xd0 : 0xa0, sel ? 0x40 : 0xa0);
+                      sel ? 0xff : 0xa0, sel ? 0xd0 : 0xa0, sel ? 0x40 : 0xa0, -1);
         }
     }
 }
@@ -445,18 +479,26 @@ int main(void)
     u32 prev = 0;
 
     Block blk = enter_scene(gs, doc.start);
-    g_choice_sel = 0;
+    g_choice_sel = 0; g_say_ms = 0;
 
     while (blk.kind != 3) {
         u32 hit = pad_pressed(&prev);
-        if (blk.kind == 1 && (hit & PAD_CROSS)) {          /* avanzar diálogo: continúa el cursor */
-            blk = advance(gs);
+        if (blk.kind == 1 && (hit & PAD_CROSS)) {          /* click: completa el tipeo; el siguiente avanza */
+            VnpStr t = vnp_str(&doc, blk.step.text);
+            if (g_say_ms * TYPING_CPS / 1000.0f < utf8_count(t.ptr, t.len)) g_say_ms = 1e9f;
+            else { blk = advance(gs); g_say_ms = 0; }
         } else if (blk.kind == 2) {
             if (hit & PAD_UP)   g_choice_sel = (g_choice_sel + blk.step.n_opts - 1) % blk.step.n_opts;
             if (hit & PAD_DOWN) g_choice_sel = (g_choice_sel + 1) % blk.step.n_opts;
-            if (hit & PAD_CROSS) { blk = enter_scene(gs, blk.step.opt_target[g_choice_sel]); g_choice_sel = 0; }
+            if (hit & PAD_CROSS) { blk = enter_scene(gs, blk.step.opt_target[g_choice_sel]); g_choice_sel = 0; g_say_ms = 0; }
         }
         for (int i = 0; i < MAX_LAYERS; i++) if (layers[i].used) layer_tick(&layers[i], 16.0f);  /* ~60fps */
+        g_say_ms += 16.0f;
+        g_bg_alpha = tween_tick(&g_fade, 16.0f, g_bg_alpha);
+        if (!g_fade.active && g_bgprev.kind >= 0) {          /* terminó el fade: el viejo se va */
+            if (g_bgprev.has_tex) free(g_bgprev.tex.Mem);
+            g_bgprev.kind = -1; g_bgprev.has_tex = 0;
+        }
         gsKit_TexManager_nextFrame(gs);
         draw_frame(gs, &blk);
         gsKit_queue_exec(gs); gsKit_sync_flip(gs);

@@ -32,7 +32,7 @@ int main(int argc, char **argv) {
 
     VnpScene sc; VnpStep s;
     CHECK(vnp_scene_begin(&d, 0, &sc) == 0);
-    CHECK(vnp_step(&sc, &s) && s.op == OP_BG && s.bg_kind == 1);
+    CHECK(vnp_step(&sc, &s) && s.op == OP_BG && s.bg_kind == 1 && s.bg_fade == 300);
     CHECK(vnp_step(&sc, &s) && s.op == OP_SHOW && s.x == 40 && s.z == 5 && s.zoom == 150 && s.opacity == 80);
     CHECK(s.img == VNP_NONE16);               /* sin expresión: sprite base */
     CHECK(vnp_step(&sc, &s) && s.op == OP_SAY && streq(&d, s.text, "Hola."));
@@ -42,6 +42,7 @@ int main(int argc, char **argv) {
     CHECK(vnp_scene_begin(&d, 1, &sc) == 0);
     CHECK(vnp_step(&sc, &s) && s.op == OP_SAY && s.who == VNP_NONE16 && streq(&d, s.text, "chau"));
     CHECK(vnp_step(&sc, &s) && s.op == OP_BGM && s.bgm_stop == 0 && s.audio == 0);
+    CHECK(vnp_step(&sc, &s) && s.op == OP_ANIM && s.an_kind == AN_MOVE && s.an_x == VNP_NOCOORD && s.an_y == -30 && s.an_time == 100);
     CHECK(vnp_step(&sc, &s) && s.op == OP_END);
 
     /* audio e imagen: índice (off, len) con la data después de la cabecera */

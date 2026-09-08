@@ -15,6 +15,7 @@ enum { AN_LINEAR=0, AN_ACCEL=1, AN_DECEL=2, AN_MOVE=3,
        AN_WAVE=10, AN_WAVEONCE=11, AN_JUMP=12, AN_JUMPONCE=13, AN_FALL=14, AN_VIBRATE=15 };
 #define VNP_NONE16 0xFFFF
 #define VNP_NONE32 0xFFFFFFFFu
+#define VNP_NOCOORD 0x7FFF        /* anim: coordenada no dada (no se toca) */
 
 typedef struct { const char *ptr; uint16_t len; } VnpStr;   /* no NUL-terminado */
 
@@ -29,6 +30,7 @@ typedef struct {
     uint8_t  bg_kind;        /* 0 solid, 1 grad, 2 img */
     uint32_t bg_a, bg_b;     /* colores rgba (solid usa bg_a) */
     uint16_t bg_img;
+    uint16_t bg_fade;        /* v5: crossfade en ms (0 = corte) */
     /* show / hide / anim */
     uint16_t chr;
     uint16_t img;            /* show: imagen de la expresión (VNP_NONE16 = sprite del personaje) */
@@ -36,7 +38,8 @@ typedef struct {
     uint16_t zoom; uint8_t opacity; uint32_t tint;
     /* anim */
     uint8_t  an_kind, an_curve;
-    int16_t  an_x; uint16_t an_time; int16_t an_vib; uint16_t an_cycle; int16_t an_dist;
+    int16_t  an_x, an_y;     /* VNP_NOCOORD = no dada */
+    uint16_t an_time; int16_t an_vib; uint16_t an_cycle; int16_t an_dist;
     /* say */
     uint16_t who; uint32_t text;
     /* bgm/se */

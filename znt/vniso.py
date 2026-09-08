@@ -15,7 +15,8 @@ Formato (little-endian):
     == head_size ==     de acá en adelante, la data cruda de imágenes y audios (off absoluto)
 
 v5: la cabecera se lee sola (`head_size`) y cada imagen/audio se trae por demanda con
-su `off`: el ELF no carga el blob entero en RAM.
+su `off`: el ELF no carga el blob entero en RAM. `bg` termina en u16 fade (ms, 0 = corte);
+`anim` lleva i16 x, i16 y (0x7FFF = no dado: esa coordenada no se toca).
 
 Opcodes: 1 bg, 2 show, 3 hide, 4 say, 5 anim, 6 bgm, 7 se, 8 choice, 9 goto, 10 end.
 v4: `show` lleva u16 img (imagen de la expresión; 0xFFFF = el sprite base del personaje).
@@ -37,6 +38,7 @@ ANIM = {"linear": 0, "accel": 1, "decel": 2, "move": 3,
 IANIM = {v: k for k, v in ANIM.items()}
 NONE32 = 0xFFFFFFFF
 NONE16 = 0xFFFF
+NOCOORD = 0x7FFF                  # i16 "no dado" en anim (x/y)
 
 
 def _rgba(hexs):
@@ -227,6 +229,7 @@ def _emit_step(w, s, S, char_idx, scene_idx, IMG, AUD, expr_img=lambda s: NONE16
             w.u8(1); w.u32(_rgba(sp["a"])); w.u32(_rgba(sp["b"]))
         else:
             w.u8(2); w.u16(IMG(sp.get("file")))
+        w.u16(int(s.get("fade") or 0))              # v5: crossfade en ms
     elif op == "show":
         w.u16(char_idx.get(s["id"], NONE16))
         w.u16(expr_img(s))                          # v4: imagen de la expresión (NONE = base)
@@ -242,7 +245,8 @@ def _emit_step(w, s, S, char_idx, scene_idx, IMG, AUD, expr_img=lambda s: NONE16
         p = s.get("params", {})
         w.u8(ANIM.get(s["kind"], 0))                     # curva-como-kind / move / acción
         w.u8(ANIM.get(p.get("curve", "linear"), 0))      # curva (para move)
-        w.i16(p.get("x", 0)); w.u16(int(p.get("time", p.get("falltime", 0))))
+        w.i16(p.get("x", NOCOORD)); w.i16(p.get("y", NOCOORD))     # v5: y; 0x7FFF = no dado
+        w.u16(int(p.get("time", p.get("falltime", 0))))
         w.i16(p.get("vib", p.get("vibration", 0))); w.u16(int(p.get("cycle", 0)))
         w.i16(p.get("dist", p.get("distance", 0)))
     elif op == "bgm":
@@ -305,9 +309,10 @@ def _read_step(r, S):
     op = IOP[r.u8()]
     if op == "bg":
         k = r.u8()
-        if k == 0: return {"op": "bg", "kind": "solid", "color": r.u32()}
-        if k == 1: return {"op": "bg", "kind": "grad", "a": r.u32(), "b": r.u32()}
-        return {"op": "bg", "kind": "img", "img": r.u16()}
+        if k == 0: d = {"op": "bg", "kind": "solid", "color": r.u32()}
+        elif k == 1: d = {"op": "bg", "kind": "grad", "a": r.u32(), "b": r.u32()}
+        else: d = {"op": "bg", "kind": "img", "img": r.u16()}
+        d["fade"] = r.u16(); return d
     if op == "show":
         return {"op": "show", "id": r.u16(), "img": r.u16(), "x": r.i16(), "y": r.i16(), "z": r.i16(),
                 "zoom": r.u16(), "opacity": r.u8(), "tint": r.u32()}
@@ -317,7 +322,9 @@ def _read_step(r, S):
         return {"op": "say", "who": r.u16(), "text": S(r.u32())}
     if op == "anim":
         kind = IANIM.get(r.u8(), "linear"); curve = IANIM.get(r.u8(), "linear")
-        return {"op": "animate", "kind": kind, "curve": curve, "x": r.i16(),
+        x = r.i16(); y = r.i16()
+        return {"op": "animate", "kind": kind, "curve": curve,
+                "x": None if x == NOCOORD else x, "y": None if y == NOCOORD else y,
                 "time": r.u16(), "vib": r.i16(), "cycle": r.u16(), "dist": r.i16()}
     if op == "bgm":
         return {"op": "bgm", "stop": r.u8(), "audio": r.u16()}

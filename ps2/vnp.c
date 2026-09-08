@@ -114,6 +114,7 @@ int vnp_step(VnpScene *sc, VnpStep *o)
         if (o->bg_kind == 0) { o->bg_a = rd32(p); p += 4; }
         else if (o->bg_kind == 1) { o->bg_a = rd32(p); o->bg_b = rd32(p+4); p += 8; }
         else { o->bg_img = rd16(p); p += 2; }
+        o->bg_fade = rd16(p); p += 2;                /* v5 */
         break;
     case OP_SHOW:
         o->chr = rd16(p); p += 2;
@@ -128,7 +129,8 @@ int vnp_step(VnpScene *sc, VnpStep *o)
         o->who = rd16(p); p += 2; o->text = rd32(p); p += 4; break;
     case OP_ANIM:
         o->an_kind = *p++; o->an_curve = *p++;
-        o->an_x = (int16_t)rd16(p); p += 2; o->an_time = rd16(p); p += 2;
+        o->an_x = (int16_t)rd16(p); p += 2; o->an_y = (int16_t)rd16(p); p += 2;   /* v5: y */
+        o->an_time = rd16(p); p += 2;
         o->an_vib = (int16_t)rd16(p); p += 2; o->an_cycle = rd16(p); p += 2;
         o->an_dist = (int16_t)rd16(p); p += 2; break;
     case OP_BGM:
