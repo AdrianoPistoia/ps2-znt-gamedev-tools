@@ -34,6 +34,7 @@ import sys, os, json, base64, html
 
 
 POS_NAMES = ("left", "center", "right")
+POS = {"left": -180, "center": 0, "right": 180}      # x del sprite por preset (px desde el centro)
 
 
 def _sprite_line(chars, rest):

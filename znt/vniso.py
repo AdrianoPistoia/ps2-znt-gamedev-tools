@@ -5,11 +5,17 @@ sirve de verificación y de **spec** para el lector en C.
 
 Formato (little-endian):
 
-    "VNP1" | u16 version | u16 start_scene
+    "VNP1" | u16 version | u16 start_scene | u32 head_size
     -- string pool --   u32 N ; por cada: u16 len + UTF-8      (idx 0xFFFFFFFF = none)
     -- characters --    u32 N ; por cada: u32 name_str, u32 color_rgba, u16 sprite_img(0xFFFF none)
-    -- images --        u32 N ; por cada: u16 w, u16 h, u8 fmt(0=RGBA32), u32 len, bytes
+    -- images --        u32 N ; por cada: u16 w, u16 h, u8 fmt(0=RGBA32), u32 len, u32 off
+    -- font --          u8 has ; u16 cw, u16 ch, u32 n, n*u32 cps, bitmap 1bpp
+    -- audio --         u32 N ; por cada: u32 name_str, u32 len, u32 off
     -- scenes --        u32 N ; por cada: u32 nsteps ; por cada step: u8 op + payload
+    == head_size ==     de acá en adelante, la data cruda de imágenes y audios (off absoluto)
+
+v5: la cabecera se lee sola (`head_size`) y cada imagen/audio se trae por demanda con
+su `off`: el ELF no carga el blob entero en RAM.
 
 Opcodes: 1 bg, 2 show, 3 hide, 4 say, 5 anim, 6 bgm, 7 se, 8 choice, 9 goto, 10 end.
 v4: `show` lleva u16 img (imagen de la expresión; 0xFFFF = el sprite base del personaje).
@@ -141,8 +147,6 @@ def compile_blob(model, base=".", font=None):
             aud_idx[fname] = len(audios); audios.append((S(fname), data))  # nombre al pool
         return aud_idx[fname]
 
-    w = _W()
-    w.b += MAGIC; w.u16(4); w.u16(scene_idx.get(model.get("start", order[0]), 0))
     S(model["title"])                                    # reservar título como string 0
 
     # cuerpo de escenas primero (llena el pool), luego se serializa el pool al final…
@@ -158,37 +162,39 @@ def compile_blob(model, base=".", font=None):
             _emit_step(sw, s, S, char_idx, scene_idx, IMG, AUD, expr_img)
         scene_bytes.append(bytes(sw.b))
 
-    # --- string pool ---
-    w.u32(len(pool))
-    for s in pool:
-        enc = s.encode("utf-8"); w.u16(len(enc)); w.b += enc
-    # --- characters ---
-    w.u32(len(chars))
-    for c in chars:
-        w.u32(pidx[c["name"]]); w.u32(_rgba(c.get("color"))); w.u16(c["_spr"])
-    # --- images ---
-    w.u32(len(images))
-    for iw, ih, data in images:
-        w.u16(iw); w.u16(ih); w.u8(0); w.blob(data)
-    # --- font (opcional) ---
     fnt = bake_font(model, font)
-    if fnt:
-        cw, ch, cps, fdata = fnt
-        w.u8(1); w.u16(cw); w.u16(ch); w.u32(len(cps))
-        for cp in cps:
-            w.u32(cp)
-        w.b += fdata
-    else:
-        w.u8(0)
-    # --- audio ---
-    w.u32(len(audios))
-    for name_str, data in audios:
-        w.u32(name_str); w.blob(data)
-    # --- scenes ---
-    w.u32(len(order))
-    for sb in scene_bytes:
-        w.b += sb
-    return bytes(w.b)
+    datas = [d for _, _, d in images] + [d for _, d in audios]   # data cruda, después de la cabecera
+
+    def head(base):                                  # cabecera con offsets absolutos desde `base`
+        w = _W(); off = base
+        w.b += MAGIC; w.u16(5); w.u16(scene_idx.get(model.get("start", order[0]), 0)); w.u32(base)
+        w.u32(len(pool))
+        for s in pool:
+            enc = s.encode("utf-8"); w.u16(len(enc)); w.b += enc
+        w.u32(len(chars))
+        for c in chars:
+            w.u32(pidx[c["name"]]); w.u32(_rgba(c.get("color"))); w.u16(c["_spr"])
+        w.u32(len(images))
+        for iw, ih, data in images:
+            w.u16(iw); w.u16(ih); w.u8(0); w.u32(len(data)); w.u32(off); off += len(data)
+        if fnt:
+            cw, ch, cps, fdata = fnt
+            w.u8(1); w.u16(cw); w.u16(ch); w.u32(len(cps))
+            for cp in cps:
+                w.u32(cp)
+            w.b += fdata
+        else:
+            w.u8(0)
+        w.u32(len(audios))
+        for name_str, data in audios:
+            w.u32(name_str); w.u32(len(data)); w.u32(off); off += len(data)
+        w.u32(len(order))
+        for sb in scene_bytes:
+            w.b += sb
+        return bytes(w.b)
+
+    h = head(0)                                      # el tamaño no depende de los offsets
+    return head(len(h)) + b"".join(datas)
 
 
 def build_iso(elf_path, blob_path, out_iso, name="VN", vmode="NTSC"):
@@ -224,7 +230,8 @@ def _emit_step(w, s, S, char_idx, scene_idx, IMG, AUD, expr_img=lambda s: NONE16
     elif op == "show":
         w.u16(char_idx.get(s["id"], NONE16))
         w.u16(expr_img(s))                          # v4: imagen de la expresión (NONE = base)
-        w.i16(s.get("x", 0)); w.i16(s.get("y", 0)); w.i16(s.get("z", 0))
+        w.i16(s.get("x", vn.POS.get(s.get("pos"), 0)))     # preset left/center/right -> x
+        w.i16(s.get("y", 0)); w.i16(s.get("z", 0))
         w.u16(int(s.get("zoom", 100))); w.u8(int(s.get("opacity", 100)))
         w.u32(_rgba(s["tint"]) if s.get("tint") else 0)
     elif op == "hide":
@@ -265,7 +272,7 @@ class _R:
 def read_blob(data):
     r = _R(data)
     assert r.take(4) == MAGIC, "no es VNP"
-    version = r.u16(); start = r.u16()
+    version = r.u16(); start = r.u16(); head_size = r.u32()
     pool = []
     for _ in range(r.u32()):
         n = r.u16(); pool.append(r.take(n).decode("utf-8"))
@@ -275,7 +282,7 @@ def read_blob(data):
         chars.append(dict(name=S(r.u32()), color=r.u32(), sprite=r.u16()))
     images = []
     for _ in range(r.u32()):
-        iw = r.u16(); ih = r.u16(); r.u8(); images.append((iw, ih)); r.take(r.u32())
+        iw = r.u16(); ih = r.u16(); r.u8(); ln = r.u32(); images.append((iw, ih, r.u32(), ln))
     font = None
     if r.u8():
         cw = r.u16(); ch = r.u16(); n = r.u32()
@@ -285,12 +292,12 @@ def read_blob(data):
         font = {"cell": (cw, ch), "cps": cps}
     audios = []
     for _ in range(r.u32()):
-        nm = S(r.u32()); alen = r.u32(); r.take(alen); audios.append((nm, alen))
+        nm = S(r.u32()); alen = r.u32(); audios.append((nm, alen, r.u32()))
     scenes = []
     for _ in range(r.u32()):
         steps = [_read_step(r, S) for _ in range(r.u32())]
         scenes.append(steps)
-    return dict(version=version, start=start, title=pool[0] if pool else None,
+    return dict(version=version, start=start, head_size=head_size, title=pool[0] if pool else None,
                 characters=chars, images=images, font=font, audios=audios, scenes=scenes)
 
 
@@ -344,7 +351,7 @@ def build(vn_path, out, elf=None, name="VN", font="auto"):
             os.remove(tmp)
         print(f"ISO booteable -> {out}  ({len(blob)} bytes de datos, ELF {os.path.basename(elf)})")
     else:
-        vnp = out if out.endswith(".vnp") else out + ".vnp"
+        vnp = out if out.lower().endswith(".vnp") else out + ".vnp"
         open(vnp, "wb").write(blob)
         print(f"blob -> {vnp} ({len(blob)} bytes). Pasá --elf <player.elf> para masterizar el .iso.")
     return out
@@ -394,8 +401,8 @@ def demo():
                                    'scene s\n  show h center\n  animate h move x=200 curve=accel time=400\n'
                                    '  h: hi\n  end\n'))
     r2 = read_blob(compile_blob(m2, d))
-    assert r2["images"] == [(2, 2)], r2["images"]
-    assert r2["version"] == 4 and r2["font"] is None      # sin fuente -> sección vacía
+    assert r2["images"][0][:2] == (2, 2), r2["images"]
+    assert r2["version"] == 5 and r2["font"] is None      # sin fuente -> sección vacía
     # audio: bgm embebe el archivo; el paso guarda el índice
     open(f"{d}/tema.wav", "wb").write(b"RIFF....WAVEfake" * 4)
     m4 = vn._link_choices(vn.parse('title: t\ncharacter a "A"\nscene s\n  bgm tema.wav\n  a: h\n'

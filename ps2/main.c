@@ -30,26 +30,44 @@
 
 static VnpDoc doc;                 /* el blob abierto (vnp.c parsea in-place) */
 
-/* --- carga del blob: proba host: (PCSX2), mass: (USB) y cdrom0: (ISO) --- */
+/* --- carga del blob: proba host: (PCSX2), mass: (USB) y cdrom0: (ISO) ---
+ * Sólo la CABECERA queda en RAM (v5: head_size); imágenes y audio se leen por
+ * demanda con blob_read(). El archivo queda abierto. */
+static FILE *g_file;
 static uint8_t *load_blob(uint32_t *size)
 {
     const char *paths[] = { "host:ZNTVN.VNP", "mass:ZNTVN.VNP", "cdrom0:\\ZNTVN.VNP;1", 0 };
     for (int i = 0; paths[i]; i++) {
         FILE *f = fopen(paths[i], "rb");
         if (!f) continue;
-        fseek(f, 0, SEEK_END); long n = ftell(f); fseek(f, 0, SEEK_SET);
-        uint8_t *b = malloc(n);
-        if (fread(b, 1, n, f) == (size_t)n) { fclose(f); *size = n; return b; }
-        fclose(f); free(b);
+        uint8_t hdr[12];
+        if (fread(hdr, 1, 12, f) == 12 && !memcmp(hdr, "VNP1", 4)) {
+            uint32_t n = hdr[8] | (hdr[9] << 8) | (hdr[10] << 16) | ((uint32_t)hdr[11] << 24);
+            uint8_t *b = malloc(n);
+            fseek(f, 0, SEEK_SET);
+            if (b && fread(b, 1, n, f) == n) { g_file = f; *size = n; return b; }
+            free(b);
+        }
+        fclose(f);
     }
     return 0;
+}
+
+/* trae `len` bytes del archivo en `off` (buffer alineado a 128 para el GS). NULL si falla. */
+static void *blob_read(uint32_t off, uint32_t len)
+{
+    void *b = memalign(128, len ? len : 1);
+    if (!b) return 0;
+    if (fseek(g_file, off, SEEK_SET) || fread(b, 1, len, g_file) != len) { free(b); return 0; }
+    return b;
 }
 
 /* --- AUDIO (audsrv). PARTE MÁS CRUDA / SIN TESTEAR: verificar al build. -----
  * BGM: se reproduce WAV/PCM en un thread, en loop. SE: TODO (audsrv es un solo
  * stream PCM; un SE simultáneo necesita canal ADPCM/VAG en la SPU2). La carga del
  * módulo audsrv.irx depende de tu entorno (ver README). */
-static const uint8_t *g_bgm_pcm; static int g_bgm_len, g_bgm_play;
+static const uint8_t *g_bgm_pcm; static int g_bgm_len, g_bgm_play, g_bgm_gen;
+static uint8_t *g_bgm_buf, *g_bgm_old;   /* buffer del BGM actual y el anterior (se libera al próximo cambio) */
 static u32 le32(const uint8_t *p){ return p[0]|(p[1]<<8)|(p[2]<<16)|((u32)p[3]<<24); }
 
 /* parsea un WAV PCM: devuelve ptr/len de los samples y el formato. 0 si no es WAV. */
@@ -69,10 +87,14 @@ static int wav_parse(const uint8_t *d, int n, const uint8_t **pcm, int *plen,
 
 static void audio_set_bgm(uint16_t idx)
 {
-    if (idx == VNP_NONE16) { g_bgm_play = 0; return; }
+    g_bgm_play = 0; g_bgm_gen++;
+    if (idx == VNP_NONE16) return;
     VnpAudio a; vnp_audio(&doc, idx, &a);
+    uint8_t *buf = blob_read(a.off, a.len);            /* por demanda: sólo el BGM que suena */
+    if (!buf) return;
     const uint8_t *pcm; int plen = 0, freq = 0, bits = 16, ch = 2;
-    if (!wav_parse(a.data, a.len, &pcm, &plen, &freq, &bits, &ch)) return;  /* sólo WAV por ahora */
+    if (!wav_parse(buf, a.len, &pcm, &plen, &freq, &bits, &ch)) { free(buf); return; }  /* sólo WAV */
+    free(g_bgm_old); g_bgm_old = g_bgm_buf; g_bgm_buf = buf;   /* el viejo puede estar sonando un chunk más */
     struct audsrv_fmt_t f; f.freq = freq; f.bits = bits; f.channels = ch;
     audsrv_set_format(&f);                              /*AUDIO*/
     g_bgm_pcm = pcm; g_bgm_len = plen; g_bgm_play = 1;
@@ -83,9 +105,14 @@ static void bgm_thread(void *arg)
 {
     (void)arg;
     while (1) {
-        if (g_bgm_play && g_bgm_pcm)
-            audsrv_play_audio((char *)g_bgm_pcm, g_bgm_len);   /*AUDIO: bloquea hasta consumir -> loop*/
-        else
+        if (g_bgm_play && g_bgm_pcm) {                  /* por chunks: un cambio de BGM corta enseguida */
+            int gen = g_bgm_gen, pos = 0;
+            while (g_bgm_play && gen == g_bgm_gen && pos < g_bgm_len) {
+                int n = g_bgm_len - pos; if (n > 4096) n = 4096;
+                audsrv_wait_audio(n); audsrv_play_audio((char *)g_bgm_pcm + pos, n);   /*AUDIO*/
+                pos += n;
+            }                                           /* al terminar: loop */
+        } else
             for (int k = 0; k < 20000; k++) nopdelay();
     }
 }
@@ -242,14 +269,16 @@ static void upload_image(GSGLOBAL *gs, uint16_t img_idx, GSTEXTURE *t)
     t->Filter = GS_FILTER_LINEAR;
     /* El GS quiere RGBA con alfa 0..0x80. Nuestro alfa es 0..255 -> escalar /2. */
     uint32_t n = (uint32_t)im.w * im.h;
-    u32 *px = memalign(128, n * 4);
+    u32 *px = blob_read(im.off, n * 4);       /* por demanda; se convierte in-place */
+    if (!px) return;
     for (uint32_t i = 0; i < n; i++) {
-        const uint8_t *s = im.rgba + i * 4;
+        uint8_t *s = (uint8_t *)px + i * 4;
         uint8_t a = s[3] >> 1;                 /* 0..127 (0x80 = opaco en PS2) */
         px[i] = (a << 24) | (s[2] << 16) | (s[1] << 8) | s[0];
     }
     t->Mem = px;
     gsKit_setup_tbw(t);                        /*GSKIT*/
+    printf("ZNTVN: img %u %ux%u off=%u len=%u mem=%p\n", (unsigned)img_idx, (unsigned)im.w, (unsigned)im.h, (unsigned)im.off, (unsigned)im.len, px);
     /* la subida real a VRAM la hace gsKit_TexManager_bind por frame (streaming). */
 }
 
@@ -282,7 +311,7 @@ static Block advance(GSGLOBAL *gs)
             if (s.bg_kind == 2) {
                 Layer *L = &layers[0]; L->used = 1; L->chr = -1;
                 L->x = 0; L->y = 0; L->z = -1000; L->zoom = 100; L->opacity = 100;
-                upload_image(gs, s.bg_img, &L->tex); L->has_tex = 1;
+                upload_image(gs, s.bg_img, &L->tex); L->has_tex = L->tex.Mem != 0;
             }
             break;
         case OP_SHOW: {
@@ -296,7 +325,7 @@ static Block advance(GSGLOBAL *gs)
             L->x = s.x; L->y = s.y; L->z = s.z; L->zoom = s.zoom; L->opacity = s.opacity;
             VnpChar c; vnp_char(&doc, s.chr, &c);
             uint16_t img = (s.img != VNP_NONE16) ? s.img : c.sprite;   /* expresión o base */
-            if (img != VNP_NONE16) { upload_image(gs, img, &L->tex); L->has_tex = 1; }
+            if (img != VNP_NONE16) { upload_image(gs, img, &L->tex); L->has_tex = L->tex.Mem != 0; }
             break; }
         case OP_HIDE:
             for (int i = 1; i < MAX_LAYERS; i++) if (layers[i].used && layers[i].chr == s.chr) layers[i].used = 0;
@@ -328,7 +357,7 @@ static Block advance(GSGLOBAL *gs)
     blk.kind = 3; return blk;
 }
 
-/* dibuja el frame: capas por Z (mayor Z al fondo) + caja de diálogo.  [GSKIT] */
+/* dibuja el frame: capas por Z (mayor Z al frente) + caja de diálogo.  [GSKIT] */
 static void draw_frame(GSGLOBAL *gs, const Block *blk)
 {
     /* fondo solid/grad: color plano o quad gouraud (colores del blob: 0xRRGGBBAA) */
@@ -337,12 +366,12 @@ static void draw_frame(GSGLOBAL *gs, const Block *blk)
     if (g_bg_kind == 1)
         gsKit_prim_quad_gouraud(gs, 0, 0, SCR_W, 0, 0, SCR_H, SCR_W, SCR_H, 1,
                                 BGCOL(g_bg_a), BGCOL(g_bg_a), BGCOL(g_bg_b), BGCOL(g_bg_b));
-    /* orden: dibujar de mayor z (fondo) a menor z (frente) */
-    for (int pass = 1000; pass >= -1000; pass--) {
+    /* orden: menor z primero (fondo, z=-1000) y mayor z al frente (misma convención que el editor) */
+    for (int pass = -1000; pass <= 1000; pass++) {
         for (int i = 0; i < MAX_LAYERS; i++) {
             Layer *L = &layers[i];
             if (!L->used || !L->has_tex || L->z != pass) continue;
-            gsKit_TexManager_bind(gs, &L->tex);           /*GSKIT: sube a VRAM este frame*/
+            gsKit_TexManager_bind(gs, &L->tex);           /*GSKIT: sube a VRAM este frame (si entra)*/
             float w = L->tex.Width * L->zoom / 100.0f;
             float h = L->tex.Height * L->zoom / 100.0f;
             float cx = SCR_W / 2.0f + L->x + L->ac_ox;     /* centrado en x + offset de acción */
@@ -389,9 +418,9 @@ int main(void)
 {
     SifInitRpc(0);
     sbv_patch_enable_lmb(); sbv_patch_disable_prefix_check();   /* para SifExecModuleBuffer */
-    uint32_t size; uint8_t *blob = load_blob(&size);
+    uint32_t size = 0; uint8_t *blob = load_blob(&size);
     if (!blob || vnp_open(&doc, blob, size)) { printf("VNP no encontrado/invalido\n"); SleepThread(); }
-    printf("ZNTVN: blob OK v%u, %u escenas, %u imagenes, fuente %ux%u x%u\n", (unsigned)doc.version, (unsigned)doc.n_scenes, (unsigned)doc.n_images, (unsigned)doc.font_w, (unsigned)doc.font_h, (unsigned)doc.font_n);
+    printf("ZNTVN: blob OK v%u, cabecera %u bytes en RAM, %u escenas, %u imagenes, fuente %ux%u x%u\n", (unsigned)doc.version, (unsigned)size, (unsigned)doc.n_scenes, (unsigned)doc.n_images, (unsigned)doc.font_w, (unsigned)doc.font_h, (unsigned)doc.font_n);
 
     GSGLOBAL *gs = gsKit_init_global();                   /*GSKIT*/
     dmaKit_init(D_CTRL_RELE_OFF, D_CTRL_MFD_OFF, D_CTRL_STS_UNSPEC,
@@ -399,7 +428,13 @@ int main(void)
     dmaKit_chan_init(DMA_CHANNEL_GIF);
     gs->Mode = GS_MODE_NTSC; gs->Width = SCR_W; gs->Height = SCR_H;
     gs->PSM = GS_PSM_CT24; gs->PSMZ = GS_PSMZ_16S;
-    gsKit_init_screen(gs); gsKit_mode_switch(gs, GS_ONESHOT);
+    /* VRAM (4 MB): un solo framebuffer y sin Z (el orden es painter's por z) deja ~3 MB
+     * para texturas RGBA32: un fondo 640x448 (1.1 MB) + varios sprites. Con doble buffer
+     * + Z sólo quedaba 1.3 MB y el segundo sprite no entraba (bind fallaba en silencio). */
+    gs->DoubleBuffering = GS_SETTING_OFF; gs->ZBuffering = GS_SETTING_OFF;
+    gs->PrimAlphaEnable = GS_SETTING_ON;                  /* PNG con alfa + opacidad de capa */
+    gsKit_init_screen(gs);
+    gsKit_set_primalpha(gs, GS_SETREG_ALPHA(0, 1, 0, 1, 0), 0);   /* out = src*a + dst*(1-a) */ gsKit_mode_switch(gs, GS_ONESHOT);
     gsKit_TexManager_init(gs);
     build_font_atlas(gs);
     audio_init();

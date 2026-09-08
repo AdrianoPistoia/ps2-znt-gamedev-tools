@@ -16,7 +16,15 @@ sed -e 's/^EnableEEConsole *=.*/EnableEEConsole = true/' -e 's/^EnableFileLoggin
     "$SRC/inis/PCSX2.ini" > "$DP/PCSX2/inis/PCSX2.ini"
 if [ -n "$ZNT_SHOT" ]; then     # ZNT_SHOT=salida.png: con ventana, captura con grim (Hyprland) a los SECS-4 s
   timeout -s INT "$SECS" pcsx2-qt -datapath "$DP" -batch -elf "$PWD/ps2/ZNTVN.ELF" >/dev/null 2>&1 &
-  sleep $((SECS - 4))
+  for i in $(seq 1 20); do   # esperar la ventana
+    A=$(hyprctl clients -j 2>/dev/null | jq -r '.[] | select(.class|test("pcsx2";"i")) | .address' | head -1)
+    [ -n "$A" ] && break; sleep 0.5
+  done
+  if [ -n "$A" ]; then      # flotante y 4:3: apaisada en la tiling, PCSX2 recorta el frame (hyprctl Lua)
+    hyprctl dispatch "hl.dsp.window.float({ action = 'on', window = 'address:$A' })" >/dev/null
+    hyprctl dispatch "hl.dsp.window.resize({ x = 964, y = 780, window = 'address:$A' })" >/dev/null
+  fi
+  sleep $((SECS - 6))
   G=$(hyprctl clients -j 2>/dev/null | jq -r '.[] | select(.class|test("pcsx2";"i")) | "\(.at[0]),\(.at[1]) \(.size[0])x\(.size[1])"' | head -1)
   [ -n "$G" ] && grim -g "$G" "$ZNT_SHOT" && echo "captura: $ZNT_SHOT"
   wait

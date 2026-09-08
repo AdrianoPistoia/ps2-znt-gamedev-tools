@@ -17,6 +17,8 @@ int vnp_open(VnpDoc *d, const uint8_t *buf, uint32_t size)
     const uint8_t *p = buf + 4;
     d->version = rd16(p); p += 2;
     d->start   = rd16(p); p += 2;
+    d->head_size = rd32(p); p += 4;
+    if (d->version < 5 || size < d->head_size) return -1;
     /* strings */
     d->n_strings = rd32(p); p += 4; d->p_strings = p;
     for (uint32_t i = 0; i < d->n_strings; i++) { uint16_t n = rd16(p); p += 2 + n; }
@@ -25,7 +27,7 @@ int vnp_open(VnpDoc *d, const uint8_t *buf, uint32_t size)
     p += (uint32_t)d->n_chars * 10;
     /* images */
     d->n_images = rd32(p); p += 4; d->p_images = p;
-    for (uint32_t i = 0; i < d->n_images; i++) { p += 5; uint32_t len = rd32(p); p += 4 + len; }
+    p += (uint32_t)d->n_images * 13;                       /* u16 w, u16 h, u8 fmt, u32 len, u32 off */
     /* font (opcional) */
     d->has_font = *p++;
     if (d->has_font) {
@@ -38,7 +40,7 @@ int vnp_open(VnpDoc *d, const uint8_t *buf, uint32_t size)
     }
     /* audio */
     d->n_audio = rd32(p); p += 4; d->p_audio = p;
-    for (uint32_t i = 0; i < d->n_audio; i++) { p += 4; uint32_t len = rd32(p); p += 4 + len; }
+    p += (uint32_t)d->n_audio * 12;                        /* u32 name, u32 len, u32 off */
     /* scenes */
     d->n_scenes = rd32(p); p += 4; d->p_scenes = p;
     return 0;
@@ -46,9 +48,9 @@ int vnp_open(VnpDoc *d, const uint8_t *buf, uint32_t size)
 
 void vnp_audio(const VnpDoc *d, uint32_t i, VnpAudio *out)
 {
-    const uint8_t *p = d->p_audio;
-    for (uint32_t k = 0; k < i; k++) { p += 4; uint32_t len = rd32(p); p += 4 + len; }
-    out->name = rd32(p); out->len = rd32(p + 4); out->data = p + 8;
+    const uint8_t *p = d->p_audio + i * 12;
+    out->name = rd32(p); out->len = rd32(p + 4); out->off = rd32(p + 8);
+    out->data = (out->off + out->len <= d->size) ? d->buf + out->off : 0;
 }
 
 const uint8_t *vnp_glyph(const VnpDoc *d, uint32_t cp)
@@ -84,10 +86,10 @@ void vnp_char(const VnpDoc *d, uint32_t i, VnpChar *out)
 
 void vnp_image(const VnpDoc *d, uint32_t i, VnpImage *out)
 {
-    const uint8_t *p = d->p_images;
-    for (uint32_t k = 0; k < i; k++) { p += 5; uint32_t len = rd32(p); p += 4 + len; }
+    const uint8_t *p = d->p_images + i * 13;
     out->w = rd16(p); out->h = rd16(p + 2); out->fmt = p[4];
-    out->len = rd32(p + 5); out->rgba = p + 9;
+    out->len = rd32(p + 5); out->off = rd32(p + 9);
+    out->rgba = (out->off + out->len <= d->size) ? d->buf + out->off : 0;
 }
 
 int vnp_scene_begin(const VnpDoc *d, uint32_t scene, VnpScene *sc)

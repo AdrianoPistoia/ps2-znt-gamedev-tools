@@ -19,7 +19,8 @@ int main(int argc, char **argv) {
 
     VnpDoc d;
     CHECK(vnp_open(&d, buf, n) == 0);
-    CHECK(d.version == 4);
+    CHECK(d.version == 5);
+    CHECK(d.head_size > 0 && d.head_size < (uint32_t)n);
     CHECK(d.start == 0);
     CHECK(d.n_scenes == 2);
     CHECK(d.n_chars == 1);
@@ -43,9 +44,21 @@ int main(int argc, char **argv) {
     CHECK(vnp_step(&sc, &s) && s.op == OP_BGM && s.bgm_stop == 0 && s.audio == 0);
     CHECK(vnp_step(&sc, &s) && s.op == OP_END);
 
-    /* audio embebido */
+    /* audio e imagen: índice (off, len) con la data después de la cabecera */
     CHECK(d.n_audio == 1);
-    { VnpAudio au; vnp_audio(&d, 0, &au); CHECK(streq(&d, au.name, "t.wav") && au.len > 0); }
+    { VnpAudio au; vnp_audio(&d, 0, &au); CHECK(streq(&d, au.name, "t.wav") && au.len > 0);
+      CHECK(au.off >= d.head_size && au.data == buf + au.off); }
+    CHECK(d.n_images == 1);
+    { VnpImage im; vnp_image(&d, 0, &im);
+      CHECK(im.w == 2 && im.h == 2 && im.len == 16 && im.off >= d.head_size && im.rgba == buf + im.off);
+      CHECK(im.rgba[0] == 10 && im.rgba[1] == 20 && im.rgba[2] == 30 && im.rgba[3] == 255); }
+
+    /* sólo la cabecera (lo que el ELF carga en RAM): se lee todo igual, la data queda por demanda */
+    { VnpDoc h; CHECK(vnp_open(&h, buf, d.head_size) == 0);
+      CHECK(h.n_scenes == 2 && h.n_chars == 1 && h.has_font);
+      VnpImage im; vnp_image(&h, 0, &im); CHECK(im.rgba == 0 && im.off >= d.head_size && im.len == 16);
+      VnpAudio au; vnp_audio(&h, 0, &au); CHECK(au.data == 0 && au.len > 0);
+      VnpScene s2; VnpStep st; CHECK(vnp_scene_begin(&h, 1, &s2) == 0 && vnp_step(&s2, &st) && streq(&h, st.text, "chau")); }
 
     /* fuente horneada: glifos presentes y ausentes */
     CHECK(d.has_font && d.font_w == 8 && d.font_h == 16);

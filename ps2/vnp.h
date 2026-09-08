@@ -1,5 +1,8 @@
 /* Lector del blob .vnp (espejo EXACTO de znt/vniso.py). Little-endian.
- * Parsea in-place: los punteros apuntan dentro del buffer cargado (no copia). */
+ * Parsea in-place: los punteros apuntan dentro del buffer cargado (no copia).
+ * v5: alcanza con cargar la cabecera (`head_size` bytes); imágenes y audios tienen
+ * `off`/`len` absolutos en el archivo y se leen por demanda. Si el buffer no cubre
+ * la data, `rgba`/`data` quedan en NULL. */
 #ifndef VNP_H
 #define VNP_H
 #include <stdint.h>
@@ -17,7 +20,7 @@ typedef struct { const char *ptr; uint16_t len; } VnpStr;   /* no NUL-terminado 
 
 typedef struct { uint32_t name; uint32_t color; uint16_t sprite; } VnpChar;
 
-typedef struct { uint16_t w, h; uint8_t fmt; uint32_t len; const uint8_t *rgba; } VnpImage;
+typedef struct { uint16_t w, h; uint8_t fmt; uint32_t len, off; const uint8_t *rgba; } VnpImage;
 
 /* Un paso ya decodificado a campos (unión por op). */
 typedef struct {
@@ -47,6 +50,7 @@ typedef struct {
 typedef struct {
     const uint8_t *buf; uint32_t size;
     uint16_t version, start;
+    uint32_t head_size;        /* v5: bytes de cabecera (lo que hay que tener en RAM) */
     uint32_t n_strings; const uint8_t *strings;   /* sección cruda; usar vnp_str() */
     uint32_t n_chars;   const VnpChar *chars;      /* NO: se copian; ver impl */
     uint32_t n_images;
@@ -70,14 +74,14 @@ VnpStr vnp_str(const VnpDoc *d, uint32_t idx);
 /* Copia el personaje i. */
 void vnp_char(const VnpDoc *d, uint32_t i, VnpChar *out);
 
-/* Devuelve la imagen i (ptr al RGBA dentro del buffer). */
+/* Devuelve la imagen i (rgba apunta al buffer si la data está cargada; si no, NULL y off/len). */
 void vnp_image(const VnpDoc *d, uint32_t i, VnpImage *out);
 
 /* Bitmap 1bpp del glifo de un codepoint (font_h * ceil(font_w/8) bytes), o NULL. */
 const uint8_t *vnp_glyph(const VnpDoc *d, uint32_t codepoint);
 
 /* Datos de un audio embebido (bytes del archivo original: wav/ogg/...). */
-typedef struct { uint32_t name; const uint8_t *data; uint32_t len; } VnpAudio;
+typedef struct { uint32_t name; const uint8_t *data; uint32_t len, off; } VnpAudio;
 void vnp_audio(const VnpDoc *d, uint32_t i, VnpAudio *out);
 
 /* Itera los pasos de una escena: vnp_scene_begin + vnp_step hasta que devuelva 0. */

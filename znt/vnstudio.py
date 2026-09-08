@@ -19,7 +19,7 @@ import sys, os
 from . import render, image, vn
 from .engine import LayerState, Action, Tween, CURVES
 
-POS = {"left": -180, "center": 0, "right": 180}
+POS = vn.POS
 ACTIONS = ("wave", "waveonce", "jump", "jumponce", "fall", "vibrate")
 
 

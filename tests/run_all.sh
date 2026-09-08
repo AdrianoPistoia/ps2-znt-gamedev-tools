@@ -29,10 +29,15 @@ echo "── lector del blob en C (host)"
 if command -v cc >/dev/null; then
   TMP=$(mktemp -d)
   python3 - "$TMP" <<'PY'
-import sys
+import sys, struct, zlib
 from znt import vn, vniso, psf
+px = bytes((10, 20, 30, 255)) * 4                                  # PNG RGBA 2x2
+raw = b"".join(b"\0" + px[y*8:(y+1)*8] for y in range(2))
+chunk = lambda t, b: struct.pack(">I", len(b)) + t + b + struct.pack(">I", zlib.crc32(t + b))
+open(sys.argv[1] + "/s.png", "wb").write(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 2, 2, 8, 6, 0, 0, 0))
+                                        + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
 m = vn._link_choices(vn.parse(
-    'title: T\ncharacter a "Ana" color=#e79ab0\n'
+    'title: T\ncharacter a "Ana" color=#e79ab0\nsprite a s.png\n'
     'scene uno\n  bg grad:#101828,#304060\n  show a right x=40 z=5 zoom=150 opacity=80\n'
     '  a: Hola.\n  choice\n    - Seguir -> dos\n    - Fin -> dos\n'
     'scene dos\n  * chau\n  bgm t.wav\n  end\n'))
