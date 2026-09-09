@@ -22,19 +22,20 @@ assert r["version"] == 5, r["version"]
 H = r["head_size"]
 assert 0 < H < len(blob), (H, len(blob))
 assert len(r["images"]) == 2
-for w, h, off, ln in r["images"]:
-    assert ln == w * h * 4 and off >= H and off + ln <= len(blob), (w, h, off, ln, H)
+for w, h, off, ln, fmt in r["images"]:
+    assert fmt == 0 and ln == w * h * 4, (w, h, fmt, "imagen chica: RGBA32 crudo")
+    assert off >= H and off + ln <= len(blob), (w, h, off, ln, H)
 name, alen, aoff = r["audios"][0]
 assert name == "t.wav" and alen == 112 and aoff >= H and blob[aoff:aoff + alen] == open(os.path.join(d, "t.wav"), "rb").read()
 # la imagen del fondo está tal cual (RGBA) en su offset
-fw, fh, foff, flen = r["images"][r["scenes"][0][0]["img"]]
+fw, fh, foff, flen, _ = r["images"][r["scenes"][0][0]["img"]]
 assert (fw, fh) == (8, 2) and blob[foff:foff + 4] == bytes((7, 8, 9, 255)), blob[foff:foff + 4]
 # la cabecera sola alcanza para leer todo menos los datos (lo que hace el ELF)
 r2 = vniso.read_blob(blob[:H])
 assert r2["scenes"] == r["scenes"] and r2["images"] == r["images"] and r2["audios"] == r["audios"]
 # Cada dato arranca en un sector de 2048: el driver de cdvd lee sectores enteros, y
 # pedirle un tramo sin alinear lo obliga a dar vueltas de más (166 KB/s medidos en PCSX2).
-for w, h, off, ln in r["images"]:
+for w, h, off, ln, fmt in r["images"]:
     assert off % 2048 == 0, (off, "imagen sin alinear al sector")
 for name, ln, off in r["audios"]:
     assert off % 2048 == 0, (off, name, "audio sin alinear al sector")

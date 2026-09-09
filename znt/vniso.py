@@ -8,7 +8,9 @@ Formato (little-endian):
     "VNP1" | u16 version | u16 start_scene | u32 head_size
     -- string pool --   u32 N ; por cada: u16 len + UTF-8      (idx 0xFFFFFFFF = none)
     -- characters --    u32 N ; por cada: u32 name_str, u32 color_rgba, u16 sprite_img(0xFFFF none)
-    -- images --        u32 N ; por cada: u16 w, u16 h, u8 fmt(0=RGBA32), u32 len, u32 off
+    -- images --        u32 N ; por cada: u16 w, u16 h, u8 fmt, u32 len, u32 off
+                        fmt 0 = RGBA32 crudo; fmt 1 = 8bpp: CLUT de 1024 bytes (ya en
+                        orden del GS) + un byte por pixel. Ver znt/quant.py.
     -- font --          u8 has ; u16 cw, u16 ch, u32 n, n*u32 cps, bitmap 1bpp
     -- audio --         u32 N ; por cada: u32 name_str, u32 len, u32 off
     -- scenes --        u32 N ; por cada: u32 nsteps ; por cada step: u8 op + payload
@@ -29,7 +31,7 @@ sin data embebida todavía (diferido, ver spike).
 """
 import struct, os, shutil, subprocess, tempfile
 
-from . import vn, image, psf, adpcm
+from . import vn, image, psf, adpcm, quant
 
 SYSTEM_CNF = "BOOT2 = cdrom0:\\{name}.ELF;1\r\nVER = 1.00\r\nVMODE = {vmode}\r\n"
 
@@ -98,7 +100,7 @@ def bake_font(model, psf_path):
     return (f.w, f.h, cps, bytes(data))
 
 
-def compile_blob(model, base=".", font=None):
+def compile_blob(model, base=".", font=None, quantize="auto"):
     model = vn._link_choices(model) if any(
         s["op"] == "_option" for steps in model["scenes"].values() for s in steps) else model
     order = model["order"]
@@ -127,12 +129,20 @@ def compile_blob(model, base=".", font=None):
         if not fname:
             return NONE16
         if fname not in img_idx:
+            fmt = 0
             try:
                 w, h, rows = image.load_png_file(f"{base}/{fname}")
                 data = b"".join(rows)
             except Exception:
                 w, h, data = 1, 1, b"\0\0\0\0"          # placeholder si falta
-            img_idx[fname] = len(images); images.append((w, h, data))
+            # 8bpp cuando el CLUT se paga solo (w*h*4 > 1024 + w*h) y no se pierde nada.
+            # Un degradé pintado tiene miles de colores: con 256 aparecen bandas visibles
+            # aunque el error medio sea bajo, así que ese se deja en RGBA32 (con la lectura
+            # alineada ya carga rápido). `quantize="always"` fuerza el ahorro igual.
+            if quantize and w * h * 3 > 1024 and (quantize == "always" or quant.is_lossless(data)):
+                clut, idx = quant.quantize(w, h, data)
+                fmt, data = 1, clut + idx
+            img_idx[fname] = len(images); images.append((w, h, fmt, data))
         return img_idx[fname]
 
     for c in chars:
@@ -178,7 +188,7 @@ def compile_blob(model, base=".", font=None):
         scene_bytes.append(bytes(sw.b))
 
     fnt = bake_font(model, font)
-    datas = [d for _, _, d in images] + [d for _, d in audios]   # data cruda, después de la cabecera
+    datas = [d for _, _, _, d in images] + [d for _, d in audios]   # data cruda, después de la cabecera
 
     def head(base):                                  # cabecera con offsets absolutos desde `base`
         w = _W(); off = base
@@ -190,8 +200,8 @@ def compile_blob(model, base=".", font=None):
         for c in chars:
             w.u32(pidx[c["name"]]); w.u32(_rgba(c.get("color"))); w.u16(c["_spr"])
         w.u32(len(images))
-        for iw, ih, data in images:
-            w.u16(iw); w.u16(ih); w.u8(0); w.u32(len(data)); w.u32(off); off += _up(len(data))
+        for iw, ih, ifmt, data in images:
+            w.u16(iw); w.u16(ih); w.u8(ifmt); w.u32(len(data)); w.u32(off); off += _up(len(data))
         if fnt:
             cw, ch, cps, fdata = fnt
             w.u8(1); w.u16(cw); w.u16(ch); w.u32(len(cps))
@@ -303,7 +313,7 @@ def read_blob(data):
         chars.append(dict(name=S(r.u32()), color=r.u32(), sprite=r.u16()))
     images = []
     for _ in range(r.u32()):
-        iw = r.u16(); ih = r.u16(); r.u8(); ln = r.u32(); images.append((iw, ih, r.u32(), ln))
+        iw = r.u16(); ih = r.u16(); ifmt = r.u8(); ln = r.u32(); images.append((iw, ih, r.u32(), ln, ifmt))
     font = None
     if r.u8():
         cw = r.u16(); ch = r.u16(); n = r.u32()
@@ -425,7 +435,7 @@ def demo():
                                    'scene s\n  show h center\n  animate h move x=200 curve=accel time=400\n'
                                    '  h: hi\n  end\n'))
     r2 = read_blob(compile_blob(m2, d))
-    assert r2["images"][0][:2] == (2, 2), r2["images"]
+    assert r2["images"][0][:2] == (2, 2) and r2["images"][0][4] == 0, r2["images"]   # chica: RGBA32
     assert r2["version"] == 5 and r2["font"] is None      # sin fuente -> sección vacía
     # audio: bgm embebe el archivo; el paso guarda el índice
     open(f"{d}/tema.wav", "wb").write(b"RIFF....WAVEfake" * 4)

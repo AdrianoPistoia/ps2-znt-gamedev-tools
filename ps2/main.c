@@ -392,26 +392,45 @@ static Tween g_fade;                       /* opacidad del fondo nuevo sobre el 
 static float g_bg_alpha = 1.0f;
 static uint32_t g_frames;
 
-/* sube una imagen RGBA del blob a una GSTEXTURE (PSMCT32).  [GSKIT] */
+/* libera una textura: la VRAM que tenga tomada y sus buffers.  [GSKIT] */
+static void tex_free(GSGLOBAL *gs, GSTEXTURE *t)
+{
+    if (t->Mem) gsKit_TexManager_free(gs, t);
+    free(t->Mem); free(t->Clut);
+    t->Mem = 0; t->Clut = 0;
+}
+
+/* RGBA del blob -> el formato del GS: alfa 0..255 pasa a 0..0x80 y los canales se dan vuelta */
+static u32 gs_color(const uint8_t *s) { return ((u32)(s[3] >> 1) << 24) | (s[2] << 16) | (s[1] << 8) | s[0]; }
+
+/* sube una imagen del blob a una GSTEXTURE. fmt 0 = RGBA32, fmt 1 = 8bpp + CLUT
+ * (4x menos VRAM y 4x menos bytes de disco; el CLUT ya viene en orden del GS).  [GSKIT] */
 static void upload_image(GSGLOBAL *gs, uint16_t img_idx, GSTEXTURE *t)
 {
     VnpImage im; vnp_image(&doc, img_idx, &im);
     memset(t, 0, sizeof(*t));
     t->Width = im.w; t->Height = im.h;
-    t->PSM = GS_PSM_CT32;
     t->Filter = GS_FILTER_LINEAR;
-    /* El GS quiere RGBA con alfa 0..0x80. Nuestro alfa es 0..255 -> escalar /2. */
     uint32_t n = (uint32_t)im.w * im.h;
-    u32 *px = blob_read(im.off, n * 4);       /* por demanda; se convierte in-place */
-    if (!px) return;
-    for (uint32_t i = 0; i < n; i++) {
-        uint8_t *s = (uint8_t *)px + i * 4;
-        uint8_t a = s[3] >> 1;                 /* 0..127 (0x80 = opaco en PS2) */
-        px[i] = (a << 24) | (s[2] << 16) | (s[1] << 8) | s[0];
+
+    if (im.fmt == 1) {
+        uint8_t *raw = blob_read(im.off, 1024 + n);        /* CLUT + un byte por pixel */
+        if (!raw) return;
+        u32 *clut = memalign(128, 1024);
+        if (!clut) { free(raw); return; }
+        for (int i = 0; i < 256; i++) clut[i] = gs_color(raw + i * 4);
+        memmove(raw, raw + 1024, n);                       /* los indices al frente: free(raw) sigue valiendo */
+        t->PSM = GS_PSM_T8; t->ClutPSM = GS_PSM_CT32;
+        t->Clut = clut; t->Mem = (u32 *)raw;
+    } else {
+        u32 *px = blob_read(im.off, n * 4);                /* por demanda; se convierte in-place */
+        if (!px) return;
+        for (uint32_t i = 0; i < n; i++) px[i] = gs_color((uint8_t *)px + i * 4);
+        t->PSM = GS_PSM_CT32; t->Mem = px;
     }
-    t->Mem = px;
     gsKit_setup_tbw(t);                        /*GSKIT*/
-    printf("ZNTVN: img %u %ux%u off=%u len=%u mem=%p\n", (unsigned)img_idx, (unsigned)im.w, (unsigned)im.h, (unsigned)im.off, (unsigned)im.len, px);
+    printf("ZNTVN: img %u %ux%u fmt=%u %u bytes\n", (unsigned)img_idx, (unsigned)im.w,
+           (unsigned)im.h, (unsigned)im.fmt, (unsigned)im.len);
     /* la subida real a VRAM la hace gsKit_TexManager_bind por frame (streaming). */
 }
 
@@ -427,7 +446,7 @@ static int g_autoplay;              /* argv "autoplay": avanza y elige solo (par
 static Block enter_scene(GSGLOBAL *gs, uint32_t scene)
 {
     printf("ZNTVN: escena %u\n", (unsigned)scene);
-    for (int i = 0; i < MAX_LAYERS; i++) if (layers[i].has_tex) free(layers[i].tex.Mem);
+    for (int i = 0; i < MAX_LAYERS; i++) if (layers[i].has_tex) tex_free(gs, &layers[i].tex);
     memset(layers, 0, sizeof(layers));                  /* el fondo persiste entre escenas */
     cur_scene = scene;
     Block blk; memset(&blk, 0, sizeof(blk));
@@ -442,11 +461,11 @@ static Block advance(GSGLOBAL *gs)
         switch (s.op) {
         case OP_BG:
             /* solid/grad: color de fondo; img: textura full-screen (capa 0). */
-            if (g_bgprev.has_tex) free(g_bgprev.tex.Mem);
+            if (g_bgprev.has_tex) tex_free(gs, &g_bgprev.tex);
             if (s.bg_fade && g_bg.kind >= 0) {          /* el fondo viejo queda abajo mientras dura el fade */
                 g_bgprev = g_bg; tween_start(&g_fade, 0.0f, 1.0f, s.bg_fade, AN_LINEAR); g_bg_alpha = 0.0f;
             } else {
-                if (g_bg.has_tex) free(g_bg.tex.Mem);
+                if (g_bg.has_tex) tex_free(gs, &g_bg.tex);
                 g_bgprev.kind = -1; g_bgprev.has_tex = 0; g_fade.active = 0; g_bg_alpha = 1.0f;
             }
             memset(&g_bg, 0, sizeof(g_bg));
@@ -458,7 +477,7 @@ static Block advance(GSGLOBAL *gs)
             for (int i = 1; i < MAX_LAYERS; i++) if (!layers[i].used) { slot = i; break; }
             if (slot < 0) break;
             Layer *L = &layers[slot];
-            if (L->has_tex) free(L->tex.Mem);          /* slot reciclado de un hide */
+            if (L->has_tex) tex_free(gs, &L->tex);     /* slot reciclado de un hide */
             memset(L, 0, sizeof(*L));
             L->used = 1; L->chr = s.chr;
             L->x = s.x; L->y = s.y; L->z = s.z; L->zoom = s.zoom; L->opacity = s.opacity;
@@ -626,7 +645,7 @@ int main(int argc, char **argv)
         g_say_ms += 16.0f;
         g_bg_alpha = tween_tick(&g_fade, 16.0f, g_bg_alpha);
         if (!g_fade.active && g_bgprev.kind >= 0) {          /* terminó el fade: el viejo se va */
-            if (g_bgprev.has_tex) free(g_bgprev.tex.Mem);
+            if (g_bgprev.has_tex) tex_free(gs, &g_bgprev.tex);
             g_bgprev.kind = -1; g_bgprev.has_tex = 0;
         }
         gsKit_TexManager_nextFrame(gs);

@@ -28,7 +28,7 @@ assert r["version"] >= 4, r["version"]
 st = r["scenes"][0]
 assert st[0]["op"] == "show" and st[0]["img"] == 0xFFFF, st[0]
 assert st[2]["op"] == "show" and st[2]["img"] != 0xFFFF, st[2]
-img = r["images"][st[2]["img"]]                       # (w, h, data)
+img = r["images"][st[2]["img"]]                       # (w, h, off, len, fmt)
 assert tuple(img[:2]) == (8, 6), "apunta a feliz.png"
 ana = next(c for c in r["characters"] if c["sprite"] != 0xFFFF)
 assert r["images"][ana["sprite"]][0] == 4, "el sprite base sigue siendo ana.png"
