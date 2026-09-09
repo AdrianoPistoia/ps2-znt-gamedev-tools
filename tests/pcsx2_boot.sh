@@ -11,7 +11,11 @@ SRC=~/.config/PCSX2
 # ZNT_ISO=x.iso bootea ese ISO (lee el blob del CD, no del host: el camino real)
 if [ -n "$ZNT_ISO" ]; then BOOT=(-fastboot "$ZNT_ISO"); else BOOT=(-elf "$PWD/ps2/ZNTVN.ELF"); fi
 # ZNT_AUTOPLAY=1: el player avanza y elige solo, para verificar choice/goto/end sin joystick
-[ -n "$ZNT_AUTOPLAY" ] && BOOT+=(-gameargs autoplay)
+ARGS=""
+[ -n "$ZNT_AUTOPLAY" ] && ARGS="$ARGS autoplay"
+[ -n "$ZNT_SAVETEST" ] && ARGS="$ARGS savetest"     # guarda en la memory card, relee y verifica
+[ -n "$ZNT_UI" ] && ARGS="$ARGS $ZNT_UI"            # menu | log: abre esa pantalla para fotografiarla
+[ -n "$ARGS" ] && BOOT+=(-gameargs "${ARGS# }")
 command -v pcsx2-qt >/dev/null || { echo "falta pcsx2-qt"; exit 1; }
 rm -rf "$DP"; mkdir -p "$DP/PCSX2/inis" "$DP/PCSX2/logs"      # -datapath X usa X/PCSX2
 ln -s "$SRC/bios" "$DP/PCSX2/bios"

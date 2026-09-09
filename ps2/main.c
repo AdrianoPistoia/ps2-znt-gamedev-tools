@@ -29,6 +29,8 @@
 #include <audsrv.h>
 #include "vnp.h"
 #include "text.h"
+#include "save.h"
+#include <libmc.h>
 
 #define SCR_W 640
 #define SCR_H 448
@@ -442,22 +444,122 @@ static VnpScene g_sc;
 static Block advance(GSGLOBAL *gs);   /* continúa el cursor actual */
 
 static int g_autoplay;              /* argv "autoplay": avanza y elige solo (para el harness) */
+enum { UI_PLAY = 0, UI_MENU, UI_LOG };
+static int g_ui;                    /* pantalla encima del juego: menu de pausa o historial */
+static int g_savetest;              /* argv "savetest": guarda, relee y verifica (para el harness) */
+
+static uint32_t g_step_n;           /* pasos consumidos de la escena */
+static uint32_t g_block_idx;        /* indice del paso donde quedo el bloque actual (lo que se guarda) */
+static uint16_t g_bgm_idx = VNP_NONE16;   /* BGM sonando, para que la partida lo recuerde */
+
+/* --- historial de dialogos (Select). Guarda indices al pool de strings del blob,
+ *     que ya esta en RAM: no copia texto. --- */
+#define LOG_N 24
+static struct { uint16_t who; uint32_t text; } g_log[LOG_N];
+static int g_log_n;
+static void log_push(uint16_t who, uint32_t text)
+{
+    int i = g_log_n % LOG_N;
+    g_log[i].who = who; g_log[i].text = text; g_log_n++;
+}
+
+/* --- partida guardada en la memory card --------------------------------------
+ * Guarda donde quedo (escena + paso) y que musica sonaba; al cargar se rehace la
+ * escena hasta ese paso, asi los sprites y el fondo vuelven a su lugar. El formato
+ * (magic, version, CRC) esta en ps2/save.c, probado en el host. */
+#define SAVE_DIR  "/ZNTVN"
+#define SAVE_PATH "/ZNTVN/SAVE.BIN"
+
+/* La memory card va por libmc, no por open()/write(): el puerto newlib del SDK no
+ * expone mc0: (y avisa que mezclar fio con newlib trae problemas). Todas las
+ * llamadas son asincronicas: cada una se cierra con mcSync. */
+static int mc_wait(void) { int r = -1; mcSync(MC_WAIT, NULL, &r); return r; }
+
+static int g_mc_fmt = -1;          /* -1 sin saber, 0 sin formatear, 1 formateada */
+
+static void mc_init(void)
+{
+    SifLoadModule("rom0:MCMAN", 0, 0);
+    SifLoadModule("rom0:MCSERV", 0, 0);
+    if (mcInit(MC_TYPE_MC) < 0) printf("ZNTVN: memory card no disponible\n");
+}
+
+/* 0 = lista para usar, -2 = sin formatear, -1 = no hay tarjeta */
+static int mc_status(void)
+{
+    int type = 0, freeb = 0, fmt = 0;
+    mcGetInfo(0, 0, &type, &freeb, &fmt);
+    int r = mc_wait();
+    /* Con MCMAN/MCSERV el parametro `fmt` siempre vuelve 0: el estado real esta en
+     * el retorno (0 la misma tarjeta que antes, -1 otra formateada, -2 otra sin
+     * formatear, -10 o menos no hay). Por eso se recuerda lo que se vio la vez uno. */
+    if (r <= -10) { g_mc_fmt = -1; return -1; }
+    if (r == -2) g_mc_fmt = 0;
+    else if (r == -1) g_mc_fmt = 1;
+    return g_mc_fmt == 0 ? -2 : 0;
+}
+
+static int game_save(void)
+{
+    uint8_t buf[SAVE_SIZE] __attribute__((aligned(64)));
+    save_pack(buf, (uint16_t)cur_scene, g_block_idx, g_bgm_idx);
+    int st = mc_status();
+    if (st) { printf(st == -2 ? "ZNTVN: save FALLO: memory card sin formatear\n"
+                              : "ZNTVN: save FALLO: no hay memory card\n"); return -1; }
+    mcMkDir(0, 0, SAVE_DIR); mc_wait();        /* si ya existe, el error no importa */
+    /* OJO: el `mode` de mcOpen NO son las banderas de open(): son los atributos que
+     * quedan grabados en la tarjeta. O_RDONLY vale 0, o sea "sin permisos", y la
+     * lectura despues daba -5 (permiso denegado). Hay que pedir lectura Y escritura. */
+    mcOpen(0, 0, SAVE_PATH, MC_ATTR_READABLE | MC_ATTR_WRITEABLE | O_CREAT);
+    int fd = mc_wait();
+    if (fd < 0) { printf("ZNTVN: save FALLO al abrir (%d)\n", fd); return -1; }
+    mcWrite(fd, buf, SAVE_SIZE); int n = mc_wait();
+    mcClose(fd); mc_wait();
+    if (n != SAVE_SIZE) { printf("ZNTVN: save FALLO al escribir (%d)\n", n); return -1; }
+    printf("ZNTVN: save escena %u paso %u\n", (unsigned)cur_scene, (unsigned)g_block_idx);
+    return 0;
+}
+
+static int game_load(uint16_t *scene, uint32_t *step, uint16_t *bgm)
+{
+    uint8_t buf[SAVE_SIZE] __attribute__((aligned(64)));
+    if (mc_status()) { printf("ZNTVN: no hay memory card usable\n"); return -1; }
+    mcOpen(0, 0, SAVE_PATH, MC_ATTR_READABLE);      /* ver la nota en game_save */
+    int fd = mc_wait();
+    if (fd < 0) { printf("ZNTVN: no hay partida guardada\n"); return -1; }
+    mcRead(fd, buf, SAVE_SIZE); int n = mc_wait();
+    mcClose(fd); mc_wait();
+    if (save_unpack(buf, n, scene, step, bgm)) { printf("ZNTVN: partida invalida\n"); return -1; }
+    if (*scene >= doc.n_scenes) { printf("ZNTVN: partida de otra VN\n"); return -1; }
+    printf("ZNTVN: load escena %u paso %u\n", (unsigned)*scene, (unsigned)*step);
+    return 0;
+}
 
 static Block enter_scene(GSGLOBAL *gs, uint32_t scene)
 {
     printf("ZNTVN: escena %u\n", (unsigned)scene);
     for (int i = 0; i < MAX_LAYERS; i++) if (layers[i].has_tex) tex_free(gs, &layers[i].tex);
     memset(layers, 0, sizeof(layers));                  /* el fondo persiste entre escenas */
-    cur_scene = scene;
+    cur_scene = scene; g_step_n = 0; g_block_idx = 0;
     Block blk; memset(&blk, 0, sizeof(blk));
     if (vnp_scene_begin(&doc, scene, &g_sc)) { blk.kind = 3; return blk; }
     return advance(gs);
+}
+
+/* Rehace la escena hasta el paso `k` (cargar una partida): avanza bloque a bloque
+ * aplicando todo, asi el fondo y los sprites quedan como estaban. */
+static Block enter_scene_at(GSGLOBAL *gs, uint32_t scene, uint32_t k)
+{
+    Block blk = enter_scene(gs, scene);
+    while (blk.kind != 3 && g_block_idx < k) blk = advance(gs);
+    return blk;
 }
 
 static Block advance(GSGLOBAL *gs)
 {
     VnpStep s; Block blk; memset(&blk, 0, sizeof(blk));
     while (vnp_step(&g_sc, &s)) {
+        g_block_idx = g_step_n++;               /* donde estamos parados (lo que guarda la partida) */
         switch (s.op) {
         case OP_BG:
             /* solid/grad: color de fondo; img: textura full-screen (capa 0). */
@@ -488,7 +590,7 @@ static Block advance(GSGLOBAL *gs)
         case OP_HIDE:
             for (int i = 1; i < MAX_LAYERS; i++) if (layers[i].used && layers[i].chr == s.chr) layers[i].used = 0;
             break;
-        case OP_SAY:   blk.kind = 1; blk.step = s; return blk;
+        case OP_SAY:   blk.kind = 1; blk.step = s; log_push(s.who, s.text); return blk;
         case OP_CHOICE:blk.kind = 2; blk.step = s;
                        printf("ZNTVN: choice con %d opciones\n", s.n_opts); return blk;
         case OP_ANIM: {
@@ -506,7 +608,7 @@ static Block advance(GSGLOBAL *gs)
             }
             break;
         }
-        case OP_BGM:   audio_set_bgm(s.bgm_stop ? VNP_NONE16 : s.audio); break;
+        case OP_BGM:   g_bgm_idx = s.bgm_stop ? VNP_NONE16 : s.audio; audio_set_bgm(g_bgm_idx); break;
         case OP_SE:    audio_play_se(s.audio); break;
         case OP_GOTO:  return enter_scene(gs, s.target);
         case OP_END:   blk.kind = 3; return blk;
@@ -578,19 +680,68 @@ static void draw_frame(GSGLOBAL *gs, const Block *blk)
     }
 }
 
+/* --- menu de pausa (Start) e historial (Select) --------------------------- */
+static int g_menu_sel;
+static const char *MENU[] = { "Seguir", "Guardar", "Cargar" };
+#define MENU_N 3
+
+static void draw_panel(GSGLOBAL *gs, float x0, float y0, float x1, float y1)
+{
+    gsKit_prim_sprite(gs, x0, y0, x1, y1, 6, GS_SETREG_RGBAQ(0x08, 0x0c, 0x20, 0x70, 0));
+}
+
+static void draw_overlay(GSGLOBAL *gs)
+{
+    if (g_ui == UI_MENU) {
+        draw_panel(gs, 180, 120, 460, 260);
+        if (g_have_font) gsKit_TexManager_bind(gs, &g_font);
+        draw_text(gs, 200, 136, "Pausa", 5, 0xe8, 0xb0, 0x4b, -1);
+        for (int i = 0; i < MENU_N; i++) {
+            int sel = (i == g_menu_sel);
+            draw_text(gs, sel ? 216 : 204, 176 + i * 24, MENU[i], (int)strlen(MENU[i]),
+                      sel ? 0xff : 0xa0, sel ? 0xd0 : 0xa0, sel ? 0x40 : 0xa0, -1);
+        }
+    } else if (g_ui == UI_LOG) {
+        draw_panel(gs, 40, 40, SCR_W - 40, SCR_H - 40);
+        if (g_have_font) gsKit_TexManager_bind(gs, &g_font);
+        draw_text(gs, 56, 52, "Historial (Select vuelve)", 25, 0xe8, 0xb0, 0x4b, -1);
+        int n = g_log_n < LOG_N ? g_log_n : LOG_N;      /* los ultimos n, en orden */
+        int first = g_log_n - n;
+        float y = 80;
+        for (int k = 0; k < n && y < SCR_H - 80; k++) {
+            int i = (first + k) % LOG_N;
+            if (g_log[i].who != VNP_NONE16) {
+                VnpChar c; vnp_char(&doc, g_log[i].who, &c);
+                VnpStr nm = vnp_str(&doc, c.name);
+                draw_text(gs, 56, y, nm.ptr, nm.len, 0xe8, 0xb0, 0x4b, -1);
+                y += doc.font_h + 2;
+            }
+            VnpStr t = vnp_str(&doc, g_log[i].text);
+            y += draw_text(gs, 72, y, t.ptr, t.len, 0xff, 0xff, 0xff, -1) * (doc.font_h + 2) + 6;
+        }
+    }
+}
+
 /* --- pad --- */
 static char pad_buf[256] __attribute__((aligned(64)));
-static int pad_pressed(u32 *prev)
+static u32 g_pad_now;                     /* botones apretados AHORA (para el skip) */
+static u32 pad_pressed(u32 *prev)
 {
     struct padButtonStatus b;
-    if (padGetState(0, 0) != PAD_STATE_STABLE || !padRead(0, 0, &b)) return 0;   /* sin pad listo: nada apretado */
-    u32 now = 0xffff ^ b.btns; u32 hit = now & ~(*prev); *prev = now; return hit;
+    if (padGetState(0, 0) != PAD_STATE_STABLE || !padRead(0, 0, &b)) { g_pad_now = 0; return 0; }
+    u32 now = 0xffff ^ b.btns; u32 hit = now & ~(*prev); *prev = now; g_pad_now = now; return hit;
 }
 
 int main(int argc, char **argv)
 {
     SifInitRpc(0);
-    for (int i = 1; i < argc; i++) if (argv[i] && !strcmp(argv[i], "autoplay")) g_autoplay = 1;
+    for (int i = 1; i < argc; i++) {
+        if (!argv[i]) continue;
+        if (!strcmp(argv[i], "autoplay")) g_autoplay = 1;
+        if (!strcmp(argv[i], "savetest")) g_savetest = 1;
+        if (!strcmp(argv[i], "menu")) g_ui = UI_MENU;      /* para sacarle una foto al menu */
+        if (!strcmp(argv[i], "log")) g_ui = UI_LOG;
+    }
     if (g_autoplay) printf("ZNTVN: autoplay\n");
     sbv_patch_enable_lmb(); sbv_patch_disable_prefix_check();   /* para SifExecModuleBuffer */
     uint32_t size = 0; uint8_t *blob = load_blob(&size);
@@ -617,19 +768,58 @@ int main(int argc, char **argv)
     /* pad */
     SifLoadModule("rom0:SIO2MAN", 0, 0); SifLoadModule("rom0:PADMAN", 0, 0);
     padInit(0); padPortOpen(0, 0, pad_buf);
+    mc_init();
     u32 prev = 0;
 
     Block blk = enter_scene(gs, doc.start);
     g_choice_sel = 0; g_say_ms = 0;
 
-    int auto_t = 0;
+    if (g_savetest) {                       /* el harness verifica el ida y vuelta completo */
+        if (mc_status() == -2) {            /* solo en modo test: una tarjeta sin formatear no tiene nada que perder */
+            printf("ZNTVN: formateando memory card (savetest)\n");
+            mcFormat(0, 0); mc_wait(); g_mc_fmt = 1;
+        }
+        blk = advance(gs);
+        uint16_t sc = 0, bg = 0; uint32_t stp = 0;
+        int ok = game_save() == 0 && game_load(&sc, &stp, &bg) == 0
+                 && sc == cur_scene && stp == g_block_idx;
+        printf(ok ? "ZNTVN: savetest OK\n" : "ZNTVN: savetest FALLO\n");
+    }
+
+    int auto_t = 0, skip_t = 0;
     while (blk.kind != 3) {
         u32 hit = pad_pressed(&prev);
         if (g_autoplay && ++auto_t >= 45) {          /* ~0.75 s: como si alguien apretara X */
             auto_t = 0; hit |= PAD_CROSS;
-            if (blk.kind == 2) g_choice_sel = blk.step.n_opts - 1;   /* la última: ejercita goto */
+            if (g_ui == UI_PLAY && blk.kind == 2) g_choice_sel = blk.step.n_opts - 1;  /* la última: ejercita goto */
         }
-        if (blk.kind == 1 && (hit & PAD_CROSS)) {          /* click: completa el tipeo; el siguiente avanza */
+        /* Triangulo mantenido: saltear texto rapido (sin tipeo) */
+        if (g_ui == UI_PLAY && blk.kind == 1 && (g_pad_now & PAD_TRIANGLE) && ++skip_t >= 6) {
+            skip_t = 0; g_say_ms = 1e9f; hit |= PAD_CROSS;
+        }
+
+        if (g_ui == UI_MENU) {
+            if (hit & PAD_UP)   g_menu_sel = (g_menu_sel + MENU_N - 1) % MENU_N;
+            if (hit & PAD_DOWN) g_menu_sel = (g_menu_sel + 1) % MENU_N;
+            if (hit & (PAD_CIRCLE | PAD_START)) g_ui = UI_PLAY;
+            else if (hit & PAD_CROSS) {
+                if (g_menu_sel == 1) game_save();
+                else if (g_menu_sel == 2) {
+                    uint16_t sc, bg; uint32_t stp;
+                    if (game_load(&sc, &stp, &bg) == 0) {
+                        blk = enter_scene_at(gs, sc, stp);
+                        g_bgm_idx = bg; audio_set_bgm(bg); g_say_ms = 0; g_choice_sel = 0;
+                    }
+                }
+                g_ui = UI_PLAY;
+            }
+        } else if (g_ui == UI_LOG) {
+            if (hit & (PAD_SELECT | PAD_CIRCLE | PAD_CROSS | PAD_START)) g_ui = UI_PLAY;
+        } else if (hit & PAD_START) {
+            g_ui = UI_MENU; g_menu_sel = 0;
+        } else if (hit & PAD_SELECT) {
+            g_ui = UI_LOG;
+        } else if (blk.kind == 1 && (hit & PAD_CROSS)) {   /* X: completa el tipeo; la siguiente avanza */
             VnpStr t = vnp_str(&doc, blk.step.text);
             if (g_say_ms * TYPING_CPS / 1000.0f < text_utf8_count(t.ptr, t.len)) g_say_ms = 1e9f;
             else { blk = advance(gs); g_say_ms = 0; }
@@ -650,6 +840,7 @@ int main(int argc, char **argv)
         }
         gsKit_TexManager_nextFrame(gs);
         draw_frame(gs, &blk);
+        draw_overlay(gs);
         gsKit_queue_exec(gs); gsKit_sync_flip(gs);
         if (++g_frames == 1) printf("ZNTVN: frame OK (escena %u, bloque %d)\n", (unsigned)cur_scene, blk.kind);
     }

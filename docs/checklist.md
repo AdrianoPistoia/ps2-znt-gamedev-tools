@@ -1,7 +1,7 @@
 # Checklist para cerrar VN Studio y el player PS2
 
 Cada ítem tiene su check automático en `tests/checklist.sh`, que los corre **en
-orden** y se frena en el primero que falla. Marcar `[x]` sólo cuando el check pasa. Estado: **16/16 en verde** (2026-09-09).
+orden** y se frena en el primero que falla. Marcar `[x]` sólo cuando el check pasa. Estado: **19/19 en verde** (2026-09-09).
 
 ## VN Studio
 - [x] 1. Grupos (Ctrl+G): el flujo QA `grupos` pasa y el trabajo está commiteado.
@@ -21,6 +21,9 @@ orden** y se frena en el primero que falla. Marcar `[x]` sólo cuando el check p
 - [x] 14. El texto del diálogo corta por palabra, no a mitad (`ps2/text.c`).
 - [x] 15. Texturas de 8 bits con paleta cuando no se pierde nada (4x menos VRAM y disco).
 - [x] 16. Play del editor con los dos ritmos: paso a paso y como el jugador.
+- [x] 17. Formato de partida con magic, versión y CRC (aguanta un archivo pisado).
+- [x] 18. Guardar y cargar en la memory card, reanudando a mitad de escena.
+- [x] 19. Menú de pausa (Start), historial de diálogos (Select) y avance rápido (Triángulo).
 
 ## Cómo correr
 ```sh

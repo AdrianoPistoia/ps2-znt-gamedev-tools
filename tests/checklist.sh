@@ -21,6 +21,15 @@ item 9 "authoring.md documenta todas las ops del .vn"                 python3 te
 item 14 "Texto: corte por palabra (test en host)"                      bash -c 'cc -Wall -I ps2 ps2/test_text_host.c ps2/text.c -o "$T/tt" && "$T/tt"'
 item 15 "Texturas 8bpp: arte plano sin perder nada, degradés en RGBA32"  python3 tests/py/test_quant.py
 item 16 "Play: paso a paso (editor) y como el jugador"                 python3 tests/py/test_playmode.py
+item 17 "Formato de partida: magic, version y CRC (test en host)"      bash -c 'cc -Wall -I ps2 ps2/test_save_host.c ps2/save.c -o "$T/ts" && "$T/ts"'
+# El guardado toca la memory card de verdad: el modo savetest guarda, relee y compara.
+item 18 "Guardar y cargar en la memory card (ida y vuelta real)"       bash -c '
+  python3 tests/py/mkchoice.py "$T/sv" >/dev/null &&
+  ZNT_SAVETEST=1 ZNT_AUTOPLAY=1 tests/pcsx2_boot.sh 20 >/dev/null &&
+  grep -aq "ZNTVN: savetest OK" "$LOG"'
+item 19 "Menu de pausa e historial: se dibujan sin romper nada"        bash -c '
+  ZNT_UI=menu tests/pcsx2_boot.sh 12 >/dev/null && ZNT_UI=log tests/pcsx2_boot.sh 12 >/dev/null'
+
 item 2 "ELF: build con ps2dev (docker)"                                bash -c 'have() { command -v "$1" >/dev/null; }; have docker && ps2/build.sh >/dev/null && test -f ps2/ZNTVN.ELF'
 item 3 "ELF: bootea en PCSX2 con la demo (host fs)"                    bash -c "python3 -m znt iso build _demo.vn ps2/ZNTVN.VNP >/dev/null && tests/pcsx2_boot.sh 12"
 item 4 "Blob v5: cabecera sola en RAM, imágenes/audio por demanda"     bash -c "python3 tests/py/test_blob_v5.py && python3 tests/py/mkblob.py '$T' && cc -Wall -I ps2 ps2/test_vnp_host.c ps2/vnp.c -o '$T/tv' && '$T/tv' '$T/k.vnp'"
