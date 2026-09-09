@@ -871,8 +871,23 @@ $("#b-new").onclick = async () => {
 $("#b-open").onclick = async () => {
   const p = await browse("Abrir proyecto (.vn)", "vn", S.path || "");
   if (p) op({op:"open_project", path:p}); };
+/* Ritmo del Play. Paso a paso es el del editor (se ve aterrizar cada fondo y cada
+   sprite); "como el jugador" corre hasta el próximo diálogo, que es lo que hacen de
+   verdad el player HTML y el ELF de PS2. */
+let STEPWISE = true;
+try { STEPWISE = localStorage.getItem("vnsstepwise") !== "0"; } catch (e) {}
+function renderPlayMode(){
+  $("#b-playmode").textContent = STEPWISE ? "paso a paso" : "como el jugador";
+  $("#b-playmode").classList.toggle("on", !STEPWISE);
+}
+$("#b-playmode").onclick = () => {
+  STEPWISE = !STEPWISE; renderPlayMode();
+  try { localStorage.setItem("vnsstepwise", STEPWISE ? "1" : "0"); } catch (e) {}
+  if (S.play) op({op:"play", scene:S.scene, step: Math.max(0, S.step), stepwise: STEPWISE});
+};
+renderPlayMode();
 $("#b-play").onclick = () => op(S.play ? {op:"play_stop"}
-                                 : {op:"play", scene:S.scene, step: Math.max(0, S.step)});
+                                 : {op:"play", scene:S.scene, step: Math.max(0, S.step), stepwise: STEPWISE});
 $("#b-undo").onclick = () => op({op:"undo"});
 $("#b-redo").onclick = () => op({op:"redo"});
 $("#b-validate").onclick = async () => {

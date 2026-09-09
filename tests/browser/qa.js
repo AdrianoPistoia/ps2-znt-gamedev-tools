@@ -595,6 +595,20 @@ async function main() {
     assert.ok((await text("#toast")).includes("salida.vnp"), "y lo dice");
   });
 
+  flow("modo-de-play", async () => {
+    assert.strictEqual(await text("#b-playmode"), "paso a paso", "arranca en el modo del editor");
+    await click('.clip[data-i="0"]'); await click("#b-play");
+    assert.strictEqual(await js("S.play.stepwise"), true);
+    assert.strictEqual(await js("S.play.say"), null, "paso a paso: el paso 0 es el fondo, sin diálogo");
+    await key("Escape");
+    await click("#b-playmode");
+    assert.strictEqual(await text("#b-playmode"), "como el jugador", "el botón dice el modo");
+    await click('.clip[data-i="0"]'); await click("#b-play");
+    assert.strictEqual(await js("S.play.stepwise"), false);
+    assert.ok(await js("!!S.play.say"), "como el jugador: corre hasta el primer diálogo");
+    await key("Escape"); await click("#b-playmode");        // dejarlo como estaba
+  });
+
   flow("grupos", async () => {
     await click('.clip[data-i="0"]');
     const r2 = await rect('.clip[data-i="2"]');

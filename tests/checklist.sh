@@ -20,6 +20,7 @@ item 1 "VN Studio: suite completa (core + web + QA de browser, incluye grupos)" 
 item 9 "authoring.md documenta todas las ops del .vn"                 python3 tests/py/test_authoring_doc.py
 item 14 "Texto: corte por palabra (test en host)"                      bash -c 'cc -Wall -I ps2 ps2/test_text_host.c ps2/text.c -o "$T/tt" && "$T/tt"'
 item 15 "Texturas 8bpp: arte plano sin perder nada, degradés en RGBA32"  python3 tests/py/test_quant.py
+item 16 "Play: paso a paso (editor) y como el jugador"                 python3 tests/py/test_playmode.py
 item 2 "ELF: build con ps2dev (docker)"                                bash -c 'have() { command -v "$1" >/dev/null; }; have docker && ps2/build.sh >/dev/null && test -f ps2/ZNTVN.ELF'
 item 3 "ELF: bootea en PCSX2 con la demo (host fs)"                    bash -c "python3 -m znt iso build _demo.vn ps2/ZNTVN.VNP >/dev/null && tests/pcsx2_boot.sh 12"
 item 4 "Blob v5: cabecera sola en RAM, imágenes/audio por demanda"     bash -c "python3 tests/py/test_blob_v5.py && python3 tests/py/mkblob.py '$T' && cc -Wall -I ps2 ps2/test_vnp_host.c ps2/vnp.c -o '$T/tv' && '$T/tv' '$T/k.vnp'"

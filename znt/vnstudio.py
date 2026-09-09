@@ -136,17 +136,21 @@ class VNRuntime:
         self.scene_id = scene_id
         self._run()
 
-    def enter_at(self, scene_id, k):
-        """Play del editor, paso a paso: lo anterior se aplica sin frenar, el paso k
-        se ejecuta y ahí se para (aunque no sea un diálogo). Cada step_once()
-        ejecuta el siguiente. `enter()`/`advance()` siguen siendo el modo juego."""
+    def enter_at(self, scene_id, k, stepwise=True):
+        """Arranca el Play en el paso k: lo anterior se aplica sin frenar.
+
+        `stepwise` (el Play del editor) ejecuta ese paso y ahí se para, aunque no sea
+        un diálogo, y cada step_once() sigue con el próximo. Sin él corre como el
+        jugador —hasta el próximo diálogo u opción—, igual que el player HTML y el
+        ELF de PS2, para previsualizar el ritmo real."""
         self.reset_state(); self.scene_id = scene_id
         k = max(0, int(k))
         for s in self._steps()[:k]:
             self._exec(s, navigate=False)
         self.settle()
         self.ip = k
-        self.step_once()
+        if stepwise: self.step_once()
+        else: self._run()
 
     def step_once(self):
         """Ejecuta exactamente un paso (modo paso a paso del editor)."""

@@ -52,7 +52,7 @@
 
   /* ---------- modo Play: se apaga todo menos el juego y el timeline ---------- */
   body.playing #outliner, body.playing #inspector,
-  body.playing #topbar > :not(#b-play):not(.grow){opacity:.28;pointer-events:none;
+  body.playing #topbar > :not(#b-play):not(#b-playmode):not(.grow){opacity:.28;pointer-events:none;
        filter:saturate(.4);transition:opacity .15s}
   body.playing #timeline{box-shadow:inset 0 2px 0 var(--acc)}
   body.playing #timeline .bar{opacity:.28;pointer-events:none}   /* no se edita en Play */
@@ -247,6 +247,7 @@
     <button id="b-help" class="ico" title="Atajos (?)">?</button>
     <button id="b-probar" title="Previsualizar la transición del paso">▶ Probar paso</button>
     <button id="b-play" title="Reproducir la escena (Space)">▶ Play</button>
+    <button id="b-playmode" title="Ritmo del Play: un paso por click, o como lo ve el jugador (hasta el próximo diálogo)">paso a paso</button>
   </header>
 
   <div id="body">

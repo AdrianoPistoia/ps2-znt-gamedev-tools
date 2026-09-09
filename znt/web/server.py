@@ -39,6 +39,7 @@ class Studio:
         self.scene = self.model["order"][0]
         self.step = -1
         self.prt = None                              # runtime de reproducción (Play)
+        self.play_stepwise = True                    # Play: paso a paso (editor) o como el jugador
         self.undo, self.redo = [], []
 
     # --- helpers -----------------------------------------------------------
@@ -252,14 +253,19 @@ class Studio:
                                       for k, v in props.items()})
                 self.rt.invalidate()
         elif o == "play":
-            # arranca en el paso elegido (o el que mande el cliente), no en el 0
+            # arranca en el paso elegido (o el que mande el cliente), no en el 0.
+            # stepwise=false corre como el jugador: hasta el próximo diálogo u opción.
             self.prt = VNRuntime(self.model, self.base)
+            self.play_stepwise = bool(r.get("stepwise", True))
             k = r.get("step", self.step if r.get("scene", self.scene) == self.scene else 0)
-            self.prt.enter_at(r.get("scene") or self.scene, k if k is not None else 0)
+            self.prt.enter_at(r.get("scene") or self.scene, k if k is not None else 0,
+                              stepwise=self.play_stepwise)
         elif o == "play_advance":
-            if self.prt: self.prt.step_once()         # paso a paso (lo que se ve en el timeline)
+            if self.prt:
+                if self.play_stepwise: self.prt.step_once()   # un paso (lo que sigue el timeline)
+                else: self.prt.advance()                      # hasta el próximo diálogo
         elif o == "play_choose":
-            if self.prt: self.prt.choose(int(r.get("i", 0)), stepwise=True)
+            if self.prt: self.prt.choose(int(r.get("i", 0)), stepwise=self.play_stepwise)
         elif o == "play_stop":
             self.prt = None
         elif o == "open_project" and not os.path.exists(os.path.expanduser(r.get("path") or "")):
@@ -370,6 +376,7 @@ class Studio:
         st["playing"] = True; st["done"] = self.prt.done
         st["scene"], st["step"] = self.prt.scene_id, self.prt.cursor   # para el timeline
         st["se"], st["se_seq"] = self.prt.last_se, self.prt.se_seq     # audio
+        st["stepwise"] = self.play_stepwise
         return st
 
     def _stage_from(self, rt):
