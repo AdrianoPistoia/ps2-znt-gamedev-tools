@@ -32,6 +32,9 @@ if command -v cc >/dev/null; then
   if cc -Wall -I ps2 ps2/test_vnp_host.c ps2/vnp.c -o "$TMP/tv" 2>/dev/null; then
     run "vnp.c contra un blob real" "$TMP/tv" "$TMP/k.vnp"
   else bad "compilar el test del lector C"; fi
+  if cc -Wall -I ps2 ps2/test_text_host.c ps2/text.c -o "$TMP/tt" 2>/dev/null; then
+    run "corte de lineas por palabra (text.c)" "$TMP/tt"
+  else bad "compilar el test de texto"; fi
   rm -rf "$TMP"
 else skip "lector C" "cc no instalado"; fi
 

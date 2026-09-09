@@ -28,6 +28,7 @@
 #include <loadfile.h>
 #include <audsrv.h>
 #include "vnp.h"
+#include "text.h"
 
 #define SCR_W 640
 #define SCR_H 448
@@ -280,39 +281,44 @@ static int font_cell(uint32_t cp)   /* índice de celda, o -1 */
     return -1;
 }
 
-/* siguiente codepoint UTF-8 en s[*i..len) */
-static uint32_t utf8_next(const char *s, int len, int *i)
-{
-    unsigned char c = s[*i]; (*i)++;
-    if (c < 0x80) return c;
-    if ((c >> 5) == 6 && *i < len)      { uint32_t r = (c&0x1F)<<6 | (s[*i]&0x3F); (*i)++; return r; }
-    if ((c >> 4) == 14 && *i+1 < len)   { uint32_t r=(c&0x0F)<<12 | (s[*i]&0x3F)<<6 | (s[*i+1]&0x3F); *i+=2; return r; }
-    if (*i+2 < len)                     { uint32_t r=(c&0x07)<<18 | (s[*i]&0x3F)<<12 | (s[*i+1]&0x3F)<<6 | (s[*i+2]&0x3F); *i+=3; return r; }
-    return '?';
-}
-
 #define TYPING_CPS 40                /* caracteres por segundo (mismo default que el editor) */
 static float g_say_ms;               /* ms desde que empezó el diálogo actual (tipeo) */
-static int utf8_count(const char *s, int len) { int i = 0, n = 0; while (i < len) { utf8_next(s, len, &i); n++; } return n; }
 
-/* dibuja texto (UTF-8) desde (x,y) con wrap simple; `maxcp` = cuántos codepoints mostrar (-1 todos).  [GSKIT] */
-static void draw_text(GSGLOBAL *gs, float x, float y, const char *s, int len, uint8_t r, uint8_t g_, uint8_t b, int maxcp)
+/* dibuja UNA línea ya cortada, sin mirar el ancho */
+static void draw_line(GSGLOBAL *gs, float x, float y, const char *s, int len,
+                      uint8_t r, uint8_t g_, uint8_t b, int maxcp)
 {
-    if (!g_have_font) return;
-    int fw = doc.font_w, fh = doc.font_h;
-    float pen = x, py = y, maxx = SCR_W - 32;
-    int i = 0, shown = 0;
+    int fw = doc.font_w, fh = doc.font_h, i = 0, shown = 0;
+    float pen = x;
     while (i < len && (maxcp < 0 || shown++ < maxcp)) {
-        uint32_t cp = utf8_next(s, len, &i);
-        if (cp == '\n' || pen > maxx) { pen = x; py += fh + 2; if (cp == '\n') continue; }
+        unsigned int cp = text_utf8_next(s, len, &i);
         int cell = font_cell(cp);
         if (cell >= 0) {
             int cx = (cell % g_font_cols) * fw, cy = (cell / g_font_cols) * fh;
-            gsKit_prim_sprite_texture(gs, &g_font, pen, py, cx, cy, pen+fw, py+fh, cx+fw, cy+fh,
+            gsKit_prim_sprite_texture(gs, &g_font, pen, y, cx, cy, pen+fw, y+fh, cx+fw, cy+fh,
                                       4, GS_SETREG_RGBAQ(r, g_, b, 0x80, 0));
         }
         pen += fw;
     }
+}
+
+/* dibuja texto UTF-8 cortando por palabra (ps2/text.c); `maxcp` = codepoints a mostrar
+ * (-1 todos), para el tipeo. Devuelve cuántas líneas ocupó.  [GSKIT] */
+static int draw_text(GSGLOBAL *gs, float x, float y, const char *s, int len,
+                     uint8_t r, uint8_t g_, uint8_t b, int maxcp)
+{
+    if (!g_have_font || !s) return 0;
+    int fw = doc.font_w, fh = doc.font_h;
+    int cols = (int)((SCR_W - 32 - x) / fw); if (cols < 1) cols = 1;
+    TextWrap w; text_wrap_init(&w, s, len);
+    int off, n, rows = 0, left = maxcp;
+    while (text_wrap_next(&w, cols, &off, &n)) {
+        if (left == 0) break;
+        draw_line(gs, x, y + rows * (fh + 2), s + off, n, r, g_, b, left);
+        if (left > 0) { int cp = text_utf8_count(s + off, n); left = cp >= left ? 0 : left - cp; }
+        rows++;
+    }
+    return rows;
 }
 
 /* --- capa activa en el stage --- */
@@ -595,7 +601,7 @@ int main(void)
         u32 hit = pad_pressed(&prev);
         if (blk.kind == 1 && (hit & PAD_CROSS)) {          /* click: completa el tipeo; el siguiente avanza */
             VnpStr t = vnp_str(&doc, blk.step.text);
-            if (g_say_ms * TYPING_CPS / 1000.0f < utf8_count(t.ptr, t.len)) g_say_ms = 1e9f;
+            if (g_say_ms * TYPING_CPS / 1000.0f < text_utf8_count(t.ptr, t.len)) g_say_ms = 1e9f;
             else { blk = advance(gs); g_say_ms = 0; }
         } else if (blk.kind == 2) {
             if (hit & PAD_UP)   g_choice_sel = (g_choice_sel + blk.step.n_opts - 1) % blk.step.n_opts;
