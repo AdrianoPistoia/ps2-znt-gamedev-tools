@@ -1,7 +1,8 @@
 # Checklist para cerrar VN Studio y el player PS2
 
 Cada ítem tiene su check automático en `tests/checklist.sh`, que los corre **en
-orden** y se frena en el primero que falla. Marcar `[x]` sólo cuando el check pasa. Estado: **19/19 en verde** (2026-09-09).
+orden** y se frena en el primero que falla. Marcar `[x]` sólo cuando el check pasa. Estado: **18 comprobaciones en verde** (2026-09-09). La numeración llega a 19
+porque el ítem 10 pasó a ser el runner mismo.
 
 ## VN Studio
 - [x] 1. Grupos (Ctrl+G): el flujo QA `grupos` pasa y el trabajo está commiteado.
@@ -24,6 +25,23 @@ orden** y se frena en el primero que falla. Marcar `[x]` sólo cuando el check p
 - [x] 17. Formato de partida con magic, versión y CRC (aguanta un archivo pisado).
 - [x] 18. Guardar y cargar en la memory card, reanudando a mitad de escena.
 - [x] 19. Menú de pausa (Start), historial de diálogos (Select) y avance rápido (Triángulo).
+
+## Lo que queda (fuera de este checklist)
+
+Nada de esto bloquea publicar una VN; son las puntas abiertas al cerrar el checklist.
+
+- **Consola real.** Todo se verificó en PCSX2. Falta bootear el ISO en una PS2 con
+  FreeMcBoot (OPL por USB/HDD, o DVD-R por ESR).
+- **Una sola ranura de guardado.** Alcanza para "seguir donde quedé"; varias partidas
+  con nombre y fecha son trabajo aparte.
+- **Fondos pintados en RGBA32.** La cuantización a 256 colores sólo entra cuando no
+  pierde nada. Un degradé o un fondo pintado ocupa 4x más; con *dithering* entraría
+  en 8 bits sin bandas visibles.
+- **Editor.** Tema claro y escalado de la interfaz, traducción de la interfaz,
+  arrastrar archivos al escenario, atajos por tipo de paso.
+- **Capa 1, correr el juego original fuera de la consola.** Es la otra mitad del
+  repo y sigue incompleta: los módulos de animación del engine (`LayerModule`),
+  audio y entrada. Es un proyecto en sí mismo, no un pendiente corto.
 
 ## Cómo correr
 ```sh

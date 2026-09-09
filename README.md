@@ -75,10 +75,14 @@ El engine se saca en tres capas apiladas. Este repo cubre la **2** y la **2b**.
   Falta para runtime completo: los módulos de animación `LayerModule` (curvas
   accel/decel/wave, no solo tween lineal), audio, y entrada más allá de avanzar.
 
-  **Player nativo de PS2** (`ps2/`, C con gsKit/audsrv): la misma `.vn` compilada a
-  blob (`znt iso build`) **bootea en PCSX2** con fondos, sprites, crossfade, tweens,
-  tipeo, BGM y SE. Ver [`docs/build-ps2.md`](docs/build-ps2.md) y
-  [`docs/checklist.md`](docs/checklist.md) (`tests/checklist.sh` corre todo en orden).
+  **Player nativo de PS2** (`ps2/`, C con gsKit/audsrv): la misma `.vn` compilada
+  (`znt iso build`) sale como **ISO booteable**. Corre en PCSX2 con fondos y sprites
+  (8 bits con paleta cuando no se pierde nada), crossfade, tweens con curvas, texto
+  con tipeo y corte por palabra, elecciones, BGM en streaming y efectos en la SPU2,
+  **partidas en la memory card**, menú de pausa, historial y avance rápido. Los datos
+  se leen del DVD por demanda y alineados al sector (1.4 MB/s). Ver
+  [`docs/build-ps2.md`](docs/build-ps2.md) y [`docs/checklist.md`](docs/checklist.md)
+  (`tests/checklist.sh` corre los 19 ítems en orden, con build y boot reales).
 - **Capa 3** — autoría de una VN nueva. Formato de texto `.vn` (personajes,
   escenas, `bg`/`show`/`say`/`choice`/`goto`) que `vn` compila a un player HTML
   autocontenido y compartible. Ver [`docs/authoring.md`](docs/authoring.md).

@@ -6,19 +6,29 @@ en el SDK Python.
 
 ## Estado
 
-**Compila y bootea en PCSX2** (`ps2/build.sh` con la imagen docker `ps2dev/ps2dev`;
-`tests/pcsx2_boot.sh` lo bootea y verifica por el log; `ZNT_SHOT=x.png` captura).
+**Compila y bootea**, tanto por `Run ELF` como desde un **ISO** masterizado
+(`ps2/build.sh` con la imagen docker `ps2dev/ps2dev`; `tests/pcsx2_boot.sh` lo bootea
+y verifica por el log, `ZNT_ISO=x.iso` usa el ISO y `ZNT_SHOT=x.png` saca la foto).
 
-- **`vnp.c`** (lector del blob v5): verificado en host (`tests/py/mkblob.py` + `make host`).
-  Carga **sólo la cabecera** (~2 KB); imágenes y audio se leen por demanda con `fseek`.
-- **`main.c`** (gsKit + audsrv): fondo sólido/degradé/imagen con **crossfade** (`fade=`),
-  sprites RGBA32 con alfa (Z, zoom, opacidad), **tween en x/y** con curvas y las 6
-  acciones, caja de diálogo, **texto UTF-8 con tipeo** (40 cps; X completa, X avanza),
-  choices con el pad, **BGM** WAV/PCM por chunks (loop, corta al cambiar) y **SE por
-  ADPCM** en canales de la SPU2 (`audsrv_load_adpcm`, el SDK lo convierte al compilar).
-- VRAM: un solo framebuffer y sin Z → ~3 MB para texturas (fondo 640x448 = 1.1 MB).
-  Pendiente: cuantizar a 8 bpp (CLUT) para escenas con muchos sprites.
-- Sin probar en consola real. Sin saves/menú/skip/log de texto.
+- **`vnp.c`** (lector del blob v5): verificado en host. Carga **sólo la cabecera**;
+  imágenes y audio se leen por demanda, alineados al sector (**1.4 MB/s** desde el
+  DVD; con lecturas sin alinear eran 166 KB/s y un fondo tardaba 6.7 s).
+- **Imagen**: fondo sólido, degradé o textura, con **crossfade** (`fade=`); sprites
+  con alfa, orden Z, zoom, opacidad y **tinte**. Las texturas van en **8 bits con
+  paleta** cuando la imagen entra en 256 colores exactos (4x menos VRAM y disco); un
+  degradé pintado se queda en RGBA32 para no producir bandas.
+- **Animación**: tween en x/y con curvas y las seis acciones (`wave`, `jump`, `fall`…).
+- **Texto**: UTF-8 con la fuente horneada, **corte por palabra** y **tipeo** a 40 cps
+  (X completa la línea, la siguiente X avanza).
+- **Elecciones** con el pad, saltos entre escenas y final, verificados sin joystick
+  con el modo `autoplay`.
+- **Audio**: BGM en WAV/PCM por streaming (loop, corta al cambiar) y **efectos en
+  ADPCM** en canales de la SPU2, que suenan encima de la música.
+- **Partidas**: Start abre el menú (Seguir / Guardar / Cargar); se guarda escena,
+  paso y música en la memory card, y al cargar se rehace la escena hasta ese paso.
+  Select muestra el **historial** de diálogos y Triángulo **saltea** texto rápido.
+
+Pendiente: probarlo en una consola real (sólo corrió en PCSX2).
 
 La **fuente** se hornea en el blob desde un `.psf` de consola (`znt iso build` la
 autodetecta; `--font ruta.psf` para elegirla, `--no-font` para omitirla). Solo se
