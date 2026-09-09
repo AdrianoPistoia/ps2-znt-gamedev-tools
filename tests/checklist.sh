@@ -4,6 +4,7 @@
 cd "$(dirname "$0")/.." || exit 1
 export PYTHONPATH="$PWD"
 FROM=${1:-1}; T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
+export T LOG=/tmp/znt-pcsx2-$USER/PCSX2/logs/emulog.txt
 PASS=0
 item() {   # item <n> <título> <cmd...>
   local n=$1 title=$2; shift 2
@@ -27,4 +28,12 @@ item 8 "SE por ADPCM: encoder + el ELF lo dispara en la SPU2"          bash -c "
 # El BGM es un thread aparte: si el main lo starvea o los dos hablan con audsrv, queda
 # mudo o cuelga sin que nada más falle. El log del boot del ítem 7 es la única prueba.
 item 11 "BGM: el thread alimenta el stream PCM (no queda mudo)"        bash -c "grep -aq 'ZNTVN: bgm suena' /tmp/znt-pcsx2-\$USER/PCSX2/logs/emulog.txt"
+# El ISO es el único camino que un jugador puede usar. Ahí el blob se lee del CD, y con
+# stdio sin alinear eso daba 166 KB/s: un fondo de 1.1 MB congelaba el juego 6.7 s.
+item 12 "ISO booteable: arranca del CD y lee a más de 1 MB/s"          bash -c '
+  python3 tests/py/mkfeature.py "$T/iso" >/dev/null &&
+  python3 -m znt iso build "$T/iso/f.vn" "$T/g.iso" --elf ps2/ZNTVN.ELF --name ZNTVN >/dev/null &&
+  ZNT_ISO="$T/g.iso" tests/pcsx2_boot.sh 30 >/dev/null &&
+  kbs=$(grep -a "ZNTVN: io" "$LOG" | tail -1 | sed -E "s/.*\(([0-9]+) KB.*/\1/") &&
+  echo "throughput: $kbs KB/s" && [ "${kbs:-0}" -ge 1000 ]' 
 printf '\n\033[1mCHECKLIST COMPLETO: %d ítems ok\033[0m\n' "$PASS"

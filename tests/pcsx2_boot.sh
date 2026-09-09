@@ -8,6 +8,8 @@ DP=${ZNT_PCSX2_DATA:-/tmp/znt-pcsx2-$USER}
 SRC=~/.config/PCSX2
 [ -f ps2/ZNTVN.ELF ] || { echo "falta ps2/ZNTVN.ELF (ps2/build.sh)"; exit 1; }
 [ -f ps2/ZNTVN.VNP ] || { echo "falta ps2/ZNTVN.VNP (python3 -m znt iso build x.vn ps2/ZNTVN.VNP)"; exit 1; }
+# ZNT_ISO=x.iso bootea ese ISO (lee el blob del CD, no del host: el camino real)
+if [ -n "$ZNT_ISO" ]; then BOOT=(-fastboot "$ZNT_ISO"); else BOOT=(-elf "$PWD/ps2/ZNTVN.ELF"); fi
 command -v pcsx2-qt >/dev/null || { echo "falta pcsx2-qt"; exit 1; }
 rm -rf "$DP"; mkdir -p "$DP/PCSX2/inis" "$DP/PCSX2/logs"      # -datapath X usa X/PCSX2
 ln -s "$SRC/bios" "$DP/PCSX2/bios"
@@ -15,7 +17,7 @@ sed -e 's/^EnableEEConsole *=.*/EnableEEConsole = true/' -e 's/^EnableFileLoggin
     -e 's/^HostFs *=.*/HostFs = true/' -e 's/^ConfirmShutdown *=.*/ConfirmShutdown = false/' \
     "$SRC/inis/PCSX2.ini" > "$DP/PCSX2/inis/PCSX2.ini"
 if [ -n "$ZNT_SHOT" ]; then     # ZNT_SHOT=salida.png: con ventana, captura con grim (Hyprland) a los SECS-4 s
-  timeout -s INT "$SECS" pcsx2-qt -datapath "$DP" -batch -elf "$PWD/ps2/ZNTVN.ELF" >/dev/null 2>&1 &
+  timeout -s INT "$SECS" pcsx2-qt -datapath "$DP" -batch "${BOOT[@]}" >/dev/null 2>&1 &
   for i in $(seq 1 20); do   # esperar la ventana
     A=$(hyprctl clients -j 2>/dev/null | jq -r '.[] | select(.class|test("pcsx2";"i")) | .address' | head -1)
     [ -n "$A" ] && break; sleep 0.5
@@ -29,7 +31,7 @@ if [ -n "$ZNT_SHOT" ]; then     # ZNT_SHOT=salida.png: con ventana, captura con 
   [ -n "$G" ] && grim -g "$G" "$ZNT_SHOT" && echo "captura: $ZNT_SHOT"
   wait
 else
-  timeout -s INT "$SECS" pcsx2-qt -datapath "$DP" -batch -nogui -elf "$PWD/ps2/ZNTVN.ELF" >/dev/null 2>&1
+  timeout -s INT "$SECS" pcsx2-qt -datapath "$DP" -batch -nogui "${BOOT[@]}" >/dev/null 2>&1
 fi
 LOG="$DP/PCSX2/logs/emulog.txt"
 grep -a "ZNTVN:" "$LOG" | tail -5

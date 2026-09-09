@@ -1,7 +1,7 @@
 # Checklist para cerrar VN Studio y el player PS2
 
 Cada ítem tiene su check automático en `tests/checklist.sh`, que los corre **en
-orden** y se frena en el primero que falla. Marcar `[x]` sólo cuando el check pasa. Estado: **10/10 en verde** (2026-09-08).
+orden** y se frena en el primero que falla. Marcar `[x]` sólo cuando el check pasa. Estado: **11/11 en verde** (2026-09-09).
 
 ## VN Studio
 - [x] 1. Grupos (Ctrl+G): el flujo QA `grupos` pasa y el trabajo está commiteado.
@@ -16,6 +16,7 @@ orden** y se frena en el primero que falla. Marcar `[x]` sólo cuando el check p
 - [x] 7. Tipeo: el ELF revela el texto por tiempo; el primer click completa.
 - [x] 8. SE: efectos por ADPCM (`audsrv_load_adpcm`), encoder WAV→VAG en el SDK.
 - [x] 11. BGM: el thread de audio alimenta el stream PCM (prioridad + audsrv de un solo thread).
+- [x] 12. ISO booteable: arranca del CD y lee a más de 1 MB/s (datos alineados al sector).
 
 ## Cómo correr
 ```sh

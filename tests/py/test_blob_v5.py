@@ -32,8 +32,20 @@ assert (fw, fh) == (8, 2) and blob[foff:foff + 4] == bytes((7, 8, 9, 255)), blob
 # la cabecera sola alcanza para leer todo menos los datos (lo que hace el ELF)
 r2 = vniso.read_blob(blob[:H])
 assert r2["scenes"] == r["scenes"] and r2["images"] == r["images"] and r2["audios"] == r["audios"]
-# la data no se solapa ni deja huecos: cabecera + imágenes + audios = archivo
-assert H + sum(i[3] for i in r["images"]) + sum(a[1] for a in r["audios"]) == len(blob)
+# Cada dato arranca en un sector de 2048: el driver de cdvd lee sectores enteros, y
+# pedirle un tramo sin alinear lo obliga a dar vueltas de más (166 KB/s medidos en PCSX2).
+for w, h, off, ln in r["images"]:
+    assert off % 2048 == 0, (off, "imagen sin alinear al sector")
+for name, ln, off in r["audios"]:
+    assert off % 2048 == 0, (off, name, "audio sin alinear al sector")
+assert H % 2048 == 0, (H, "la cabecera tiene que terminar en un sector")
+# la data va después de la cabecera y no se solapa (con relleno entre medio)
+ends = sorted([(i[2], i[3]) for i in r["images"]] + [(a[2], a[1]) for a in r["audios"]])
+prev = H
+for off, ln in ends:
+    assert off >= prev, (off, prev, "datos solapados")
+    prev = off + ln
+assert prev <= len(blob)
 # el preset de posición viaja como x (el ELF no conoce left/center/right)
 sh = r["scenes"][0][2]
 assert sh["op"] == "show" and sh["x"] == vn.POS["left"] == -180, sh

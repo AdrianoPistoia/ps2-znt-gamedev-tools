@@ -16,6 +16,10 @@
 #include <malloc.h>
 #include <kernel.h>
 #include <delaythread.h>
+#include <timer.h>
+#include <ps2sdkapi.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include <sbv_patches.h>
 #include <gsKit.h>
 #include <dmaKit.h>
@@ -33,33 +37,53 @@ static VnpDoc doc;                 /* el blob abierto (vnp.c parsea in-place) */
 
 /* --- carga del blob: proba host: (PCSX2), mass: (USB) y cdrom0: (ISO) ---
  * Sólo la CABECERA queda en RAM (v5: head_size); imágenes y audio se leen por
- * demanda con blob_read(). El archivo queda abierto. */
-static FILE *g_file;
+ * demanda con blob_read(). El descriptor queda abierto.
+ *
+ * open/read en vez de fopen/fread: stdio parte el pedido en trozos de su buffer
+ * interno y contra cdrom0 eso da 166 KB/s (un fondo de 1.1 MB tardaba 6.7 s). Con
+ * lecturas directas y alineadas al sector el driver entrega sectores enteros de una. */
+#define SECTOR 2048
+#define SECTOR_UP(n) (((n) + SECTOR - 1) & ~(uint32_t)(SECTOR - 1))
+static int g_fd = -1;
 static uint8_t *load_blob(uint32_t *size)
 {
     const char *paths[] = { "host:ZNTVN.VNP", "mass:ZNTVN.VNP", "cdrom0:\\ZNTVN.VNP;1", 0 };
     for (int i = 0; paths[i]; i++) {
-        FILE *f = fopen(paths[i], "rb");
-        if (!f) continue;
-        uint8_t hdr[12];
-        if (fread(hdr, 1, 12, f) == 12 && !memcmp(hdr, "VNP1", 4)) {
+        int fd = open(paths[i], O_RDONLY);
+        if (fd < 0) continue;
+        uint8_t hdr[16] __attribute__((aligned(64)));
+        if (read(fd, hdr, 16) == 16 && !memcmp(hdr, "VNP1", 4)) {
             uint32_t n = hdr[8] | (hdr[9] << 8) | (hdr[10] << 16) | ((uint32_t)hdr[11] << 24);
-            uint8_t *b = malloc(n);
-            fseek(f, 0, SEEK_SET);
-            if (b && fread(b, 1, n, f) == n) { g_file = f; *size = n; return b; }
+            uint8_t *b = memalign(64, SECTOR_UP(n));
+            if (b && lseek(fd, 0, SEEK_SET) == 0 && read(fd, b, SECTOR_UP(n)) >= (int)n) {
+                g_fd = fd; *size = n; return b;
+            }
             free(b);
         }
-        fclose(f);
+        close(fd);
     }
     return 0;
 }
 
+static u32 g_io_bytes, g_io_ms;      /* cuánto se leyó del medio y cuánto tardó (ver ZNTVN: io) */
+static u32 ms_now(void) { return (u32)((GetTimerSystemTime() >> 8) / (PS2_CLOCKS_PER_SEC / 1000)); }
+
 /* trae `len` bytes del archivo en `off` (buffer alineado a 128 para el GS). NULL si falla. */
 static void *blob_read(uint32_t off, uint32_t len)
 {
-    void *b = memalign(128, len ? len : 1);
+    /* el blob alinea cada dato al sector (ver znt/vniso.py), así que pedimos el
+     * tramo redondeado hacia arriba: siempre sectores enteros, una sola vuelta */
+    uint32_t want = SECTOR_UP(len ? len : 1);
+    uint8_t *b = memalign(128, want);
     if (!b) return 0;
-    if (fseek(g_file, off, SEEK_SET) || fread(b, 1, len, g_file) != len) { free(b); return 0; }
+    u32 t0 = ms_now();
+    if (lseek(g_fd, off, SEEK_SET) != (int)off) { free(b); return 0; }
+    int got = read(g_fd, b, want);                    /* el último dato puede quedar corto: alcanza con len */
+    if (got < (int)len) { free(b); return 0; }
+    u32 dt = ms_now() - t0;
+    g_io_bytes += len; g_io_ms += dt;
+    printf("ZNTVN: io %u bytes en %u ms (%u KB/s acumulado)\n", (unsigned)len, (unsigned)dt,
+           (unsigned)(g_io_ms ? g_io_bytes / g_io_ms * 1000 / 1024 : 0));
     return b;
 }
 

@@ -14,6 +14,10 @@ Formato (little-endian):
     -- scenes --        u32 N ; por cada: u32 nsteps ; por cada step: u8 op + payload
     == head_size ==     de acá en adelante, la data cruda de imágenes y audios (off absoluto)
 
+Cada dato (y la cabecera) arranca en un múltiplo de **2048**, el sector del DVD: el
+driver de cdvd lee sectores enteros, y pedirle un tramo sin alinear lo hace dar vueltas
+de más (166 KB/s medidos en PCSX2 contra >1 MB/s alineado). El relleno son ceros.
+
 v5: la cabecera se lee sola (`head_size`) y cada imagen/audio se trae por demanda con
 su `off`: el ELF no carga el blob entero en RAM. `bg` termina en u16 fade (ms, 0 = corte);
 `anim` lleva i16 x, i16 y (0x7FFF = no dado: esa coordenada no se toca).
@@ -39,6 +43,12 @@ IANIM = {v: k for k, v in ANIM.items()}
 NONE32 = 0xFFFFFFFF
 NONE16 = 0xFFFF
 NOCOORD = 0x7FFF                  # i16 "no dado" en anim (x/y)
+SECTOR = 2048                     # sector de DVD: todo dato arranca en un múltiplo
+
+
+def _up(n):
+    """Redondea hacia arriba al sector."""
+    return (n + SECTOR - 1) // SECTOR * SECTOR
 
 
 def _rgba(hexs):
@@ -181,7 +191,7 @@ def compile_blob(model, base=".", font=None):
             w.u32(pidx[c["name"]]); w.u32(_rgba(c.get("color"))); w.u16(c["_spr"])
         w.u32(len(images))
         for iw, ih, data in images:
-            w.u16(iw); w.u16(ih); w.u8(0); w.u32(len(data)); w.u32(off); off += len(data)
+            w.u16(iw); w.u16(ih); w.u8(0); w.u32(len(data)); w.u32(off); off += _up(len(data))
         if fnt:
             cw, ch, cps, fdata = fnt
             w.u8(1); w.u16(cw); w.u16(ch); w.u32(len(cps))
@@ -192,14 +202,18 @@ def compile_blob(model, base=".", font=None):
             w.u8(0)
         w.u32(len(audios))
         for name_str, data in audios:
-            w.u32(name_str); w.u32(len(data)); w.u32(off); off += len(data)
+            w.u32(name_str); w.u32(len(data)); w.u32(off); off += _up(len(data))
         w.u32(len(order))
         for sb in scene_bytes:
             w.b += sb
         return bytes(w.b)
 
-    h = head(0)                                      # el tamaño no depende de los offsets
-    return head(len(h)) + b"".join(datas)
+    base = _up(len(head(0)))                         # el tamaño no depende de los offsets
+    out = bytearray(head(base))
+    out += b"\0" * (base - len(out))                  # relleno hasta el primer sector de datos
+    for d in datas:
+        out += d; out += b"\0" * (_up(len(d)) - len(d))
+    return bytes(out)
 
 
 def build_iso(elf_path, blob_path, out_iso, name="VN", vmode="NTSC"):
