@@ -18,6 +18,7 @@ have() { command -v "$1" >/dev/null || { echo "falta $1"; return 1; }; }
 
 item 1 "VN Studio: suite completa (core + web + QA de browser, incluye grupos)" tests/run_all.sh
 item 9 "authoring.md documenta todas las ops del .vn"                 python3 tests/py/test_authoring_doc.py
+item 14 "Texto: corte por palabra (test en host)"                      bash -c 'cc -Wall -I ps2 ps2/test_text_host.c ps2/text.c -o "$T/tt" && "$T/tt"' 
 item 2 "ELF: build con ps2dev (docker)"                                bash -c 'have() { command -v "$1" >/dev/null; }; have docker && ps2/build.sh >/dev/null && test -f ps2/ZNTVN.ELF'
 item 3 "ELF: bootea en PCSX2 con la demo (host fs)"                    bash -c "python3 -m znt iso build _demo.vn ps2/ZNTVN.VNP >/dev/null && tests/pcsx2_boot.sh 12"
 item 4 "Blob v5: cabecera sola en RAM, imágenes/audio por demanda"     bash -c "python3 tests/py/test_blob_v5.py && python3 tests/py/mkblob.py '$T' && cc -Wall -I ps2 ps2/test_vnp_host.c ps2/vnp.c -o '$T/tv' && '$T/tv' '$T/k.vnp'"
@@ -35,5 +36,14 @@ item 12 "ISO booteable: arranca del CD y lee a más de 1 MB/s"          bash -c 
   python3 -m znt iso build "$T/iso/f.vn" "$T/g.iso" --elf ps2/ZNTVN.ELF --name ZNTVN >/dev/null &&
   ZNT_ISO="$T/g.iso" tests/pcsx2_boot.sh 30 >/dev/null &&
   kbs=$(grep -a "ZNTVN: io" "$LOG" | tail -1 | sed -E "s/.*\(([0-9]+) KB.*/\1/") &&
-  echo "throughput: $kbs KB/s" && [ "${kbs:-0}" -ge 1000 ]' 
+  echo "throughput: $kbs KB/s" && [ "${kbs:-0}" -ge 1000 ]'
+# Sin joystick no había forma de verificar la ramificación: el ELF en modo autoplay
+# avanza y elige la última opción, así el recorrido pasa por choice, goto y end.
+item 13 "Ramificación: choice, goto entre escenas y end (autoplay)"    bash -c '
+  python3 tests/py/mkchoice.py "$T/ch" >/dev/null &&
+  ZNT_AUTOPLAY=1 tests/pcsx2_boot.sh 20 >/dev/null &&
+  grep -aq "ZNTVN: choice con 2 opciones" "$LOG" &&
+  grep -aq "ZNTVN: elijo 1 -> escena" "$LOG" &&
+  grep -aq "ZNTVN: fin" "$LOG" &&
+  test "$(grep -ac "ZNTVN: escena" "$LOG")" -ge 3' 
 printf '\n\033[1mCHECKLIST COMPLETO: %d ítems ok\033[0m\n' "$PASS"

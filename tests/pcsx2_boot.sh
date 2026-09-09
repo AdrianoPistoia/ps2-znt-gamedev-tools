@@ -10,6 +10,8 @@ SRC=~/.config/PCSX2
 [ -f ps2/ZNTVN.VNP ] || { echo "falta ps2/ZNTVN.VNP (python3 -m znt iso build x.vn ps2/ZNTVN.VNP)"; exit 1; }
 # ZNT_ISO=x.iso bootea ese ISO (lee el blob del CD, no del host: el camino real)
 if [ -n "$ZNT_ISO" ]; then BOOT=(-fastboot "$ZNT_ISO"); else BOOT=(-elf "$PWD/ps2/ZNTVN.ELF"); fi
+# ZNT_AUTOPLAY=1: el player avanza y elige solo, para verificar choice/goto/end sin joystick
+[ -n "$ZNT_AUTOPLAY" ] && BOOT+=(-gameargs autoplay)
 command -v pcsx2-qt >/dev/null || { echo "falta pcsx2-qt"; exit 1; }
 rm -rf "$DP"; mkdir -p "$DP/PCSX2/inis" "$DP/PCSX2/logs"      # -datapath X usa X/PCSX2
 ln -s "$SRC/bios" "$DP/PCSX2/bios"

@@ -422,8 +422,11 @@ typedef struct { int kind; /*1 say,2 choice,3 end*/ VnpStep step; } Block;
 static VnpScene g_sc;
 static Block advance(GSGLOBAL *gs);   /* continúa el cursor actual */
 
+static int g_autoplay;              /* argv "autoplay": avanza y elige solo (para el harness) */
+
 static Block enter_scene(GSGLOBAL *gs, uint32_t scene)
 {
+    printf("ZNTVN: escena %u\n", (unsigned)scene);
     for (int i = 0; i < MAX_LAYERS; i++) if (layers[i].has_tex) free(layers[i].tex.Mem);
     memset(layers, 0, sizeof(layers));                  /* el fondo persiste entre escenas */
     cur_scene = scene;
@@ -467,7 +470,8 @@ static Block advance(GSGLOBAL *gs)
             for (int i = 1; i < MAX_LAYERS; i++) if (layers[i].used && layers[i].chr == s.chr) layers[i].used = 0;
             break;
         case OP_SAY:   blk.kind = 1; blk.step = s; return blk;
-        case OP_CHOICE:blk.kind = 2; blk.step = s; return blk;
+        case OP_CHOICE:blk.kind = 2; blk.step = s;
+                       printf("ZNTVN: choice con %d opciones\n", s.n_opts); return blk;
         case OP_ANIM: {
             Layer *L = 0;
             for (int i = 1; i < MAX_LAYERS; i++) if (layers[i].used && layers[i].chr == s.chr) L = &layers[i];
@@ -564,9 +568,11 @@ static int pad_pressed(u32 *prev)
     u32 now = 0xffff ^ b.btns; u32 hit = now & ~(*prev); *prev = now; return hit;
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
     SifInitRpc(0);
+    for (int i = 1; i < argc; i++) if (argv[i] && !strcmp(argv[i], "autoplay")) g_autoplay = 1;
+    if (g_autoplay) printf("ZNTVN: autoplay\n");
     sbv_patch_enable_lmb(); sbv_patch_disable_prefix_check();   /* para SifExecModuleBuffer */
     uint32_t size = 0; uint8_t *blob = load_blob(&size);
     if (!blob || vnp_open(&doc, blob, size)) { printf("VNP no encontrado/invalido\n"); SleepThread(); }
@@ -597,8 +603,13 @@ int main(void)
     Block blk = enter_scene(gs, doc.start);
     g_choice_sel = 0; g_say_ms = 0;
 
+    int auto_t = 0;
     while (blk.kind != 3) {
         u32 hit = pad_pressed(&prev);
+        if (g_autoplay && ++auto_t >= 45) {          /* ~0.75 s: como si alguien apretara X */
+            auto_t = 0; hit |= PAD_CROSS;
+            if (blk.kind == 2) g_choice_sel = blk.step.n_opts - 1;   /* la última: ejercita goto */
+        }
         if (blk.kind == 1 && (hit & PAD_CROSS)) {          /* click: completa el tipeo; el siguiente avanza */
             VnpStr t = vnp_str(&doc, blk.step.text);
             if (g_say_ms * TYPING_CPS / 1000.0f < text_utf8_count(t.ptr, t.len)) g_say_ms = 1e9f;
@@ -606,7 +617,10 @@ int main(void)
         } else if (blk.kind == 2) {
             if (hit & PAD_UP)   g_choice_sel = (g_choice_sel + blk.step.n_opts - 1) % blk.step.n_opts;
             if (hit & PAD_DOWN) g_choice_sel = (g_choice_sel + 1) % blk.step.n_opts;
-            if (hit & PAD_CROSS) { blk = enter_scene(gs, blk.step.opt_target[g_choice_sel]); g_choice_sel = 0; g_say_ms = 0; }
+            if (hit & PAD_CROSS) {
+                printf("ZNTVN: elijo %d -> escena %u\n", g_choice_sel, (unsigned)blk.step.opt_target[g_choice_sel]);
+                blk = enter_scene(gs, blk.step.opt_target[g_choice_sel]); g_choice_sel = 0; g_say_ms = 0;
+            }
         }
         for (int i = 0; i < MAX_LAYERS; i++) if (layers[i].used) layer_tick(&layers[i], 16.0f);  /* ~60fps */
         g_say_ms += 16.0f;
@@ -620,7 +634,7 @@ int main(void)
         gsKit_queue_exec(gs); gsKit_sync_flip(gs);
         if (++g_frames == 1) printf("ZNTVN: frame OK (escena %u, bloque %d)\n", (unsigned)cur_scene, blk.kind);
     }
-    /* fin */
+    printf("ZNTVN: fin\n");
     while (1) { gsKit_clear(gs, GS_SETREG_RGBAQ(0,0,0,0x80,0)); gsKit_sync_flip(gs); }
     return 0;
 }
