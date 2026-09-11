@@ -1,6 +1,6 @@
-/* Lógica pura del cliente de VN Studio (sin DOM) — testeable con node.
- * El servidor Python manda el LAYOUT de las capas; acá sólo lo traducimos a CSS.
- * Todo en porcentajes: el stage escala solo con su contenedor, sin JS de resize. */
+/* Pure client-side logic for VN Studio (no DOM) — testable with node.
+ * The Python server sends the layer LAYOUT; here we only translate it to CSS.
+ * Everything in percentages: the stage scales with its container, no resize JS. */
 (function (root, factory) {
   const api = factory();
   if (typeof module === "object" && module.exports) module.exports = api;
@@ -8,7 +8,7 @@
 })(typeof self !== "undefined" ? self : this, function () {
   "use strict";
 
-  /* Capa -> CSS. Anclada abajo y centrada en x (mismo criterio que VNRuntime). */
+  /* Layer -> CSS. Anchored at the bottom and centered in x (same rule as VNRuntime). */
   function layerStyle(l, st) {
     const zoom = (l.zoom == null ? 100 : l.zoom) / 100;
     const w = l.w * zoom, h = l.h * zoom;
@@ -29,30 +29,30 @@
     return bg.color || "#000";
   }
 
-  /* Presets de posición (mismos que vnstudio.POS). */
+  /* Position presets (same as vnstudio.POS). */
   const POS = { left: -180, center: 0, right: 180 };
 
-  /* Punto del puntero -> coords del stage (el stage puede estar escalado por CSS). */
+  /* Pointer point -> stage coords (the stage may be scaled by CSS). */
   function stageXY(clientX, clientY, rect, st) {
     return { x: (clientX - rect.left) / rect.width * st.w,
              y: (clientY - rect.top) / rect.height * st.h };
   }
 
-  /* Imán: engancha al objetivo más cercano dentro del umbral. */
+  /* Magnet: snaps to the nearest target within the threshold. */
   function snap(raw, targets, thr) {
     let best = null, bd = thr + 1;
     for (const t of targets) { const d = Math.abs(raw - t); if (d < bd) { best = t; bd = d; } }
     return (best !== null && bd <= thr) ? { v: best, hit: true } : { v: raw, hit: false };
   }
 
-  /* Objetivos de snap: centro, presets y el eje/base de las otras capas. */
+  /* Snap targets: center, presets and the other layers' axis/baseline. */
   function snapTargets(layers, selfId) {
     const others = layers.filter(l => l.id !== selfId);
     return { xs: [0, POS.left, POS.right].concat(others.map(l => l.x)),
              ys: [0].concat(others.map(l => l.y)) };
   }
 
-  /* Soltar en (fx,fy) del stage -> x/y de la capa (respeta zoom y anclaje abajo). */
+  /* Drop at stage (fx,fy) -> layer x/y (respects zoom and bottom anchoring). */
   function dragTo(l, st, grabDX, grabDY, fx, fy) {
     const zoom = (l.zoom == null ? 100 : l.zoom) / 100;
     const w = l.w * zoom, h = l.h * zoom;
@@ -60,11 +60,11 @@
              y: (fy - grabDY) - st.h + h };
   }
 
-  /* --- escenario: qué se dibuja encima --- */
+  /* --- stage: what gets drawn on top --- */
 
-  /* En Play se ve como en el juego. Editando, las opciones se previsualizan sin
-     tapar el escenario (el velo del juego hacía parecer que "se oscurecía solo")
-     y el ojo del viewport apaga los overlays para trabajar con los sprites. */
+  /* In Play it looks like the game. While editing, choices are previewed without
+     covering the stage (the game's scrim made it look like "it darkened by itself")
+     and the viewport eye turns the overlays off to work on the sprites. */
   function stageOverlay(st) {
     const has = (st.choices || []).length > 0;
     if (st.play)
@@ -74,12 +74,12 @@
       return { dialog: false, choices: false, scrim: 0, interactive: false, label: "" };
     return { dialog: !!st.say, choices: has, scrim: has ? 0.22 : 0,
              interactive: false,
-             label: has ? "opciones (previsualización) — ▶ Play para probarlas" : "" };
+             label: has ? "choices (preview) — ▶ Play to try them" : "" };
   }
 
-  /* --- explorador de archivos --- */
+  /* --- file browser --- */
 
-  /* Ruta -> tramos clickeables. */
+  /* Path -> clickable segments. */
   function crumbs(path) {
     if (!path) return [];
     const parts = path.split("/").filter(Boolean);
@@ -92,50 +92,50 @@
 
   /* --- Play --- */
 
-  /* Efecto de tipeo: caracteres visibles a los t ms (cps 0 = todo de una). */
+  /* Typing effect: characters visible at t ms (cps 0 = all at once). */
   function typedChars(text, t, cps) {
     if (!cps) return text.length;
     return Math.min(text.length, Math.floor(t * cps / 1000));
   }
 
-  /* Escena/paso que muestra el timeline: los del runtime mientras se reproduce. */
+  /* Scene/step the timeline shows: the runtime's while playing. */
   function playCursor(S) {
     if (S.play) return { scene: S.play.scene, step: S.play.step, playing: true };
     return { scene: S.scene, step: S.step, playing: false };
   }
 
-  /* --- estado --- */
+  /* --- state --- */
 
-  /* Respuesta del server -> estado nuevo + error a mostrar. Una respuesta rota
-     (400/500 o fetch fallido) no puede dejar a la UI sin modelo. */
+  /* Server response -> new state + error to show. A broken response
+     (400/500 or failed fetch) must not leave the UI without a model. */
   function mergeState(prev, res) {
-    if (!res) return { state: prev, error: "no hubo respuesta del server" };
-    if (!res.model) return { state: prev, error: res.error || "respuesta inesperada" };
+    if (!res) return { state: prev, error: "no response from the server" };
+    if (!res.model) return { state: prev, error: res.error || "unexpected response" };
     return { state: res, error: res.error || null };
   }
 
-  /* --- atajos --- */
+  /* --- shortcuts --- */
 
-  /* Un solo lugar: de acá salen el dispatch y el overlay de ayuda. */
+  /* One place: both the dispatch and the help overlay come from here. */
   const KEYMAP = [
-    { keys: "Espacio",    cmd: "play",     desc: "Play / siguiente paso" },
-    { keys: "Esc",        cmd: "stop",     desc: "Salir del modo Play" },
-    { keys: "←  →",       cmd: "prev",     desc: "Paso anterior / siguiente" },
-    { keys: "Supr",       cmd: "del_step", desc: "Borrar el paso" },
-    { keys: "G",          cmd: "guides",   desc: "Guías: centro / tercios / zona segura" },
-    { keys: "Ctrl+Z",     cmd: "undo",     desc: "Deshacer" },
-    { keys: "Ctrl+Y",     cmd: "redo",     desc: "Rehacer" },
-    { keys: "Ctrl+S",     cmd: "save",     desc: "Guardar el .vn" },
-    { keys: "Ctrl+C / Ctrl+V", cmd: "copy", desc: "Copiar / pegar pasos (también entre escenas)" },
-    { keys: "Ctrl+F",     cmd: "find",     desc: "Buscar en diálogos y opciones" },
-    { keys: "Ctrl+G",     cmd: "group",    desc: "Agrupar los pasos elegidos (un click en Play) / desagrupar" },
-    { keys: "Shift / Ctrl + click", cmd: null, desc: "Selección múltiple en el timeline" },
-    { keys: "?",          cmd: "help",     desc: "Esta ayuda" },
-    { keys: "Shift",      cmd: null,       desc: "Arrastrar sin imán / scrub fino" },
-    { keys: "Ctrl+rueda", cmd: null,       desc: "Zoom del timeline" },
+    { keys: "Space",      cmd: "play",     desc: "Play / next step" },
+    { keys: "Esc",        cmd: "stop",     desc: "Exit Play mode" },
+    { keys: "←  →",       cmd: "prev",     desc: "Previous / next step" },
+    { keys: "Del",        cmd: "del_step", desc: "Delete the step" },
+    { keys: "G",          cmd: "guides",   desc: "Guides: center / thirds / safe area" },
+    { keys: "Ctrl+Z",     cmd: "undo",     desc: "Undo" },
+    { keys: "Ctrl+Y",     cmd: "redo",     desc: "Redo" },
+    { keys: "Ctrl+S",     cmd: "save",     desc: "Save the .vn" },
+    { keys: "Ctrl+C / Ctrl+V", cmd: "copy", desc: "Copy / paste steps (across scenes too)" },
+    { keys: "Ctrl+F",     cmd: "find",     desc: "Search lines and choices" },
+    { keys: "Ctrl+G",     cmd: "group",    desc: "Group the selected steps (one click in Play) / ungroup" },
+    { keys: "Shift / Ctrl + click", cmd: null, desc: "Multi-select in the timeline" },
+    { keys: "?",          cmd: "help",     desc: "This help" },
+    { keys: "Shift",      cmd: null,       desc: "Drag without snapping / fine scrub" },
+    { keys: "Ctrl+wheel", cmd: null,       desc: "Timeline zoom" },
   ];
 
-  /* Tecla -> comando (null si no está mapeada). */
+  /* Key -> command (null if unmapped). */
   function resolveKey(e) {
     const k = e.key, low = k.length === 1 ? k.toLowerCase() : k;
     if (e.ctrlKey || e.metaKey) {
@@ -160,7 +160,7 @@
 
   /* --- inspector --- */
 
-  /* Campo numérico arrastrable: dx en píxeles -> valor. */
+  /* Draggable numeric field: dx in pixels -> value. */
   function scrubValue(v, dx, o) {
     o = o || {};
     const base = (v == null || v === "" || isNaN(v)) ? (o.def == null ? 0 : o.def) : +v;
@@ -172,14 +172,14 @@
 
   /* --- viewport --- */
 
-  /* Arrastrar un handle de esquina (dir: 1 der, -1 izq). La capa está centrada
-     en su x, así que el ancho crece del lado opuesto también: 2*dx. */
+  /* Drag a corner handle (dir: 1 right, -1 left). The layer is centered on
+     its x, so the width grows on the opposite side too: 2*dx. */
   function resizeZoom(l, dir, dx) {
     const z = (l.zoom == null ? 100 : l.zoom);
     return Math.max(10, Math.min(400, Math.round((l.w * z / 100 + 2 * dir * dx) / l.w * 100)));
   }
 
-  /* Guías del viewport, en fracciones del stage. */
+  /* Viewport guides, as fractions of the stage. */
   const GUIDES = ["off", "center", "thirds", "safe"];
   function guides(kind) {
     if (kind === "center") return { xs: [0.5], ys: [0.5], rect: null };
@@ -189,10 +189,10 @@
   }
   const nextGuide = k => GUIDES[(GUIDES.indexOf(k) + 1) % GUIDES.length];
 
-  /* --- grafo de escenas --- */
+  /* --- scene graph --- */
 
-  /* Nodos por profundidad desde `start` (BFS por goto/choice); lo inalcanzable
-     va al final. Devuelve posiciones listas para dibujar. */
+  /* Nodes by depth from `start` (BFS over goto/choice); unreachable ones
+     go last. Returns positions ready to draw. */
   function sceneGraph(model) {
     const edges = [];
     for (const sc of model.order) {
@@ -222,7 +222,7 @@
     return { nodes, edges: edges.filter(e => model.scenes[e.to]) };
   }
 
-  /* --- grupos de pasos (corridas con el mismo `group`) --- */
+  /* --- step groups (runs with the same `group`) --- */
   function groupRuns(steps) {
     const out = []; let cur = null;
     steps.forEach((s, i) => {
@@ -234,10 +234,10 @@
     return out;
   }
 
-  /* --- selección múltiple y búsqueda --- */
+  /* --- multi-select and search --- */
 
-  /* Click en el clip i con la selección actual: simple, Shift = rango desde el
-     ancla, Ctrl = sumar/sacar. Devuelve la selección nueva (ordenada) y el ancla. */
+  /* Click on clip i with the current selection: plain, Shift = range from the
+     anchor, Ctrl = add/remove. Returns the new (sorted) selection and the anchor. */
   function clickSelect(sel, anchor, i, mods) {
     if (mods.shift && anchor >= 0) {
       const a = Math.min(anchor, i), b = Math.max(anchor, i), out = [];
@@ -251,7 +251,7 @@
     return { sel: [i], anchor: i };
   }
 
-  /* Busca en diálogos y etiquetas de opciones, sin distinguir mayúsculas. */
+  /* Searches lines and choice labels, case-insensitive. */
   function searchSteps(model, q) {
     q = (q || "").trim().toLowerCase();
     if (!q) return [];
@@ -268,7 +268,7 @@
 
   /* --- outliner --- */
 
-  /* Capas del escenario, al frente primero. */
+  /* Stage layers, frontmost first. */
   function outlineRows(layers) {
     return layers.slice()
       .sort((a, b) => (b.z - a.z) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
@@ -276,7 +276,7 @@
                    sprite: !!l.url, expr: l.expr || null }));
   }
 
-  /* Índice del `show` que puso esa capa (el último en o antes de `upto`). */
+  /* Index of the `show` that placed that layer (the last one at or before `upto`). */
   function showStepIndex(steps, id, upto) {
     const end = upto >= 0 ? Math.min(upto, steps.length - 1) : steps.length - 1;
     for (let i = end; i >= 0; i--)
@@ -284,40 +284,40 @@
     return -1;
   }
 
-  /* --- timeline: los pasos como clips, en pistas por tipo --- */
+  /* --- timeline: steps as clips, in lanes by type --- */
 
   const LANES = [
-    { key: "fondo",      ops: ["bg"],                  color: "#3d6a8f" },
-    { key: "personajes", ops: ["show", "hide", "animate"], color: "#7a5aa8" },
-    { key: "diálogo",    ops: ["say"],                 color: "#2f7a5f" },
+    { key: "background", ops: ["bg"],                  color: "#3d6a8f" },
+    { key: "characters", ops: ["show", "hide", "animate"], color: "#7a5aa8" },
+    { key: "dialogue",   ops: ["say"],                 color: "#2f7a5f" },
     { key: "audio",      ops: ["bgm", "se"],           color: "#8f6a30" },
-    { key: "flujo",      ops: ["choice", "goto", "end"], color: "#8f4050" },
+    { key: "flow",       ops: ["choice", "goto", "end"], color: "#8f4050" },
   ];
   const laneOf = op => {
     const i = LANES.findIndex(l => l.ops.indexOf(op) >= 0);
-    return i < 0 ? LANES.length - 1 : i;                // lo desconocido: flujo
+    return i < 0 ? LANES.length - 1 : i;                // unknown ops: flow
   };
 
-  /* Rectángulo del clip i (view: ancho de clip, alto de pista y separación). */
+  /* Rectangle of clip i (view: clip width, lane height and gap). */
   function clipRect(step, i, view) {
     const lane = laneOf(step.op);
     return { x: i * view.cw, y: lane * view.lh,
              w: view.cw - view.gap, h: view.lh - view.gap, lane };
   }
 
-  /* Al soltar en x, ¿en qué posición cae? */
+  /* Dropping at x: which position does it land on? */
   function dropIndex(x, view, n) {
     return Math.max(0, Math.min(n - 1, Math.round(x / view.cw)));
   }
 
   /* --- shell --- */
 
-  /* Ancho de un panel al arrastrar el splitter: respeta su mínimo y el del vecino. */
+  /* Pane width while dragging the splitter: respects its minimum and the neighbor's. */
   function clampPane(px, total, min, minOther) {
     return Math.max(min, Math.min(px, total - minOther));
   }
 
-  /* Encajar el stage (aw x ah) dentro del contenedor, centrado y con letterbox. */
+  /* Fit the stage (aw x ah) inside the container, centered and letterboxed. */
   function fitRect(cw, ch, aw, ah) {
     if (cw <= 0 || ch <= 0) return { w: 0, h: 0, left: 0, top: 0, scale: 0 };
     const scale = Math.min(cw / aw, ch / ah), w = aw * scale, h = ah * scale;

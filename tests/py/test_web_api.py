@@ -3,7 +3,7 @@ from znt.web import server as ws
 
 d = tempfile.mkdtemp()
 p = os.path.join(d, "h.vn")
-open(p, "w").write('title: T\ncharacter a "Ana"\nscene s\n  a: hola\n  end\n')
+open(p, "w").write('title: T\ncharacter a "Ana"\nscene s\n  a: hello\n  end\n')
 
 st = ws.Studio(p)
 httpd = ws.make_server(st, "127.0.0.1", 0)
@@ -22,24 +22,24 @@ assert s["model"]["title"] == "T", s["model"]["title"]
 assert s["scene"] == "s" and s["step"] == -1
 n0 = len(s["model"]["scenes"]["s"])
 
-s = post("/api/op", {"op": "add_step", "kind": "say"})          # agregar paso
+s = post("/api/op", {"op": "add_step", "kind": "say"})          # add step
 assert len(s["model"]["scenes"]["s"]) == n0 + 1, s["model"]["scenes"]["s"]
-s = post("/api/op", {"op": "undo"})                              # deshacer
+s = post("/api/op", {"op": "undo"})                              # undo
 assert len(s["model"]["scenes"]["s"]) == n0
-s = post("/api/op", {"op": "redo"})                              # rehacer
+s = post("/api/op", {"op": "redo"})                              # redo
 assert len(s["model"]["scenes"]["s"]) == n0 + 1
 
-s = post("/api/op", {"op": "select", "scene": "s", "step": 0})   # selección
+s = post("/api/op", {"op": "select", "scene": "s", "step": 0})   # selection
 assert s["step"] == 0
-s = post("/api/op", {"op": "set_props", "props": {"text": "chau"}})
-assert s["model"]["scenes"]["s"][0]["text"] == "chau", s["model"]["scenes"]["s"][0]
+s = post("/api/op", {"op": "set_props", "props": {"text": "bye"}})
+assert s["model"]["scenes"]["s"][0]["text"] == "bye", s["model"]["scenes"]["s"][0]
 
-s = post("/api/op", {"op": "validate"})                          # validación
+s = post("/api/op", {"op": "validate"})                          # validation
 assert s["problems"] == [], s["problems"]
-s = post("/api/op", {"op": "save"})                              # guardar .vn
-assert "chau" in open(p, encoding="utf-8").read()
+s = post("/api/op", {"op": "save"})                              # save .vn
+assert "bye" in open(p, encoding="utf-8").read()
 
-assert get("/")["ok"] if False else True                          # index sirve HTML (no JSON)
+assert get("/")["ok"] if False else True                          # index serves HTML (not JSON)
 html = urllib.request.urlopen(B + "/").read().decode()
 assert "<html" in html.lower(), html[:80]
 

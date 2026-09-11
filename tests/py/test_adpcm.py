@@ -1,6 +1,6 @@
-"""Encoder WAV -> ADPCM de SPU2 con la cabecera de 16 bytes que espera audsrv
+"""WAV -> SPU2 ADPCM encoder with the 16-byte header audsrv expects
 (audsrv_load_adpcm): u32 magic, u32 (channels<<8 | loop<<16), u32 pitch, u32 0.
-Los efectos (`se`) del blob van así; el BGM sigue en WAV PCM."""
+The blob's effects (`se`) go this way; the BGM stays PCM WAV."""
 import math, struct
 from znt import adpcm, vn, vniso
 
@@ -18,18 +18,18 @@ assert magic == b"APCM" and (flags >> 8) & 0xFF == 1 and (flags >> 16) & 0xFF ==
 assert pitch == rate * 4096 // 48000, pitch
 body = adp[16:]
 assert len(body) % 16 == 0 and len(body) == 16 * math.ceil(n / 28), len(body)
-assert body[-15] == 1, "el último bloque lleva flag END (1)"
-assert all(body[i + 1] == 0 for i in range(0, len(body) - 16, 16)), "los demás bloques sin flags"
-# round-trip: decodificar como la SPU2 y comparar (SNR alto)
+assert body[-15] == 1, "the last block carries the END flag (1)"
+assert all(body[i + 1] == 0 for i in range(0, len(body) - 16, 16)), "the other blocks have no flags"
+# round-trip: decode as the SPU2 does and compare (high SNR)
 out = adpcm.decode(body)[:n]
 err = sum((a - b) ** 2 for a, b in zip(sine, out)); sig = sum(a * a for a in sine)
 snr = 10 * math.log10(sig / max(err, 1))
 assert snr > 30, f"SNR {snr:.1f} dB"
-# estéreo 44.1k de 16 bits y mono de 8 bits también entran (se mezclan a mono 16)
+# 16-bit 44.1k stereo and 8-bit mono are accepted too (mixed down to 16-bit mono)
 st = wav([v for s in sine for v in (s, -s // 2)], 44100, ch=2)
 assert struct.unpack("<I", adpcm.from_wav(st)[8:12])[0] == 44100 * 4096 // 48000
 assert len(adpcm.from_wav(wav(sine, rate, bits=8))) == len(adp)
-# el blob: `se` va como ADPCM (magic APCM), `bgm` queda WAV
+# the blob: `se` goes as ADPCM (APCM magic), `bgm` stays WAV
 import tempfile, os
 d = tempfile.mkdtemp(); open(f"{d}/g.wav", "wb").write(wav(sine, rate)); open(f"{d}/t.wav", "wb").write(wav(sine, rate))
 m = vn._link_choices(vn.parse('title: T\ncharacter a "A"\nscene s\n  bgm t.wav\n  se g.wav\n  a: h\n  end\n'))

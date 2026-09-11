@@ -5,20 +5,20 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ps2-znt-gamedev-tools"
 version = "0.1.0"
-description = "SDK de ingeniería inversa + VN Studio para el engine de Zero no Tsukaima (PS2, SLPS-25709)"
+description = "Reverse-engineering SDK + VN Studio for the Zero no Tsukaima engine (PS2, SLPS-25709)"
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
-dependencies = []                # stdlib puro; la GUI usa tkinter (viene con CPython)
+dependencies = []                # pure stdlib; the GUI uses tkinter (ships with CPython)
 
 [project.optional-dependencies]
-# El front interactivo (znt.gui) es opcional: no agrega dependencias externas
-# (usa tkinter de la stdlib) y se puede omitir borrando el paquete znt/gui/.
+# The interactive frontend (znt.gui) is optional: it adds no external dependencies
+# (uses stdlib tkinter) and can be left out by deleting the znt/gui/ package.
 gui = []
 
 [project.scripts]
 znt = "znt.__main__:cli_entry"
 
 [tool.setuptools]
-# Core headless = "znt"; front interactivo = "znt.gui" (separable/borrable).
+# Headless core = "znt"; interactive frontend = "znt.gui" (separable/deletable).
 packages = ["znt", "znt.gui"]

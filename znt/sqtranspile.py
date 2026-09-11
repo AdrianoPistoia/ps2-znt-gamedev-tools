@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-"""Transpila el AST de Squirrel (`sqparse`) a Python que corre sobre el runtime
-`sqrt`. Una unidad Squirrel -> Python que opera sobre un root table `R`
-(globals, nativos, builtins).
+"""Transpiles the Squirrel AST (`sqparse`) into Python that runs on the `sqrt`
+runtime. One Squirrel unit -> Python operating on a root table `R`
+(globals, natives, builtins).
 
-Resolución de nombres (en codegen):
-- local/param          -> variable Python
-- miembro de la clase  -> `_get(_this,'x')` / `_set(_this,'x',v)`  (implicit this)
-- lo demás             -> `R['x']`  (global / nativo / builtin)
+Name resolution (in codegen):
+- local/param          -> Python variable
+- class member         -> `_get(_this,'x')` / `_set(_this,'x',v)`  (implicit this)
+- everything else      -> `R['x']`  (global / native / builtin)
 
-Closures y clases: las funciones y lambdas se emiten como `def` anidados en el
-mismo bloque donde se usan (hoisting de `_aux`), para que capturen los locales
-que corresponden. Corrutinas: sin tratamiento especial; `suspend()` suspende el
-SqThread actual vía runtime.
+Closures and classes: functions and lambdas are emitted as nested `def`s in the
+same block where they are used (`_aux` hoisting), so they capture the right
+locals. Coroutines: no special treatment; `suspend()` suspends the current
+SqThread via the runtime.
 
   python -m znt sqtranspile demo | check <dir/> | file <scene.nut>
 """
@@ -31,7 +31,7 @@ class T:
         self.members = None
         self.class_members = {}
         self.tmp = 0
-        self.aux = []          # bloques de defs (líneas a indent 0) pendientes
+        self.aux = []          # pending def blocks (lines at indent 0)
 
     def push(self): self.scopes.append(set())
     def pop(self): self.scopes.pop()
@@ -40,7 +40,7 @@ class T:
     def newtmp(self, p="_t"): self.tmp += 1; return f"{p}{self.tmp}"
 
     def take_aux(self, ind):
-        """Vuelca los defs pendientes, indentados a `ind`, y limpia."""
+        """Flush the pending defs, indented to `ind`, and clear."""
         pad = " " * ind
         out = []
         for block in self.aux:
@@ -48,7 +48,7 @@ class T:
         self.aux = []
         return out
 
-    # nombres ----------------------------------------------------------------
+    # names ------------------------------------------------------------------
     def load(self, name):
         if self.is_local(name): return name
         if self.members is not None and name in self.members:
@@ -61,7 +61,7 @@ class T:
             return f"_set(_this,{name!r},{v})"
         return f"R[{name!r}] = {v}"
 
-    # expresiones ------------------------------------------------------------
+    # expressions ------------------------------------------------------------
     def ex(self, n):
         k = n[0]
         if k == "num": return repr(n[1])
@@ -117,11 +117,11 @@ class T:
 
     def call(self, callee, args):
         a = ", ".join(self.ex(x) for x in args)
-        if callee[0] == "field" and callee[1] == ("base",):   # base.metodo(...)
+        if callee[0] == "field" and callee[1] == ("base",):   # base.method(...)
             return f"_basecall(_this, _cls.base, {callee[2]!r}{', ' + a if a else ''})"
         return f"{self.ex(callee)}({a})"
 
-    # funciones / lambdas: emiten un def en aux y devuelven su nombre ---------
+    # functions / lambdas: emit a def into aux and return its name -----------
     def emit_func(self, params, defs, varg, body, this):
         name = self.newtmp("_fn")
         head = (["_this", "_cls"] if this else []) + \
@@ -167,7 +167,7 @@ class T:
         return out or [" " * ind + "pass"]
 
     def line(self, ind, code):
-        """Una línea de statement, precedida por sus defs auxiliares."""
+        """One statement line, preceded by its auxiliary defs."""
         pre = self.take_aux(ind)
         return pre + [" " * ind + code]
 
@@ -248,7 +248,7 @@ class T:
         else:
             raise NotImplementedError("assign target")
         if as_expr:
-            return code if target[0] != "name" else v   # aprox: como expr, valor
+            return code if target[0] != "name" else v   # approx: as an expr, the value
         return self.line(ind, code)
 
     def for_stmt(self, n, ind):
@@ -320,11 +320,11 @@ def check(dirpath):
         except UnicodeDecodeError: s = b.decode("latin1")
         try:
             py = transpile(s)
-            compile(py, p, "exec")          # además: Python válido
+            compile(py, p, "exec")          # also: valid Python
             ok += 1
         except Exception as e:
             fail += 1; errs.append((p.split("/")[-1], f"{type(e).__name__}: {e}"[:100]))
-    print(f"transpile+compile: {ok}/{len(files)} OK, {fail} fallan")
+    print(f"transpile+compile: {ok}/{len(files)} OK, {fail} failed")
     for name, e in errs[:25]: print(f"  {name}: {e}")
     return fail
 
@@ -340,7 +340,7 @@ def demo():
     """
     py = transpile(src)
     assert "_class('Enemy'" in py and "_get(_this,'hp')" in py, py
-    # ejecución end-to-end de un programa que no depende del juego
+    # end-to-end run of a program that does not depend on the game
     prog = """
     total <- 0;
     function add(a, b) { return a + b; }
@@ -353,7 +353,7 @@ def demo():
     exec(compile(transpile(prog), "<demo>", "exec"), ns)
     assert ns["R"]["total"] == 75, ns["R"]["total"]
     assert ns["R"]["add"](2, 3) == 5
-    # clase con implicit-this corriendo de verdad
+    # class with implicit-this actually running
     prog2 = """
     class Counter { n = 0; function inc() { n = n + 1; return n; } }
     local c = Counter();
@@ -366,7 +366,7 @@ def demo():
 
 
 def sqrt_ns():
-    """Namespace de ejecución: helpers de sqrt + un root table fresco."""
+    """Execution namespace: sqrt helpers + a fresh root table."""
     from . import sqrt
     ns = {k: getattr(sqrt, k) for k in dir(sqrt) if not k.startswith("__")}
     ns["R"] = sqrt.new_root()

@@ -1,13 +1,13 @@
-"""Frente WEB de VN Studio — opcional y separable, igual que `znt.gui`.
+"""WEB front end for VN Studio — optional and detachable, like `znt.gui`.
 
-Sirve el editor por HTTP (stdlib `http.server`): Python sigue siendo la fuente de
-verdad (modelo, assets, curvas, export) y el browser es la vista — compone las
-capas con CSS, así el arrastre y el zoom van a 60fps y la tipografía es la del
-sistema (sin el pantano de Tk/Xft). No duplica el engine.
+Serves the editor over HTTP (stdlib `http.server`): Python remains the source of
+truth (model, assets, curves, export) and the browser is the view — it composes
+the layers with CSS, so dragging and zooming run at 60fps and the typography is
+the system's (none of the Tk/Xft swamp). It does not duplicate the engine.
 
-    python -m znt web [proyecto.vn]
+    python -m znt web [project.vn]
 
-El core headless de `znt` no importa nada de acá: se puede borrar este paquete.
+The headless `znt` core imports nothing from here: this package can be deleted.
 """
 from . import server
 
@@ -16,5 +16,5 @@ Studio = server.Studio
 
 
 def demo():
-    """Self-check del front web (headless)."""
+    """Self-check of the web front end (headless)."""
     server.demo()

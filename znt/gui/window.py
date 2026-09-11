@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Ventana en vivo (tkinter) que reproduce una escena con el `engine` real.
-Frontend interactivo — el core no lo importa. tkinter se importa lazy."""
+"""Live (tkinter) window that plays a scene with the real `engine`.
+Interactive frontend — the core does not import it. tkinter is imported lazily."""
 import base64
 
 from ..engine import Engine
 
 
 class TkWindow:
-    """Frontend en vivo. Requiere un display. No lo importa el engine."""
+    """Live frontend. Requires a display. The engine does not import it."""
     def __init__(self, engine, scale=1, fps=60):
         self.e = engine; self.scale = scale; self.dt = 1000 // fps
         self._img = None; self._dirty = True
@@ -15,7 +15,7 @@ class TkWindow:
     def _present(self, canvas, item):
         import tkinter as tk
         fb = self.e.frame()
-        self._img = tk.PhotoImage(data=base64.b64encode(fb.png_bytes(1)))   # nivel 1: encode rápido
+        self._img = tk.PhotoImage(data=base64.b64encode(fb.png_bytes(1)))   # level 1: fast encode
         if self.scale > 1:
             self._img = self._img.zoom(self.scale)
         canvas.itemconfig(item, image=self._img)
@@ -41,7 +41,7 @@ class TkWindow:
             if self.e.done:
                 return
             self.e.tick(self.dt)
-            if self.e.animating() or self._dirty:      # en reposo no re-renderiza
+            if self.e.animating() or self._dirty:      # idle: no re-render
                 self._present(canvas, item); self._dirty = False
             root.after(self.dt, loop)
         loop()

@@ -1,26 +1,26 @@
 #!/usr/bin/env python3
-"""Runtime del código Squirrel transpilado a Python.
+"""Runtime for Squirrel code transpiled to Python.
 
-El transpilador (`sqtranspile`) emite Python que llama a estos helpers. Se modela
-el sistema de objetos de Squirrel en runtime (tablas, clases, instancias) en vez
-de mapear a clases nativas de Python, porque Squirrel resuelve identificadores
-libres contra `this` y hereda campos+constructor de forma que no calza con el MRO
-de Python. Las corrutinas son stackful (suspenden a través de llamadas
-anidadas), así que se implementan con `threading`, no con generators.
+The transpiler (`sqtranspile`) emits Python that calls these helpers. Squirrel's
+object system (tables, classes, instances) is modelled at runtime instead of
+mapping onto native Python classes, because Squirrel resolves free identifiers
+against `this` and inherits fields+constructor in a way that does not fit
+Python's MRO. Coroutines are stackful (they suspend through nested calls), so
+they are implemented with `threading`, not generators.
 
-Convenciones del código generado:
-- tablas Squirrel  -> `Table` (dict ordenado con acceso por slot)
-- arrays           -> list de Python
-- clases           -> `SqClass`; instancias -> `SqInstance`
-- acceso a miembro -> `_get(o,k)` / `_set(o,k,v)` / `_newslot(o,k,v)`
+Conventions of the generated code:
+- Squirrel tables  -> `Table` (ordered dict with slot access)
+- arrays           -> Python list
+- classes          -> `SqClass`; instances -> `SqInstance`
+- member access    -> `_get(o,k)` / `_set(o,k,v)` / `_newslot(o,k,v)`
 - `k in cont`      -> `_in(k,cont)`
-- llamada          -> Python normal; los métodos ya vienen ligados a `this`
+- call             -> plain Python; methods come already bound to `this`
 """
 import math, threading
 
 
 class Table(dict):
-    """Tabla de Squirrel: dict ordenado con acceso por atributo para el repr."""
+    """Squirrel table: ordered dict with attribute-style repr."""
     def __repr__(self): return "{" + ", ".join(f"{k}={v!r}" for k, v in self.items()) + "}"
 
 
@@ -29,8 +29,8 @@ class SqClass:
         self.name, self.base, self.fields, self.methods = name, base, fields, methods
 
     def method(self, key):
-        """Devuelve (fn, clase_definidora) o None. La clase definidora es la que
-        se pasa como _cls al método, para que `base` haga el super-call correcto."""
+        """Return (fn, defining_class) or None. The defining class is what gets
+        passed as _cls to the method, so `base` makes the right super-call."""
         c = self
         while c is not None:
             if key in c.methods:
@@ -47,7 +47,7 @@ class SqClass:
         while c is not None:
             chain.append(c.fields); c = c.base
         out = {}
-        for f in reversed(chain):        # base primero, derivada pisa
+        for f in reversed(chain):        # base first, derived overrides
             out.update(f)
         return out
 
@@ -74,7 +74,7 @@ class _SqError(Exception):
 
 
 def _truth(x):
-    """Falsy en Squirrel: null, false, 0, 0.0. El string vacío es TRUE."""
+    """Falsy in Squirrel: null, false, 0, 0.0. The empty string is TRUE."""
     if x is None or x is False: return False
     if isinstance(x, (int, float)) and x == 0: return False
     return True
@@ -100,7 +100,7 @@ def _mul(a, b): return a * b
 def _div(a, b):
     if isinstance(a, int) and isinstance(b, int):
         q = abs(a) // abs(b)
-        return q if (a < 0) == (b < 0) else -q      # trunca hacia cero (C)
+        return q if (a < 0) == (b < 0) else -q      # truncates toward zero (C)
     return a / b
 
 
@@ -121,10 +121,10 @@ def _clone(x):
 
 
 def _basecall(this, base_cls, name, *args):
-    """base.metodo(...): busca `name` desde la clase base con `this` actual."""
+    """base.method(...): look up `name` from the base class with the current `this`."""
     m = base_cls.method(name)
     if m is None:
-        raise AttributeError(f"base no tiene '{name}'")
+        raise AttributeError(f"base has no '{name}'")
     fn, defcls = m
     return fn(this, defcls, *args)
 
@@ -201,13 +201,13 @@ def _get(o, key):
         m = o.cls.method(key)
         if m is not None:
             return BoundMethod(o, m[0], m[1])
-        raise AttributeError(f"{o.cls.name} no tiene '{key}'")
+        raise AttributeError(f"{o.cls.name} has no '{key}'")
     if isinstance(o, SqClass):
         m = o.method(key)
         return BoundMethod(None, m[0], m[1]) if m else None
     if isinstance(o, Table):
         if key in o: return o[key]
-        raise KeyError(f"tabla sin slot '{key}'")
+        raise KeyError(f"table has no slot '{key}'")
     if isinstance(o, list):
         if isinstance(key, int): return o[key]
         d = _arr_delegate(o, key)
@@ -219,7 +219,7 @@ def _get(o, key):
     if isinstance(o, (int, float)):
         d = _num_delegate(o, key)
         if d: return d
-    # objeto host nativo (Layer, MessageWindow, disc...): atributo Python
+    # native host object (Layer, MessageWindow, disc...): Python attribute
     return getattr(o, key)
 
 
@@ -255,7 +255,7 @@ def _in(key, cont):
 
 
 def _iter(cont):
-    """foreach: devuelve pares (clave, valor)."""
+    """foreach: return (key, value) pairs."""
     if isinstance(cont, SqInstance): cont = cont.slots
     if isinstance(cont, (Table, dict)): return list(cont.items())
     if isinstance(cont, (list, tuple)): return list(enumerate(cont))
@@ -277,15 +277,15 @@ def _typeof(x):
     return "instance"
 
 
-# --- corrutinas stackful (threading) ----------------------------------------
+# --- stackful coroutines (threading) ----------------------------------------
 class SqThread:
-    """Corrutina stackful: corre el cuerpo en un hilo y sincroniza con eventos.
-    Modela newthread/call/wakeup/suspend/getstatus de Squirrel."""
+    """Stackful coroutine: runs the body in a thread and syncs with events.
+    Models Squirrel's newthread/call/wakeup/suspend/getstatus."""
     def __init__(self, fn):
         self.fn = fn
         self._resume = threading.Event()
         self._yielded = threading.Event()
-        self._val = None          # valor que viaja en cada handoff
+        self._val = None          # value carried across each handoff
         self._status = "idle"
         self._thread = None
 
@@ -336,11 +336,11 @@ _thread_local = threading.local()
 def _suspend(val=None):
     cur = getattr(_thread_local, "current", None)
     if cur is None:
-        raise RuntimeError("suspend fuera de una corrutina")
+        raise RuntimeError("suspend outside a coroutine")
     return cur._suspend(val)
 
 
-# --- builtins de Squirrel / SqPlus estándar ---------------------------------
+# --- standard Squirrel / SqPlus builtins ------------------------------------
 def _format(fmt, *args):
     return fmt % args if args else fmt
 
@@ -368,14 +368,14 @@ ROOT = {
 
 
 def new_root():
-    """Un roottable fresco (Table) con los builtins."""
+    """A fresh root table (Table) with the builtins."""
     t = Table()
     t.update(ROOT)
     return t
 
 
 def demo():
-    # clase con herencia + implicit this + delegates + foreach
+    # class with inheritance + implicit this + delegates + foreach
     Base = SqClass("Base", None, {"hp": lambda: 10}, {})
     def ctor(this, cls, n): this.slots["name"] = n
     def hit(this, cls, d): this.slots["hp"] = _get(this, "hp") - d; return _get(this, "hp") <= 0
@@ -392,7 +392,7 @@ def demo():
     assert _get("hola", "toupper")() == "HOLA"
     assert _in("hp", o) and not _in("zzz", o)
     assert [v for _, v in _iter([9, 8])] == [9, 8]
-    # corrutina stackful: suspende dentro de una función anidada
+    # stackful coroutine: suspends inside a nested function
     log = []
     def inner(t): log.append("a"); _suspend(1); log.append("b"); _suspend(2); return 3
     th = SqThread(lambda: inner(0))

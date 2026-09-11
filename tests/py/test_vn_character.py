@@ -1,4 +1,4 @@
-"""La línea `character` acepta el color con color= o suelto al final."""
+"""The `character` line accepts the color as color= or bare at the end."""
 from znt import vn
 
 m = vn.parse('title: T\n'
@@ -10,6 +10,6 @@ assert m["characters"]["a"] == {"name": "Ana", "color": "#7cc4ff"}, m["character
 assert m["characters"]["b"] == {"name": "Leo", "color": "#f0a92e"}, m["characters"]["b"]
 assert m["characters"]["c"]["name"] == "Cy" and m["characters"]["c"]["color"] == "#cccccc"
 
-# ida y vuelta: lo que escribimos se vuelve a leer igual
+# round-trip: what we write reads back the same
 assert vn.parse(vn.to_text(m))["characters"] == m["characters"]
 print("CHARACTER GREEN")

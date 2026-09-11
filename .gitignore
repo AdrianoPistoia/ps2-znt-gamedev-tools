@@ -1,7 +1,7 @@
 __pycache__/
 *.pyc
 
-# Nunca versionar assets del juego ni el ejecutable
+# Never version game assets or the executable
 *.HD
 *.BIN
 *.iso
@@ -19,7 +19,7 @@ work/
 build/
 dist/
 
-# build C (PS2)
+# C build (PS2)
 ps2/*.o
 ps2/*.ELF
 ps2/test_vnp

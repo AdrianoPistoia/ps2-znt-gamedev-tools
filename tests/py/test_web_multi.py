@@ -1,36 +1,36 @@
-"""Varios pasos a la vez: pegar y borrar en un solo op (un solo undo)."""
+"""Several steps at once: paste and delete in a single op (a single undo)."""
 import tempfile, os
 from znt.web import server as ws
 d = tempfile.mkdtemp(); p = os.path.join(d, "h.vn")
 open(p, "w", encoding="utf-8").write(
-    'title: T\ncharacter a "Ana"\nscene s\n  a: uno\n  a: dos\n  a: tres\n  a: cuatro\n  end\n'
+    'title: T\ncharacter a "Ana"\nscene s\n  a: one\n  a: two\n  a: three\n  a: four\n  end\n'
     'scene t\n  end\n')
 st = ws.Studio(p)
 txt = lambda sc="s": [x.get("text", x["op"]) for x in st.model["scenes"][sc]]
 
-# pegar después del paso elegido (copias independientes)
+# paste after the selected step (independent copies)
 st.op({"op": "select", "scene": "s", "step": 1})
 clip = [{"op": "say", "who": "a", "text": "X"}, {"op": "say", "who": "a", "text": "Y"}]
 st.op({"op": "paste_steps", "steps": clip})
-assert txt() == ["uno", "dos", "X", "Y", "tres", "cuatro", "end"], txt()
-assert st.state()["step"] == 3, "queda seleccionado el último pegado"
-clip[0]["text"] = "mutado"
-assert txt()[2] == "X", "lo pegado no comparte referencia con el portapapeles"
+assert txt() == ["one", "two", "X", "Y", "three", "four", "end"], txt()
+assert st.state()["step"] == 3, "the last pasted step stays selected"
+clip[0]["text"] = "mutated"
+assert txt()[2] == "X", "pasted steps do not share a reference with the clipboard"
 st.op({"op": "undo"})
-assert txt() == ["uno", "dos", "tres", "cuatro", "end"], "un solo undo"
+assert txt() == ["one", "two", "three", "four", "end"], "a single undo"
 
-# pegar en otra escena (portapapeles entre escenas)
+# paste into another scene (clipboard across scenes)
 st.op({"op": "select", "scene": "t", "step": -1})
 st.op({"op": "paste_steps", "steps": clip})
-assert txt("t") == ["end", "mutado", "Y"], "sin paso elegido va al final"
+assert txt("t") == ["end", "mutated", "Y"], "with no step selected it goes at the end"
 
-# borrar varios
+# delete several
 st.op({"op": "select", "scene": "s", "step": 0})
 st.op({"op": "del_steps", "indices": [0, 2, 99]})
-assert txt() == ["dos", "cuatro", "end"], txt()
+assert txt() == ["two", "four", "end"], txt()
 assert 0 <= st.state()["step"] < 3
 st.op({"op": "undo"})
-assert txt() == ["uno", "dos", "tres", "cuatro", "end"]
-r = st.op({"op": "paste_steps", "steps": [{"op": "nada"}]})
-assert r.get("error"), "un paso inválido se rechaza"
+assert txt() == ["one", "two", "three", "four", "end"]
+r = st.op({"op": "paste_steps", "steps": [{"op": "nothing"}]})
+assert r.get("error"), "an invalid step is rejected"
 print("MULTI GREEN")

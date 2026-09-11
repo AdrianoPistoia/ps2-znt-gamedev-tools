@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Contenedor .HD/.BIN de Zero no Tsukaima (SLPS-25709).
+""".HD/.BIN container of Zero no Tsukaima (SLPS-25709).
 
-Formato: X.HD es un uint32[] little-endian de tamanos. X.BIN es la
-concatenacion de las entradas, cada una rellenada a 2048 bytes.
-Verificado byte-exacto en los cinco pares del disco.
+Format: X.HD is a little-endian uint32[] of sizes. X.BIN is the concatenation
+of the entries, each padded to 2048 bytes. Verified byte-exact on the five
+pairs of the disc.
 
-`Container` envuelve un par .HD/.BIN y da acceso perezoso a cada entrada, en
-crudo (comprimida) o descomprimida, mas repack: las entradas intactas se
-reescriben byte-a-byte y solo las modificadas se recodifican con el compresor
-'store' de `codec`.
+`Container` wraps an .HD/.BIN pair and gives lazy access to each entry, raw
+(compressed) or decompressed, plus repack: untouched entries are rewritten
+byte-for-byte and only modified ones are re-encoded with the 'store'
+compressor from `codec`.
 """
 import os, struct, glob
 
@@ -19,12 +19,12 @@ SECTOR = 2048
 
 def sizes(hd):
     d = open(hd, "rb").read()
-    assert len(d) % 4 == 0, f"{hd}: tamano no multiplo de 4"
+    assert len(d) % 4 == 0, f"{hd}: size not a multiple of 4"
     return list(struct.unpack(f"<{len(d)//4}I", d))
 
 
 def read_entries(hd, bn):
-    """Lee el par a una lista de entradas crudas (comprimidas), sin padding."""
+    """Reads the pair into a list of raw (compressed) entries, without padding."""
     sz = sizes(hd)
     out = []
     with open(bn, "rb") as f:
@@ -33,12 +33,12 @@ def read_entries(hd, bn):
             f.seek(off)
             out.append(f.read(s))
             off += -(-s // SECTOR) * SECTOR
-    assert off == os.path.getsize(bn), f"sobran/faltan bytes: {off} vs {os.path.getsize(bn)}"
+    assert off == os.path.getsize(bn), f"extra/missing bytes: {off} vs {os.path.getsize(bn)}"
     return out
 
 
 def write_entries(entries, hd, bn):
-    """Reescribe el par desde una lista de entradas crudas."""
+    """Rewrites the pair from a list of raw entries."""
     with open(bn, "wb") as f:
         for d in entries:
             f.write(d + b"\0" * (-len(d) % SECTOR))
@@ -50,27 +50,27 @@ def unpack(hd, bn, out):
     entries = read_entries(hd, bn)
     for i, e in enumerate(entries):
         open(f"{out}/{i:04d}.bin", "wb").write(e)
-    print(f"{len(entries)} entradas -> {out}/")
+    print(f"{len(entries)} entries -> {out}/")
 
 
 def pack(src, hd, bn):
     files = sorted(glob.glob(f"{src}/*.bin"))
-    assert files, f"{src}: sin entradas"
+    assert files, f"{src}: no entries"
     write_entries([open(p, "rb").read() for p in files], hd, bn)
-    print(f"{len(files)} entradas -> {hd} + {bn} ({os.path.getsize(bn)} bytes)")
+    print(f"{len(files)} entries -> {hd} + {bn} ({os.path.getsize(bn)} bytes)")
 
 
 def info(hd, bn):
     sz = sizes(hd)
     padded = sum(-(-s // SECTOR) * SECTOR for s in sz)
     real = os.path.getsize(bn)
-    print(f"entradas   {len(sz)}")
-    print(f"tamanos    min={min(sz)} max={max(sz)} suma={sum(sz)}")
-    print(f"con padding {padded} | .BIN real {real} | {'OK' if padded == real else 'MISMATCH'}")
+    print(f"entries    {len(sz)}")
+    print(f"sizes      min={min(sz)} max={max(sz)} sum={sum(sz)}")
+    print(f"padded {padded} | actual .BIN {real} | {'OK' if padded == real else 'MISMATCH'}")
 
 
 def kind(data):
-    """Clasifica una entrada ya descomprimida por su contenido."""
+    """Classifies an already-decompressed entry by its content."""
     if not data:
         return "empty"
     if data[:4] == b"TIM2":
@@ -79,28 +79,28 @@ def kind(data):
         return "bmp"
     try:
         data.decode("cp932")
-        return "text"        # fuente Squirrel o tabla de strings
+        return "text"        # Squirrel source or string table
     except UnicodeDecodeError:
         return "binary"
 
 
 class Container:
-    """Un par .HD/.BIN. `c[i]` da la entrada i descomprimida (bytes)."""
+    """An .HD/.BIN pair. `c[i]` gives entry i decompressed (bytes)."""
 
     def __init__(self, hd, bn):
         self.hd, self.bn = hd, bn
         self._raw = read_entries(hd, bn)
-        self._staged = {}       # i -> bytes descomprimidos pendientes de repack
+        self._staged = {}       # i -> decompressed bytes pending repack
 
     def __len__(self):
         return len(self._raw)
 
     def raw(self, i):
-        """Entrada cruda (comprimida) tal como esta en el .BIN."""
+        """Raw (compressed) entry exactly as it is in the .BIN."""
         return self._raw[i]
 
     def data(self, i):
-        """Entrada descomprimida. Lanza si el codec falla."""
+        """Decompressed entry. Raises if the codec fails."""
         if i in self._staged:
             return self._staged[i]
         if len(self._raw[i]) < 8:
@@ -117,12 +117,12 @@ class Container:
         return self.data(int(i))
 
     def set(self, i, data):
-        """Reemplaza el contenido descomprimido de la entrada i (para repack)."""
+        """Replaces the decompressed content of entry i (for repack)."""
         self._staged[int(i)] = bytes(data)
 
     def repack(self, hd=None, bn=None):
-        """Reescribe el par. Entradas intactas byte-a-byte; las modificadas via
-        compress_store. Si no se dan rutas, sobreescribe el par original."""
+        """Rewrites the pair. Untouched entries byte-for-byte; modified ones via
+        compress_store. If no paths are given, overwrites the original pair."""
         entries = list(self._raw)
         for i, data in self._staged.items():
             entries[i] = codec.compress_store(data)
@@ -132,7 +132,7 @@ class Container:
 
 
 def demo():
-    """Self-check: read/write y repack (con set) son consistentes."""
+    """Self-check: read/write and repack (with set) are consistent."""
     import tempfile, shutil
     d = tempfile.mkdtemp()
     try:
@@ -147,9 +147,9 @@ def demo():
         c.set(0, b"chau mundo")
         c.repack()
         c2 = Container(hd, bn)
-        assert c2.data(0) == b"chau mundo"      # modificada
-        assert c2.data(2) == b"x" * 5000        # intacta
-        assert c2.raw(2) == blobs[2]            # intacta byte-a-byte
+        assert c2.data(0) == b"chau mundo"      # modified
+        assert c2.data(2) == b"x" * 5000        # untouched
+        assert c2.raw(2) == blobs[2]            # untouched byte-for-byte
         print("demo OK")
     finally:
         shutil.rmtree(d)

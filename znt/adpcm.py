@@ -1,10 +1,10 @@
-"""ADPCM de la SPU2 (PS1/PS2 "VAG") desde WAV PCM, con la cabecera de 16 bytes que
-espera `audsrv_load_adpcm`: u32 "APCM" | u32 channels<<8 | loop<<16 | u32 pitch | u32 0.
-Los `se` del blob van en este formato (un canal de la SPU2 cada uno, encima del BGM).
+"""SPU2 ADPCM (PS1/PS2 "VAG") from PCM WAV, with the 16-byte header that
+`audsrv_load_adpcm` expects: u32 "APCM" | u32 channels<<8 | loop<<16 | u32 pitch | u32 0.
+The blob's `se` entries use this format (one SPU2 channel each, on top of the BGM).
 
-Bloque: 16 bytes = u8 (shift | filter<<4), u8 flags, 14 bytes = 28 nibbles (bajo primero).
-Decodificado: s = (nibble<<12 >> shift) + (s1*c0 + s2*c1 + 32) >> 6, con 5 filtros fijos.
-Sólo stdlib. Self-check: `python3 -m znt.adpcm`."""
+Block: 16 bytes = u8 (shift | filter<<4), u8 flags, 14 bytes = 28 nibbles (low first).
+Decoded: s = (nibble<<12 >> shift) + (s1*c0 + s2*c1 + 32) >> 6, with 5 fixed filters.
+Stdlib only. Self-check: `python3 -m znt.adpcm`."""
 import struct
 
 FILTERS = ((0, 0), (60, 0), (115, -52), (98, -55), (122, -60))
@@ -16,7 +16,7 @@ def _clamp(v):
 
 
 def _encode_block(xs, s1, s2, f, sh):
-    """Codifica 28 muestras con filtro f y shift sh. Devuelve (nibbles, s1, s2, error²)."""
+    """Encodes 28 samples with filter f and shift sh. Returns (nibbles, s1, s2, error²)."""
     c0, c1 = FILTERS[f]; step = 1 << (12 - sh); nibs = []; err = 0
     for x in xs:
         pred = (s1 * c0 + s2 * c1 + 32) >> 6
@@ -30,14 +30,14 @@ def _encode_block(xs, s1, s2, f, sh):
 
 
 def encode(samples):
-    """Muestras mono de 16 bits -> bloques ADPCM (sin cabecera). El último lleva flag END."""
+    """16-bit mono samples -> ADPCM blocks (no header). The last one carries the END flag."""
     out = bytearray(); s1 = s2 = 0
     blocks = [samples[i:i + 28] for i in range(0, len(samples), 28)] or [[]]
     for bi, blk in enumerate(blocks):
         xs = list(blk) + [0] * (28 - len(blk))
         best = None
         for f, (c0, c1) in enumerate(FILTERS):
-            # shift estimado por el residuo máximo con la historia real, y el vecino por si acaso
+            # shift estimated from the max residual with the real history, plus the neighbor just in case
             p1, p2 = s1, s2; mx = 1
             for x in xs:
                 pred = (p1 * c0 + p2 * c1 + 32) >> 6; r = abs(x - pred); mx = max(mx, r); p2, p1 = p1, x
@@ -47,14 +47,14 @@ def encode(samples):
                 nibs, n1, n2, err = _encode_block(xs, s1, s2, f, s)
                 if best is None or err < best[0]: best = (err, f, s, nibs, n1, n2)
         _, f, sh, nibs, s1, s2 = best
-        flags = 1 if bi == len(blocks) - 1 else 0             # END en el último bloque (one-shot)
+        flags = 1 if bi == len(blocks) - 1 else 0             # END on the last block (one-shot)
         out += bytes([sh | (f << 4), flags])
         out += bytes(nibs[i] | (nibs[i + 1] << 4) for i in range(0, 28, 2))
     return bytes(out)
 
 
 def decode(body):
-    """Bloques ADPCM -> muestras (como la SPU2). Para verificación."""
+    """ADPCM blocks -> samples (as the SPU2 does). For verification."""
     out = []; s1 = s2 = 0
     for i in range(0, len(body) - 15, 16):
         sh = body[i] & 0xF; c0, c1 = FILTERS[(body[i] >> 4) & 7]
@@ -67,26 +67,26 @@ def decode(body):
 
 
 def wav_pcm(data):
-    """WAV PCM (8/16 bits, 1..N canales) -> (rate, muestras mono de 16 bits)."""
+    """PCM WAV (8/16 bits, 1..N channels) -> (rate, 16-bit mono samples)."""
     if data[:4] != b"RIFF" or data[8:12] != b"WAVE":
-        raise ValueError("no es WAV")
+        raise ValueError("not a WAV")
     i = 12; fmt = None; pcm = b""
     while i + 8 <= len(data):
         tag, sz = data[i:i + 4], struct.unpack_from("<I", data, i + 4)[0]
         if tag == b"fmt ": fmt = struct.unpack_from("<HHIIHH", data, i + 8)
         elif tag == b"data": pcm = data[i + 8:i + 8 + sz]
         i += 8 + sz + (sz & 1)
-    if not fmt or fmt[0] != 1: raise ValueError("WAV no PCM")
+    if not fmt or fmt[0] != 1: raise ValueError("non-PCM WAV")
     ch, rate, bits = fmt[1], fmt[2], fmt[5]
     if bits == 16: s = struct.unpack(f"<{len(pcm) // 2}h", pcm[:len(pcm) // 2 * 2])
     elif bits == 8: s = [(b - 128) << 8 for b in pcm]
-    else: raise ValueError(f"WAV de {bits} bits")
+    else: raise ValueError(f"{bits}-bit WAV")
     if ch > 1: s = [sum(s[k:k + ch]) // ch for k in range(0, len(s) - ch + 1, ch)]
     return rate, list(s)
 
 
 def from_wav(data, loop=False):
-    """WAV PCM -> .adp de audsrv (cabecera + bloques)."""
+    """PCM WAV -> audsrv .adp (header + blocks)."""
     rate, s = wav_pcm(data)
     pitch = min(rate * 4096 // 48000, 0x3FFF)
     return MAGIC + struct.pack("<III", (1 << 8) | (int(loop) << 16), pitch, 0) + encode(s)

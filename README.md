@@ -1,122 +1,122 @@
 # ps2-znt-gamedev-tools
 
-SDK de ingeniería inversa para el engine de **Zero no Tsukaima: Koakuma to
-Harukaze no Concerto** (PS2, `SLPS-25709`, Marvelous Interactive, 2006). Abre los
-datos del juego, expone sus sistemas de forma tipada y documenta la API que el
-motor da a los scripts — la base para reimplementar el engine fuera de la consola.
+Reverse-engineering SDK for the engine of **Zero no Tsukaima: Koakuma to
+Harukaze no Concerto** (PS2, `SLPS-25709`, Marvelous Interactive, 2006). It opens
+the game data, exposes its systems in typed form and documents the API the engine
+gives to the scripts — the groundwork for reimplementing the engine off-console.
 
-Todo es **Python de stdlib, sin dependencias**. Cada módulo trae un self-check
-sintético que no depende de tener el juego: `python3 -m znt demo`.
+Everything is **stdlib Python, no dependencies**. Every module ships a synthetic
+self-check that does not need the game: `python3 -m znt demo`.
 
-**Instalación** (opcional; deja el comando `znt` en el PATH):
+**Install** (optional; puts the `znt` command on the PATH):
 
 ```sh
-pip install -e .          # editable; requiere Python 3.9+ (tkinter para el editor)
-znt demo                  # desde cualquier carpeta
-znt studio               # abre VN Studio
+pip install -e .          # editable; needs Python 3.9+ (tkinter for the editor)
+znt demo                  # from any folder
+znt studio               # opens VN Studio
 ```
-Sin instalar: `python3 -m znt <grupo> ...` desde la raíz del repo.
+Without installing: `python3 -m znt <group> ...` from the repo root.
 
-> **Legal.** Herramientas y notas de formato para interoperabilidad. No se
-> distribuye ningún asset del juego; el `.gitignore` los excluye. Cualquier
-> resultado se publica como parche binario, nunca como ISO.
+> **Legal.** Tools and format notes for interoperability. No game asset is
+> distributed; the `.gitignore` excludes them. Any result is published as a
+> binary patch, never as an ISO.
 
 ---
 
-## El roadmap: capa 2 → 1 → 3
+## The roadmap: layer 2 → 1 → 3
 
-El engine se saca en tres capas apiladas. Este repo cubre la **2** y la **2b**.
+The engine comes out in three stacked layers. This repo covers **2** and **2b**.
 
 ```
-┌───────────────────────────────────────────────┐
-│  3. Autoría   crear una VN nueva (player PC)     │  ✅ DSL .vn -> player HTML
-├───────────────────────────────────────────────┤
-│  1. Runtime   correr las escenas en la PC       │  ✅ ventana en vivo +
-│     VM Squirrel + render TIM2/fuente + animación│     animación (frontend aparte)
-├───────────────────────────────────────────────┤
-│  2. Acceso    abrir/inspeccionar/modificar/repack│  ✅
-│     contenedor, codec, TIM2, fuente             │
-└───────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────┐
+│  3. Authoring  create a new VN (PC player)       │  ✅ .vn DSL -> HTML player
+├──────────────────────────────────────────────────┤
+│  1. Runtime    run the scenes on the PC          │  ✅ live window +
+│     Squirrel VM + TIM2/font render + animation   │     animation (separate frontend)
+├──────────────────────────────────────────────────┤
+│  2. Access     open/inspect/modify/repack        │  ✅
+│     container, codec, TIM2, font                 │
+└──────────────────────────────────────────────────┘
 ```
 
-- **Capa 2** — librería `znt` de acceso a datos. Lee y escribe todos los formatos,
-  no ejecuta la lógica del juego.
-- **Capa 2b** — la API del engine hacia los scripts, mapeada en
-  [`docs/engine_api.md`](docs/engine_api.md). Es el insumo de la capa 1.
-- **Capa 1** — runtime off-console. La fuente Squirrel se **transpila a Python**
-  (`sqparse` → `sqtranspile`) y corre sobre `sqrt` (modelo de objetos, corrutinas
-  stackful); `render` dibuja capas TIM2 + texto con la fuente; `sqrun` implementa
-  los comandos de escena (`set`/`talk`/`reset`/`next`...) y compone frames.
-  **1920/1920 escenas transpilan y compilan**; una escena real corre y se dibuja:
+- **Layer 2** — the `znt` data-access library. Reads and writes every format,
+  does not run game logic.
+- **Layer 2b** — the engine's API towards the scripts, mapped in
+  [`docs/engine_api.md`](docs/engine_api.md). It is the input for layer 1.
+- **Layer 1** — off-console runtime. The Squirrel source is **transpiled to Python**
+  (`sqparse` → `sqtranspile`) and runs on `sqrt` (object model, stackful
+  coroutines); `render` draws TIM2 layers + text with the font; `sqrun` implements
+  the scene commands (`set`/`talk`/`reset`/`next`...) and composes frames.
+  **1920/1920 scenes transpile and compile**; a real scene runs and gets drawn:
 
   ```sh
-  python3 -m znt sqrun iso 1000 frame.png     # transpila+ejecuta+dibuja la escena 1000
+  python3 -m znt sqrun iso 1000 frame.png     # transpile+run+draw scene 1000
   ```
 
-  **Runtime en vivo, con frontend desacoplado:** el core `engine` es headless
-  (estado de capas con **animación por tween**, cuadro de diálogo, corrutina de
-  escena que suspende en cada `talk`) y no sabe nada de la pantalla; los
-  frontends de `frontends` lo consumen — `TkWindow` (ventana en vivo, tkinter) y
-  un export **APNG** a todo color. La animación sale de las props de `set`
-  (`xFrom`→`x` en `moveTime`, `opacityFrom`→`opacity`), y las escenas encadenan
-  solas por `next`.
+  **Live runtime, with a decoupled frontend:** the `engine` core is headless
+  (layer state with **tween animation**, dialogue box, scene coroutine that
+  suspends on every `talk`) and knows nothing about the screen; the frontends in
+  `frontends` consume it — `TkWindow` (live window, tkinter) and a full-colour
+  **APNG** export. Animation comes from the `set` props (`xFrom`→`x` over
+  `moveTime`, `opacityFrom`→`opacity`), and scenes chain on their own via `next`.
 
   ```sh
-  python3 -m znt play   iso 1000              # ventana en vivo (click/espacio avanza)
-  python3 -m znt record iso 1000 out.apng     # graba la corrida a un PNG animado
-  python3 -m znt testbench iso 1000           # banco de pruebas: anima capas en vivo
+  python3 -m znt play   iso 1000              # live window (click/space advances)
+  python3 -m znt record iso 1000 out.apng     # record the run to an animated PNG
+  python3 -m znt testbench iso 1000           # test bench: animate layers live
   ```
 
-  El **banco de pruebas** (`testbench`) corre el engine real y deja inyectar
-  animaciones en vivo sobre las capas de la escena (elegís capa + curva o acción +
-  parámetros y lo ves moverse), con un inspector del estado de cada capa. Su núcleo
-  `Bench` es headless y guionable (sin tkinter).
+  The **test bench** (`testbench`) runs the real engine and lets you inject
+  animations live onto the scene's layers (pick layer + curve or action +
+  parameters and watch it move), with an inspector of every layer's state. Its
+  `Bench` core is headless and scriptable (no tkinter).
 
-  Falta para runtime completo: los módulos de animación `LayerModule` (curvas
-  accel/decel/wave, no solo tween lineal), audio, y entrada más allá de avanzar.
+  Still missing for a complete runtime: the `LayerModule` animation modules
+  (accel/decel/wave curves, not just linear tween), audio, and input beyond
+  advancing.
 
-  **Player nativo de PS2** (`ps2/`, C con gsKit/audsrv): la misma `.vn` compilada
-  (`znt iso build`) sale como **ISO booteable**. Corre en PCSX2 con fondos y sprites
-  (8 bits con paleta cuando no se pierde nada), crossfade, tweens con curvas, texto
-  con tipeo y corte por palabra, elecciones, BGM en streaming y efectos en la SPU2,
-  **partidas en la memory card**, menú de pausa, historial y avance rápido. Los datos
-  se leen del DVD por demanda y alineados al sector (1.4 MB/s). Ver
-  [`docs/build-ps2.md`](docs/build-ps2.md) y [`docs/checklist.md`](docs/checklist.md)
-  (`tests/checklist.sh` corre los 19 ítems en orden, con build y boot reales).
-- **Capa 3** — autoría de una VN nueva. Formato de texto `.vn` (personajes,
-  escenas, `bg`/`show`/`say`/`choice`/`goto`) que `vn` compila a un player HTML
-  autocontenido y compartible. Ver [`docs/authoring.md`](docs/authoring.md).
+  **Native PS2 player** (`ps2/`, C with gsKit/audsrv): the same compiled `.vn`
+  (`znt iso build`) comes out as a **bootable ISO**. Runs in PCSX2 with backgrounds
+  and sprites (8-bit with palette when nothing is lost), crossfade, tweens with
+  curves, text with typing and word wrap, choices, streamed BGM and effects on the
+  SPU2, **saves on the memory card**, pause menu, history and fast-forward. Data is
+  read from the DVD on demand, sector-aligned (1.4 MB/s). See
+  [`docs/build-ps2.md`](docs/build-ps2.md) and [`docs/checklist.md`](docs/checklist.md)
+  (`tests/checklist.sh` runs the 19 items in order, with real build and boot).
+- **Layer 3** — authoring a new VN. A `.vn` text format (characters, scenes,
+  `bg`/`show`/`say`/`choice`/`goto`) that `vn` compiles to a self-contained,
+  shareable HTML player. See [`docs/authoring.md`](docs/authoring.md).
 
   ```sh
-  python3 -m znt vn build historia.vn player.html
-  python3 -m znt vn demo-build player.html      # genera un ejemplo jugable
+  python3 -m znt vn build story.vn player.html
+  python3 -m znt vn demo-build player.html      # generates a playable example
   ```
 
-## Uso como librería
+## Use as a library
 
 ```python
 import znt
-disc = znt.open("iso")           # dir con los pares .HD/.BIN extraidos del disco
-src  = disc.scenes[1]            # fuente Squirrel de la escena (str, CP932)
+disc = znt.open("iso")           # dir with the .HD/.BIN pairs extracted from the disc
+src  = disc.scenes[1]            # Squirrel source of the scene (str, CP932)
 tex  = disc.textures[12]         # Texture -> tex.png("bg.png")
-font = disc.font                 # atlas de glifos + mapeo caracter->indice
+font = disc.font                 # glyph atlas + character->index mapping
 
-disc.scenes.set(1, nuevo.encode("cp932"))
-disc.scenes.repack()             # reescribe SCENE_ID.HD/.BIN
+disc.scenes.set(1, new.encode("cp932"))
+disc.scenes.repack()             # rewrites SCENE_ID.HD/.BIN
 ```
 
 ## CLI
 
 ```sh
-python3 -m znt demo                                       # self-check de todo
-python3 -m znt container info  SCENE_ID.HD SCENE_ID.BIN   # par crudo .HD/.BIN
-python3 -m znt extract         SCENE_ID.HD SCENE_ID.BIN out/ .nut   # descomprime
-python3 -m znt tim2 png        0012.tm2 nombres.png
-python3 -m znt font widths     0006.bmp 0005.txt          # anchos de tinta (VWF)
-python3 -m znt scan            scripts/ --elf SLPS_257.09  # API del engine
+python3 -m znt demo                                       # self-check of everything
+python3 -m znt container info  SCENE_ID.HD SCENE_ID.BIN   # raw .HD/.BIN pair
+python3 -m znt extract         SCENE_ID.HD SCENE_ID.BIN out/ .nut   # decompress
+python3 -m znt tim2 png        0012.tm2 names.png
+python3 -m znt font widths     0006.bmp 0005.txt          # ink widths (VWF)
+python3 -m znt scan            scripts/ --elf SLPS_257.09  # engine API
 ```
 
-Los pares se sacan del ISO con `7z` (ISO9660 plano, sin contenedores anidados):
+The pairs come out of the ISO with `7z` (flat ISO9660, no nested containers):
 
 ```sh
 7z e -y 'Zero no Tsukaima KtHC.iso' -oiso '*.HD' '*.BIN' 'SLPS_257.09'
@@ -124,162 +124,161 @@ Los pares se sacan del ISO con `7z` (ISO9660 plano, sin contenedores anidados):
 
 ---
 
-## Formatos (referencia)
+## Formats (reference)
 
-### Contenedor `.HD` / `.BIN` — `znt/container.py`
-Cada sistema es un par. **`.HD`** es un array plano de `uint32` little-endian con
-los tamaños de cada entrada (sin header ni magic; `len(HD)/4` = cantidad).
-**`.BIN`** son las entradas concatenadas, cada una rellenada a **2048 bytes** (un
-sector de DVD). Verificado byte-exacto en los cinco pares del disco.
+### `.HD` / `.BIN` container — `znt/container.py`
+Every system is a pair. **`.HD`** is a flat array of little-endian `uint32` with
+the size of each entry (no header or magic; `len(HD)/4` = count). **`.BIN`** is
+the concatenated entries, each padded to **2048 bytes** (one DVD sector).
+Verified byte-exact on the five pairs of the disc.
 
-| Par | Entradas | Contenido |
+| Pair | Entries | Content |
 |---|---:|---|
-| `SCENE_ID` | 1921 | los scripts (fuente Squirrel) |
-| `SCENEDAT` | 1184 | texturas TIM2 (CGs, sprites) |
-| `NORMAL`   | 360  | texturas TIM2 (UI, fuente) |
-| `VOICE_ID` | 16192| voces |
-| `SOUND_ID` | 106  | música y SFX |
+| `SCENE_ID` | 1921 | the scripts (Squirrel source) |
+| `SCENEDAT` | 1184 | TIM2 textures (CGs, sprites) |
+| `NORMAL`   | 360  | TIM2 textures (UI, font) |
+| `VOICE_ID` | 16192| voices |
+| `SOUND_ID` | 106  | music and SFX |
 
 ### Codec — `znt/codec.py`
-Portado de la rutina en `0x0011c264`-`0x0011c5e8` del ELF. **No es un LZ sobre la
-salida**: los opcodes de match referencian una lista move-to-front de las 6
-posiciones de token más recientes del *stream de entrada*.
+Ported from the routine at `0x0011c264`-`0x0011c5e8` in the ELF. **It is not an LZ
+over the output**: the match opcodes reference a move-to-front list of the 6 most
+recent token positions of the *input stream*.
 
 | token | opcode |
 |---|---|
-| `0xE0`-`0xFF` | corrida de `(T & 0x1F) + 1` literales |
-| `0xC0`-`0xDF` | RLE: el byte siguiente, `(T & 0x1F) + 2` veces |
-| `0x00`-`0xBF` | replay del token en `recent[T >> 5]` |
+| `0xE0`-`0xFF` | run of `(T & 0x1F) + 1` literals |
+| `0xC0`-`0xDF` | RLE: the next byte, `(T & 0x1F) + 2` times |
+| `0x00`-`0xBF` | replay of the token at `recent[T >> 5]` |
 
-El diccionario viene cebado con seis buffers de un RLE de cero, así un replay
-contra un slot no usado emite ceros. Tras la pasada LZ hay un de-interleave de
-`cnt` planos. Validado: 3365/3365 entradas del disco descomprimen con `usize`
-exacto. **`compress_store`** hace la inversa mínima (codifica como corridas de
-literales) para reinsertar entradas modificadas sin reimplementar el compresor
-original.
+The dictionary comes primed with six buffers of a zero RLE, so a replay against an
+unused slot emits zeros. After the LZ pass there is a de-interleave of `cnt`
+planes. Validated: 3365/3365 entries of the disc decompress to the exact `usize`.
+**`compress_store`** does the minimal inverse (encodes as literal runs) to
+reinsert modified entries without reimplementing the original compressor.
 
-### Fuente — `znt/font.py`
-`NORMAL` #0006 es un BMP monocromo 1bpp de 1024x1380 con celdas de **24x26**, 42
-glifos por fila. #0005 es el mapeo carácter→glifo: texto plano CP932, 42 caracteres
-por línea, la línea N es la fila N del atlas. El renderer es **monoespaciado** (no
-hay tabla de anchos en el ELF); `font.py` mide el ancho de tinta real de cada glifo
-para un futuro VWF.
+### Font — `znt/font.py`
+`NORMAL` #0006 is a 1bpp monochrome BMP of 1024x1380 with **24x26** cells, 42
+glyphs per row. #0005 is the character→glyph mapping: plain CP932 text, 42
+characters per line, line N is row N of the atlas. The renderer is **monospaced**
+(there is no width table in the ELF); `font.py` measures the real ink width of
+each glyph for a future VWF.
 
 ### TIM2 — `znt/tim2.py`
-Lector mínimo de TIM2 (4bpp/8bpp indexado) con volcado a PNG en escala de grises,
-solo stdlib.
+Minimal TIM2 reader (4bpp/8bpp indexed) with grayscale PNG dump, stdlib only.
 
-### El motor — `docs/engine_api.md`
-Los scripts son **fuente Squirrel** (bindings SqPlus, confirmado en el ELF).
-`znt/scriptscan.py` mapea la API: separa definiciones de llamadas sobre las 1920
-escenas y cruza los nativos candidatos con los strings del ELF. Resultado: 36
-nativos globales (35 confirmados), clases `Layer`/`MessageWindow`, y toda la
-biblioteca de animación que corre script-side. Ver el catálogo completo.
+### The engine — `docs/engine_api.md`
+The scripts are **Squirrel source** (SqPlus bindings, confirmed in the ELF).
+`znt/scriptscan.py` maps the API: it separates definitions from calls over the
+1920 scenes and cross-references the candidate natives with the ELF strings.
+Result: 36 global natives (35 confirmed), `Layer`/`MessageWindow` classes, and the
+whole animation library that runs script-side. See the full catalogue.
 
-## Estructura
+## Layout
 
 ```
-znt/            el SDK (paquete importable, stdlib)
-  # capa 2 — acceso a datos
-  container.py  par .HD/.BIN  + clase Container (repack)
-  codec.py      decompress (del ELF) + compress_store
-  tim2.py       lector TIM2 -> PNG/RGBA + clase Texture (des-swizzle CLUT)
-  font.py       atlas BMP + mapeo    + clase Font
-  scriptscan.py escaner de la API Squirrel del engine (capa 2b)
+znt/            the SDK (importable package, stdlib)
+  # layer 2 — data access
+  container.py  .HD/.BIN pair + Container class (repack)
+  codec.py      decompress (from the ELF) + compress_store
+  tim2.py       TIM2 reader -> PNG/RGBA + Texture class (CLUT de-swizzle)
+  font.py       BMP atlas + mapping  + Font class
+  scriptscan.py scanner of the engine's Squirrel API (layer 2b)
   __init__.py   znt.open() -> Disc.scenes / .textures / .font
-  __main__.py   CLI unificada (python -m znt <grupo> ...)
-  # capa 1 — runtime off-console
-  render.py     Layer/MessageWindow + compositor a PNG
-  sqparse.py    tokenizer + parser Pratt de Squirrel
-  sqtranspile.py  AST Squirrel -> Python
-  sqrt.py       runtime del código transpilado (objetos, corrutinas)
-  sqrun.py      corre una escena real y saca frames
-  engine.py     runtime en vivo headless (animación + corrutina de escena)
-  frontends.py  frontend headless del engine: export APNG
-  # framework de creación de VN (headless)
-  image.py      lector PNG stdlib -> filas RGBA (assets propios)
-  psf.py        fuentes .psf de consola (se hornean en el blob PS2)
-  vniso.py      .vn -> blob .vnp v5 (cabecera + data por demanda) e ISO booteable
-  adpcm.py      WAV -> ADPCM de SPU2 (los `se` del blob)
-  vnstudio.py   VNRuntime: reproduce un modelo autoral con el render/animación real
-  # capa 3 — autoría
-  vn.py         DSL .vn -> player HTML + ops de modelo (validate/rename/...)
-  gui/          FRONT INTERACTIVO (tkinter) — opcional, borrable, no lo importa el core
-    studio.py     VN Studio: editor gráfico
-    testbench.py  banco de pruebas (inyecta animación en vivo)
-    window.py     ventana en vivo (play)
-docs/engine_api.md   catálogo de la API del engine (capa 2b)
-docs/authoring.md    formato .vn para crear una VN (capa 3)
-research/codec_search.py   búsqueda automatizada del codec (resultado negativo)
+  __main__.py   unified CLI (python -m znt <group> ...)
+  # layer 1 — off-console runtime
+  render.py     Layer/MessageWindow + compositor to PNG
+  sqparse.py    Squirrel tokenizer + Pratt parser
+  sqtranspile.py  Squirrel AST -> Python
+  sqrt.py       runtime for the transpiled code (objects, coroutines)
+  sqrun.py      runs a real scene and emits frames
+  engine.py     headless live runtime (animation + scene coroutine)
+  frontends.py  headless engine frontend: APNG export
+  # VN creation framework (headless)
+  image.py      stdlib PNG reader -> RGBA rows (own assets)
+  psf.py        console .psf fonts (baked into the PS2 blob)
+  vniso.py      .vn -> .vnp v5 blob (header + on-demand data) and bootable ISO
+  adpcm.py      WAV -> SPU2 ADPCM (the blob's `se`)
+  vnstudio.py   VNRuntime: plays an authoring model with the real render/animation
+  # layer 3 — authoring
+  vn.py         .vn DSL -> HTML player + model ops (validate/rename/...)
+  gui/          INTERACTIVE FRONTEND (tkinter) — optional, deletable, the core does not import it
+    studio.py     VN Studio: graphical editor
+    testbench.py  test bench (injects live animation)
+    window.py     live window (play)
+docs/engine_api.md   catalogue of the engine API (layer 2b)
+docs/authoring.md    .vn format for creating a VN (layer 3)
+research/codec_search.py   automated codec search (negative result)
 ```
 
-Un self-check por módulo, sin depender del juego: `python3 -m znt demo` (16/16).
+One self-check per module, without depending on the game: `python3 -m znt demo` (16/16).
 
-**Core headless separable.** Todo el paquete `znt` es headless salvo `znt/gui/`
-(el front tkinter). Se puede **borrar `znt/gui/` entero** y el core sigue: acceso a
-datos, codec, render, transpilador, runtime, `record` a APNG y el `VNRuntime` de VN.
-`znt demo` lo reporta y los comandos `play`/`testbench`/`studio` avisan si el front
-no está. Ningún módulo del core importa `gui` ni `tkinter`.
+**Separable headless core.** The whole `znt` package is headless except `znt/gui/`
+(the tkinter frontend). You can **delete `znt/gui/` entirely** and the core keeps
+working: data access, codec, render, transpiler, runtime, `record` to APNG and the
+VN `VNRuntime`. `znt demo` reports it and the `play`/`testbench`/`studio` commands
+warn if the frontend is missing. No core module imports `gui` or `tkinter`.
 
-## VN Studio — editor gráfico (`python -m znt studio [proyecto.vn]`)
+## VN Studio — graphical editor (`python -m znt studio [project.vn]`)
 
-Corre el engine real; edita un proyecto `.vn`:
+Runs the real engine; edits a `.vn` project:
 
-- Escenas y pasos (`bg`/`show`/`hide`/`say`/`animate`/`choice`/`goto`/`end`):
-  agregar, duplicar, reordenar, borrar; renombrar/reordenar escenas.
-- Sprites: asignar PNG por personaje, **arrastrar en el escenario** con **snap +
-  guías** (centro/presets/piso/otros sprites; Shift = libre).
-- Por capa: **orden Z** (al frente/fondo), **zoom**, **opacidad**, **tinte**.
-- **Previsualización de transiciones** (▶ probar) sin entrar a Play; **Play** corre
-  la escena con animación real; **undo/redo** (Ctrl+Z/Y).
-- **Validar** el proyecto (gotos/personajes/dead-ends/assets), **biblioteca de
-  assets** (doble-click asigna), **Guardar .vn** / **Exportar** a player HTML.
+- Scenes and steps (`bg`/`show`/`hide`/`say`/`animate`/`choice`/`goto`/`end`):
+  add, duplicate, reorder, delete; rename/reorder scenes.
+- Sprites: assign a PNG per character, **drag on the stage** with **snap +
+  guides** (centre/presets/floor/other sprites; Shift = free).
+- Per layer: **Z order** (front/back), **zoom**, **opacity**, **tint**.
+- **Transition preview** (▶ try) without entering Play; **Play** runs the scene
+  with real animation; **undo/redo** (Ctrl+Z/Y).
+- **Validate** the project (gotos/characters/dead-ends/assets), **asset
+  library** (double-click assigns), **Save .vn** / **Export** to HTML player.
 
-Lógica de modelo testeable en `vn.py` (`validate`/`rename_character`/
-`duplicate_scene`/`move_scene`/`list_assets`); el runtime `VNRuntime` es headless.
+Testable model logic in `vn.py` (`validate`/`rename_character`/
+`duplicate_scene`/`move_scene`/`list_assets`); the `VNRuntime` runtime is headless.
 
-### En el browser (`python -m znt web [proyecto.vn]`)
+### In the browser (`python -m znt web [project.vn]`)
 
 ```sh
-python -m znt web historia.vn            # abrir
-python -m znt web historia.vn --restart  # baja el que esté corriendo y levanta este
-python -m znt web --stop                 # sólo bajarlo
-python -m znt web historia.vn --port 8790 --no-browser
+python -m znt web story.vn               # open
+python -m znt web story.vn --restart     # stop whichever one is running and start this one
+python -m znt web --stop                 # just stop it
+python -m znt web story.vn --port 8790 --no-browser
 ```
 
-`--restart` es la salida cuando quedó un server viejo dando vueltas: lo encuentra
-(pidfile o barrido de procesos), lo baja y toma el puerto. Sin `--restart`, si el
-puerto está ocupado usa el siguiente libre y lo avisa.
+`--restart` is the way out when an old server was left running: it finds it
+(pidfile or process sweep), stops it and takes the port. Without `--restart`, if
+the port is busy it uses the next free one and says so.
 
-Mismo editor sin tkinter: el server (stdlib) es la fuente de verdad — corre el
-`VNRuntime` real y describe el layout; el browser lo compone con CSS en % (se
-reescala solo con la ventana) y las animaciones llegan como APNG del engine.
+Same editor without tkinter: the (stdlib) server is the source of truth — it runs
+the real `VNRuntime` and describes the layout; the browser composes it with CSS in
+% (rescales with the window on its own) and animations arrive as APNG from the
+engine.
 
-Layout de app de edición: barra de herramientas, **outliner** (escenas + capas
-del paso, al frente primero), **viewport** centrado con letterbox, marco de
-selección con handles (arrastrar una esquina = zoom) y guías (centro / tercios /
-zona segura), **inspector** con secciones plegables y campos numéricos que se
-arrastran (Shift = fino), **timeline** con una pista por tipo de paso, regla,
-playhead, scrub y reordenar arrastrando (Ctrl+rueda = zoom), y barra de estado.
-Los tres paneles se redimensionan y el tamaño queda guardado.
+Editing-app layout: toolbar, **outliner** (scenes + the step's layers, front
+first), centred **viewport** with letterbox, selection frame with handles
+(dragging a corner = zoom) and guides (centre / thirds / safe zone), **inspector**
+with collapsible sections and draggable numeric fields (Shift = fine), **timeline**
+with one track per step type, ruler, playhead, scrub and drag-to-reorder
+(Ctrl+wheel = zoom), and a status bar. The three panels are resizable and the
+size is remembered.
 
-Atajos: Espacio (Play/avanzar), Esc, ←/→, Supr, G (guías), Ctrl+Z/Y/S, **?**
-(lista completa). Nuevo/abrir/personaje/escena usan diálogos propios.
+Shortcuts: Space (Play/advance), Esc, ←/→, Del, G (guides), Ctrl+Z/Y/S, **?**
+(full list). New/open/character/scene use their own dialogs.
 
-**Play** arranca en el paso seleccionado (lo anterior queda aplicado) y va
-**paso a paso**: cada click en la pantalla ejecuta el siguiente paso (fondo,
-personaje, diálogo…) — o un **grupo** entero (Ctrl+G sobre varios pasos:
-`group intro … endgroup` en el .vn) —, y el timeline sigue al runtime: el clip
-en reproducción queda marcado y si un choice/goto salta de escena, el timeline
-cambia con él. Click en un clip durante Play = reproducir desde ahí. El resto de
-la UI se apaga mientras tanto; Esc o ⏹ vuelve a editar.
+**Play** starts at the selected step (everything before it stays applied) and
+goes **step by step**: each click on the screen runs the next step (background,
+character, dialogue…) — or a whole **group** (Ctrl+G over several steps:
+`group intro … endgroup` in the .vn) —, and the timeline follows the runtime: the
+clip being played is highlighted and if a choice/goto jumps to another scene, the
+timeline switches with it. Clicking a clip during Play = play from there. The rest
+of the UI is switched off meanwhile; Esc or ⏹ goes back to editing.
 
-Funciones: **orden Z**, y editar id/nombre/color del personaje en la sección
-Personaje del inspector (el único lugar donde se elige y se edita).
+Features: **Z order**, and editing the character's id/name/colour in the
+Character section of the inspector (the only place where it is chosen and edited).
 
-**Todo campo que apunte a un archivo tiene su botón 📁**: abrir, guardar como,
-exportar, sprite, fondo y audio. Abre un explorador del disco del server (con
-migas de pan, ↑, ⌂ y filtro por tipo) y, en los assets, además permite subir uno
-desde el diálogo del sistema; lo elegido se copia junto al `.vn`.
+**Every field that points to a file has its 📁 button**: open, save as, export,
+sprite, background and audio. It opens a browser of the server's disk (with
+breadcrumbs, ↑, ⌂ and a filter by type) and, for assets, also lets you upload one
+from the system dialog; the chosen file is copied next to the `.vn`.
 
-`znt/web/` es opcional igual que `znt/gui/`: se puede borrar y el core sigue.
+`znt/web/` is optional just like `znt/gui/`: it can be deleted and the core keeps working.

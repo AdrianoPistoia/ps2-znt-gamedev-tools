@@ -1,128 +1,128 @@
-# Spike — generar un `.iso` booteable en PS2 desde una VN autoral
+# Spike — producing a PS2-bootable `.iso` from an authored VN
 
-**Pregunta:** ¿podemos, con este proyecto, producir un `.iso` que corra en un
-emulador de PS2 (PCSX2) y reproduzca una VN creada en VN Studio?
+**Question:** can this project produce a `.iso` that runs in a PS2 emulator
+(PCSX2) and plays a VN created in VN Studio?
 
-**Respuesta corta:** sí, es posible, y **de-riesgado en partes** por lo que ya
-tenemos reverseado — pero el tramo "sale un ELF que bootea" es un proyecto de
-**homebrew de PS2** aparte, no una extensión chica del exporter. Hay tres caminos;
-el recomendado es un **ELF homebrew mínimo** que interpreta nuestro `.vn`.
-Estimación del camino recomendado hasta "una escena real bootea en PCSX2":
-**~1 semana** a proof-of-life, **~4–8 semanas** a un player usable.
+**Short answer:** yes, it is possible, and **de-risked in parts** by what we have
+already reversed — but the stretch "an ELF comes out and boots" is a separate
+**PS2 homebrew** project, not a small extension of the exporter. There are three
+paths; the recommended one is a **minimal homebrew ELF** that interprets our `.vn`.
+Estimate for the recommended path up to "a real scene boots in PCSX2":
+**~1 week** to proof-of-life, **~4–8 weeks** to a usable player.
 
-> Spike = investigación acotada. No implementa nada; fija alcance, riesgos y el
-> primer experimento a correr.
+> Spike = bounded research. It implements nothing; it fixes scope, risks and the
+> first experiment to run.
 
 ---
 
-## Lo que YA tenemos (cimientos, cualquiera sea el camino)
+## What we ALREADY have (foundations, whatever the path)
 
-- Formatos del juego resueltos: contenedor `.HD/.BIN`, codec (decode + `compress_store`),
-  TIM2 (decode a RGBA), fuente BMP + mapeo. (capa 2)
-- La API del engine mapeada (`docs/engine_api.md`) y 1920 escenas que parsean/transpilan.
-- El **modelo de runtime** (bg + capas + animación por curvas/acciones + diálogo +
-  choices + bgm/se) ya especificado y con implementación de referencia headless
-  (`VNRuntime`) — sirve de **spec** para portarlo a PS2.
-- El formato autoral `.vn` y su compilación.
+- Game formats solved: `.HD/.BIN` container, codec (decode + `compress_store`),
+  TIM2 (decode to RGBA), BMP font + mapping. (layer 2)
+- The engine API mapped (`docs/engine_api.md`) and 1920 scenes that parse/transpile.
+- The **runtime model** (bg + layers + animation by curves/actions + dialogue +
+  choices + bgm/se) already specified and with a headless reference implementation
+  (`VNRuntime`) — it serves as the **spec** for porting it to PS2.
+- The `.vn` authoring format and its compilation.
 
-## Lo que FALTA (piezas nuevas, por camino)
+## What is MISSING (new pieces, per path)
 
-| Pieza | ¿Nueva? | Notas |
+| Piece | New? | Notes |
 |---|---|---|
-| **ELF homebrew** (GS 2D + input + lectura de datos) | **sí, grande** | PS2SDK/ps2dev; gsKit para blits; libpad; cdvd/isofs |
-| **Encoder de textura** | depende | Camino A: **TIM2 encoder** con cuantización a paleta. B/C: subir **RGBA 32-bit** al GS → sin cuantizar en la 1ª versión |
-| **Fuente con acentos** | sí | dibujar glifos latinos/acentuados + mapeo (compartido con la traducción) |
-| **Mastering ISO9660** | sí, chico | `genisoimage` + `SYSTEM.CNF` apuntando al ELF |
-| **Audio (SPU2 / bgm-se)** | sí | reproducir ADPCM por SPU2; formato `SOUND_ID` del juego no está reverseado → **diferible** |
-| **Intérprete de escena en PS2** | sí | Camino A: emitir Squirrel del engine. B/C: intérprete propio del `.vn` compilado |
+| **Homebrew ELF** (2D GS + input + data reading) | **yes, large** | PS2SDK/ps2dev; gsKit for blits; libpad; cdvd/isofs |
+| **Texture encoder** | depends | Path A: **TIM2 encoder** with palette quantisation. B/C: upload **32-bit RGBA** to the GS → no quantisation in the 1st version |
+| **Font with accents** | yes | draw Latin/accented glyphs + mapping (shared with the translation) |
+| **ISO9660 mastering** | yes, small | `genisoimage` + `SYSTEM.CNF` pointing at the ELF |
+| **Audio (SPU2 / bgm-se)** | yes | play ADPCM through the SPU2; the game's `SOUND_ID` format is not reversed → **deferrable** |
+| **Scene interpreter on PS2** | yes | Path A: emit the engine's Squirrel. B/C: own interpreter of the compiled `.vn` |
 
 ---
 
-## Los tres caminos
+## The three paths
 
-### A. Reusar el juego como cáscara (repack en el engine de ZnT)
-Emitir nuestras escenas como **Squirrel del engine** (usando `set/talk/select/next`
-y el vocabulario `LayerModule`), codificar nuestras imágenes a **TIM2**,
-`compress_store`, y remasterizar el ISO del juego.
+### A. Reuse the game as a shell (repack into the ZnT engine)
+Emit our scenes as **engine Squirrel** (using `set/talk/select/next` and the
+`LayerModule` vocabulary), encode our images to **TIM2**, `compress_store`, and
+remaster the game's ISO.
 
-- **A favor:** el engine, boot, input y (parte del) audio **ya funcionan**.
-- **En contra:**
-  - Necesita un **encoder TIM2** (cuantización a 256 colores + re-swizzle del CLUT).
-  - La fuente sigue sin acentos (hay que dibujarlos — tarea abierta de la traducción).
-  - **Legal:** el ISO resultante lleva el ELF y el engine **del juego con copyright**.
-    Distribuir contenido original dentro de la cáscara de ZnT es turbio y raro
-    (tu VN arrastra el motor y la marca de ZnT). Solo un **parche binario** sobre la
-    copia del usuario es defendible, y esto no es un parche: es contenido nuevo.
-  - **Riesgo de sectores:** si el ELF lee archivos por LBA absoluto (pregunta 5 del
-    README, sin confirmar), cambiar tamaños rompe el layout → hay que reconstruir el
-    ISO y quizá parchear la tabla de archivos.
-- **Veredicto:** atajo técnico para "ver algo bootear", **no recomendado como producto**.
+- **For:** the engine, boot, input and (part of the) audio **already work**.
+- **Against:**
+  - Needs a **TIM2 encoder** (quantisation to 256 colours + CLUT re-swizzle).
+  - The font still has no accents (they have to be drawn — an open task of the translation).
+  - **Legal:** the resulting ISO carries the ELF and the engine **of the copyrighted
+    game**. Distributing original content inside the ZnT shell is murky and odd
+    (your VN drags along ZnT's engine and brand). Only a **binary patch** over the
+    user's copy is defensible, and this is not a patch: it is new content.
+  - **Sector risk:** if the ELF reads files by absolute LBA (question 5 of the
+    README, unconfirmed), changing sizes breaks the layout → the ISO has to be
+    rebuilt and maybe the file table patched.
+- **Verdict:** technical shortcut to "see something boot", **not recommended as a product**.
 
-### B. Homebrew PS2 completo (nuestro engine en un ELF)
-Portar el runtime a un ELF nativo (C/C++ con PS2SDK): GS, input, lectura de ISO,
-un intérprete (Squirrel embebido o propio), animación, audio, saves.
+### B. Full PS2 homebrew (our engine in an ELF)
+Port the runtime to a native ELF (C/C++ with PS2SDK): GS, input, ISO reading,
+an interpreter (embedded Squirrel or our own), animation, audio, saves.
 
-- **A favor:** limpio de origen (código nuestro + assets del usuario), sin ZnT,
-  `.iso` propio, legalmente sano.
-- **En contra:** es **un engine de VN homebrew desde cero** — disciplina entera
-  (GS, DMA, SPU2, memoria). **Meses.** Complejidad ALTA.
-- **Veredicto:** el "camino correcto" a largo plazo, pero grande.
+- **For:** clean origin (our code + the user's assets), no ZnT, own `.iso`,
+  legally sound.
+- **Against:** it is **a homebrew VN engine from scratch** — a whole discipline
+  (GS, DMA, SPU2, memory). **Months.** HIGH complexity.
+- **Verdict:** the "right path" long term, but big.
 
-### C. ELF homebrew MÍNIMO que interpreta el `.vn` (recomendado)
-Un ELF chico que **no** porta el engine de ZnT ni una VM Squirrel: compila el `.vn`
-a un blob binario compacto y lo interpreta con lo justo — bg + sprites + texto +
-choices + input. Animación/audio se agregan después.
+### C. MINIMAL homebrew ELF that interprets the `.vn` (recommended)
+A small ELF that does **not** port the ZnT engine or a Squirrel VM: compile the
+`.vn` to a compact binary blob and interpret it with just enough — bg + sprites +
+text + choices + input. Animation/audio get added later.
 
-- **A favor:**
-  - **B/C no necesitan TIM2 ni cuantización** en la 1ª versión: el GS acepta
-    texturas **32-bit (PSMCT32)** directas → subimos RGBA (más memoria, cero
-    algoritmo nuevo). La cuantización a 8-bit es optimización posterior.
-  - Reusa nuestro modelo de escena como spec; el `.vn`→blob lo hace nuestro SDK.
-  - Legalmente limpio.
-  - **PCSX2 bootea un `.elf` directo** (Run ELF) → iterás sin masterizar ISO; el
-    ISO queda como último paso de empaquetado.
-- **En contra:** igual hay que aprender GS/gsKit/libpad y escribir C de PS2.
-- **Veredicto:** ruta realista a "una VN original bootea en PCSX2".
-
----
-
-## Plan por etapas (camino C)
-
-1. **Toolchain** — imagen `ps2dev` (docker) con `mips64r5900el-ps2-elf-gcc`, gsKit,
-   libpad. *Bajo esfuerzo.*
-2. **Proof-of-life ELF** — limpiar pantalla, subir una textura RGBA y dibujar un
-   string con una fuente bitmap; **bootear en PCSX2** (Run ELF). *~días–1 semana.*
-3. **Compilador `.vn` → blob** — en nuestro SDK (Python): serializar escenas,
-   personajes, y **atlas de assets** (PNG→RGBA crudo o TIM2). Con self-check. *~días.*
-4. **Player mínimo (ELF)** — leer el blob, componer bg+sprites (nuestro modelo Z),
-   caja de texto + fuente con acentos, `choice` con el pad, `goto/end`. *~semanas.*
-5. **Mastering ISO** — `SYSTEM.CNF` (`BOOT2 = cdrom0:\VN.ELF;1`) + `genisoimage`;
-   probar el `.iso` en PCSX2. *~días.*
-6. **Después:** animación (curvas/acciones ya especificadas), audio SPU2, saves.
-
-**Primer experimento (1–2 días, máxima información):**
-levantar `ps2dev`, compilar el sample gsKit que dibuja un sprite, **bootearlo en
-PCSX2**, y en paralelo escribir en el SDK un **encoder de textura** (empezar por
-RGBA→PSMCT32; validar round-trip contra nuestro decoder). Eso confirma toolchain +
-render + el puente de assets, que es el 80% del riesgo.
+- **For:**
+  - **B/C need neither TIM2 nor quantisation** in the 1st version: the GS accepts
+    **32-bit (PSMCT32)** textures directly → we upload RGBA (more memory, zero
+    new algorithm). 8-bit quantisation is a later optimisation.
+  - Reuses our scene model as spec; the `.vn`→blob is done by our SDK.
+  - Legally clean.
+  - **PCSX2 boots a `.elf` directly** (Run ELF) → iterate without mastering an
+    ISO; the ISO is left as the last packaging step.
+- **Against:** you still have to learn GS/gsKit/libpad and write PS2 C.
+- **Verdict:** realistic route to "an original VN boots in PCSX2".
 
 ---
 
-## Complejidad y riesgo (resumen)
+## Plan by stages (path C)
 
-| Dimensión | A (cáscara ZnT) | B (homebrew full) | C (ELF mínimo) |
+1. **Toolchain** — `ps2dev` image (docker) with `mips64r5900el-ps2-elf-gcc`, gsKit,
+   libpad. *Low effort.*
+2. **Proof-of-life ELF** — clear the screen, upload an RGBA texture and draw a
+   string with a bitmap font; **boot in PCSX2** (Run ELF). *~days–1 week.*
+3. **`.vn` → blob compiler** — in our SDK (Python): serialise scenes, characters,
+   and an **asset atlas** (PNG→raw RGBA or TIM2). With self-check. *~days.*
+4. **Minimal player (ELF)** — read the blob, compose bg+sprites (our Z model),
+   text box + font with accents, `choice` with the pad, `goto/end`. *~weeks.*
+5. **ISO mastering** — `SYSTEM.CNF` (`BOOT2 = cdrom0:\VN.ELF;1`) + `genisoimage`;
+   test the `.iso` in PCSX2. *~days.*
+6. **Afterwards:** animation (curves/actions already specified), SPU2 audio, saves.
+
+**First experiment (1–2 days, maximum information):**
+bring up `ps2dev`, build the gsKit sample that draws a sprite, **boot it in
+PCSX2**, and in parallel write a **texture encoder** in the SDK (start with
+RGBA→PSMCT32; validate the round-trip against our decoder). That confirms toolchain +
+render + the asset bridge, which is 80% of the risk.
+
+---
+
+## Complexity and risk (summary)
+
+| Dimension | A (ZnT shell) | B (full homebrew) | C (minimal ELF) |
 |---|---|---|---|
-| Esfuerzo a "bootea algo" | medio | alto | **medio** |
-| Esfuerzo a paridad | medio-alto | muy alto | alto |
-| Piezas nuevas grandes | TIM2 encoder, font | engine entero | ELF + font (32-bit evita cuantizar) |
-| Legal | **problemático** | limpio | **limpio** |
-| Riesgo técnico | sectores/ISO, engine ajeno | amplio | acotado y por etapas |
-| Reusa lo hecho | codec/TIM2/containers | modelo de escena | **modelo + .vn + SDK** |
+| Effort to "something boots" | medium | high | **medium** |
+| Effort to parity | medium-high | very high | high |
+| Large new pieces | TIM2 encoder, font | whole engine | ELF + font (32-bit avoids quantising) |
+| Legal | **problematic** | clean | **clean** |
+| Technical risk | sectors/ISO, foreign engine | broad | bounded and staged |
+| Reuses what exists | codec/TIM2/containers | scene model | **model + .vn + SDK** |
 
-**Conclusión.** Es viable y vale la pena; el atajo (A) no conviene por lo legal y
-por depender del motor ajeno. El objetivo — *tu VN original booteando en PCSX2* —
-se alcanza mejor con **C**: un ELF homebrew mínimo que interpreta el `.vn`, con el
-GS en 32-bit para saltear la cuantización al principio, y PCSX2 booteando el ELF
-directo para iterar rápido. El SDK actual ya cubre el lado autoral y de datos; lo
-nuevo y grande es el ELF de PS2. Próximo paso concreto: el experimento de 1–2 días
-de arriba.
+**Conclusion.** It is viable and worth it; the shortcut (A) is not advisable for
+legal reasons and because it depends on someone else's engine. The goal — *your
+original VN booting in PCSX2* — is best reached with **C**: a minimal homebrew ELF
+that interprets the `.vn`, with the GS in 32-bit to skip quantisation at first, and
+PCSX2 booting the ELF directly to iterate fast. The current SDK already covers the
+authoring and data side; the new and large part is the PS2 ELF. Concrete next
+step: the 1–2 day experiment above.

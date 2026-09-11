@@ -1,9 +1,9 @@
-/* Formato de la partida guardada. Ver save.h. */
+/* Saved-game format. See save.h. */
 #include "save.h"
 #include <string.h>
 
-/* CRC-16/CCITT: barato y agarra el caso feo de la memory card, un archivo
- * pisado a medias por un corte de luz. */
+/* CRC-16/CCITT: cheap and catches the ugly memory-card case, a file
+ * half-overwritten by a power cut. */
 static uint16_t crc16(const uint8_t *p, int n)
 {
     uint16_t c = 0xFFFF;

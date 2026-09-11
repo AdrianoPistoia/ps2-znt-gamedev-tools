@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
-"""Escaner heuristico del corpus Squirrel para mapear la API del engine.
+"""Heuristic scanner of the Squirrel corpus to map the engine API.
 
-No es un parser de Squirrel: quita comentarios y literales de string, y despues
-reconoce con regex las *definiciones* (class/function/local/enum/const/slots) y
-las *llamadas* (`nombre(` global vs `.metodo(`). Un identificador llamado como
-funcion global y nunca definido en el corpus es, casi seguro, un nativo que el
-engine expone via SqPlus. Cruzarlo con los strings del ELF lo confirma.
+Not a Squirrel parser: it strips comments and string literals, then uses
+regexes to recognize *definitions* (class/function/local/enum/const/slots) and
+*calls* (global `name(` vs `.method(`). An identifier called as a global
+function and never defined in the corpus is almost certainly a native the
+engine exposes via SqPlus. Cross-checking it against the ELF strings confirms it.
 
-  python -m znt scan scripts/                 # catalogo a stdout
+  python -m znt scan scripts/                 # catalog to stdout
   python -m znt scan scripts/ --elf SLPS_257.09 [--json api.json]
 
-ponytail: heuristico por regex. Falla en casos raros (nombres en macros, llamadas
-por variable). Suficiente para el catalogo; un parser real solo si hace falta.
+ponytail: regex heuristic. Fails on odd cases (names in macros, calls through
+a variable). Enough for the catalog; a real parser only if needed.
 """
 import os, re, sys, glob, json, collections
 
-# Palabras reservadas de Squirrel 2.x/3.x: nunca son nativos del engine.
+# Squirrel 2.x/3.x reserved words: never engine natives.
 KEYWORDS = {
     "base", "break", "case", "catch", "class", "clone", "continue", "const",
     "default", "delete", "delegate", "do", "else", "enum", "extends", "for",
@@ -23,7 +23,7 @@ KEYWORDS = {
     "return", "switch", "this", "throw", "try", "typeof", "while", "yield",
     "constructor", "static", "rawcall", "true", "false", "vargc", "vargv",
 }
-# Builtins del propio lenguaje (funciones globales de la stdlib de Squirrel).
+# Builtins of the language itself (global functions of the Squirrel stdlib).
 SQ_BUILTINS = {
     "print", "error", "compilestring", "collectgarbage", "getroottable",
     "setroottable", "getconsttable", "setconsttable", "assert", "format",
@@ -40,13 +40,13 @@ _DEF_CLASS = re.compile(r"\bclass\s+(" + _IDENT + r")")
 _DEF_FUNC = re.compile(r"\bfunction\s+(" + _IDENT + r")")
 _DEF_LOCAL = re.compile(r"\blocal\s+(" + _IDENT + r")")
 _DEF_ENUM = re.compile(r"\b(?:enum|const)\s+(" + _IDENT + r")")
-_DEF_SLOT = re.compile(r"(" + _IDENT + r")\s*<-")           # nombre <- valor
-_DEF_MEMBER = re.compile(r"^\s*(" + _IDENT + r")\s*=", re.M)  # miembro/asignacion
+_DEF_SLOT = re.compile(r"(" + _IDENT + r")\s*<-")           # name <- value
+_DEF_MEMBER = re.compile(r"^\s*(" + _IDENT + r")\s*=", re.M)  # member/assignment
 _CALL = re.compile(r"(\.?)(" + _IDENT + r")\s*\(")
 
 
 def strip(src):
-    """Quita comentarios y literales para no confundir identificadores."""
+    """Strips comments and literals so they do not get mistaken for identifiers."""
     src = _COMMENT.sub(" ", src)
     src = _STRING.sub('""', src)
     return src
@@ -58,7 +58,7 @@ def scan_text(src, defined, gcalls, mcalls, params):
                        (_DEF_LOCAL, defined), (_DEF_ENUM, defined),
                        (_DEF_SLOT, defined), (_DEF_MEMBER, defined)):
         bucket.update(rx.findall(src))
-    # parametros de funcion: no son nativos aunque se los llame
+    # function parameters: not natives even if they get called
     for m in re.finditer(r"\bfunction\b[^(]*\(([^)]*)\)", src):
         params.update(p.strip().split("=")[0].strip()
                       for p in m.group(1).split(",") if p.strip())
@@ -94,18 +94,18 @@ def report(res, elf=None):
     if elf:
         strs = elf_strings(elf)
         in_elf = {n for n in natives if n.encode() in strs}
-    print(f"# API del engine (heuristico) — {res['files']} escenas")
-    print(f"# definidos en corpus: {len(res['defined'])} | "
-          f"nativos candidatos: {len(natives)} | metodos distintos: {len(res['mcalls'])}")
+    print(f"# Engine API (heuristic) — {res['files']} scenes")
+    print(f"# defined in corpus: {len(res['defined'])} | "
+          f"candidate natives: {len(natives)} | distinct methods: {len(res['mcalls'])}")
     print()
-    print("## Nativos candidatos (llamada global, no definida en el corpus)")
+    print("## Candidate natives (global call, not defined in the corpus)")
     if elf:
-        print("## [E] = el nombre aparece como string en el ELF (binding SqPlus confirmado)")
+        print("## [E] = the name appears as a string in the ELF (SqPlus binding confirmed)")
     for n, c in sorted(natives.items(), key=lambda kv: -kv[1]):
         tag = " [E]" if n in in_elf else ""
         print(f"  {c:5d}  {n}{tag}")
     print()
-    print("## Metodos mas llamados (.metodo(), sobre objetos del engine o propios)")
+    print("## Most-called methods (.method(), on engine objects or the script's own)")
     for n, c in res["mcalls"].most_common(40):
         print(f"  {c:5d}  .{n}")
 
@@ -126,7 +126,7 @@ def cli(argv):
     if jsonout:
         out = {k: (sorted(v) if isinstance(v, set) else v) for k, v in res.items()}
         json.dump(out, open(jsonout, "w"), ensure_ascii=False, indent=1)
-        print(f"escrito {jsonout}")
+        print(f"wrote {jsonout}")
     report(res, elf)
 
 
@@ -145,13 +145,13 @@ def demo():
     scan_text(src, d, g, m, p)
     assert "Foo" in d and "bar" in d and "helper" in d and "q" in d, d
     assert "baz" in g and "drawSprite" in g and "reset" in g, dict(g)
-    assert "call" not in g, "no debe contar llamadas dentro de strings"
+    assert "call" not in g, "must not count calls inside strings"
     assert "play" in m and "drawSprite" not in m, dict(m)
-    # 'bar'/'helper' definidas, 'x'/'a'/'b' son params -> no nativos
+    # 'bar'/'helper' are defined, 'x'/'a'/'b' are params -> not natives
     known = d | p | KEYWORDS | SQ_BUILTINS
     natives = {n for n in g if n not in known}
     assert natives == {"baz", "drawSprite", "reset"}, natives
-    assert "print" not in natives  # builtin de Squirrel
+    assert "print" not in natives  # Squirrel builtin
     print("demo OK")
 
 

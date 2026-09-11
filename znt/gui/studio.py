@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Editor visual del framework de VN (tkinter). Maneja el `VNRuntime` real: stage
-en vivo con el engine, lista de escenas y de pasos, edición de propiedades, Play,
-y export a `.vn` + player HTML. No lo importa el runtime (frontend desacoplado)."""
+"""Visual editor for the VN framework (tkinter). Drives the real `VNRuntime`:
+live stage with the engine, scene and step lists, property editing, Play, and
+export to `.vn` + HTML player. The runtime does not import it (decoupled frontend)."""
 import os, base64
 
 from .. import vn
@@ -56,11 +56,11 @@ def run_editor(path=None):
 
     root = tk.Tk(); root.title("znt · VN Studio"); root.configure(bg=BG)
 
-    # --- tamaño de fuente de la UI (fuentes con nombre -> reescalado en vivo) ---
+    # --- UI font size (named fonts -> live rescaling) ---------------------------
     _style = ttk.Style()
 
     def _pick_family(cands):
-        """Elegir una familia que EXISTA en este Tk (no asumir 'sans'/'monospace')."""
+        """Pick a family that EXISTS in this Tk (do not assume 'sans'/'monospace')."""
         fams = set(tkfont.families())
         for c in cands:
             if c in fams:
@@ -78,10 +78,10 @@ def run_editor(path=None):
     ui_scale = {"v": 1.0, "warned": False}
 
     def _fonts_scalable():
-        """Un Tk sin Xft/fontconfig sólo ve la bitmap 'fixed' e IGNORA el tamaño."""
+        """A Tk without Xft/fontconfig only sees the bitmap 'fixed' and IGNORES the size."""
         probe = tkfont.Font(family=SANS, size=9)
-        a = probe.measure("Guardar"); probe.configure(size=18)
-        return a != probe.measure("Guardar")
+        a = probe.measure("Save"); probe.configure(size=18)
+        return a != probe.measure("Save")
 
     FONTS_SCALABLE = _fonts_scalable()
 
@@ -95,15 +95,15 @@ def run_editor(path=None):
         root.option_add("*TCombobox*Listbox.font", F["ui"])
 
     def bump_ui(d):
-        if not FONTS_SCALABLE:                 # avisar en vez de no hacer nada en silencio
+        if not FONTS_SCALABLE:                 # warn instead of silently doing nothing
             if not ui_scale["warned"]:
                 ui_scale["warned"] = True
                 messagebox.showwarning(
-                    "Fuentes no escalables",
-                    "Este Tk no tiene soporte de fuentes escalables (Xft/fontconfig): sólo ve "
-                    f"la familia '{SANS}', de tamaño fijo, y por eso ignora el tamaño pedido.\n\n"
-                    "Arreglo: instalar Tcl/Tk con Xft y usar un Python cuyo tkinter lo use.\n"
-                    "En Arch:  sudo pacman -S tk   y correr el editor con /usr/bin/python3")
+                    "Fonts not scalable",
+                    "This Tk has no scalable font support (Xft/fontconfig): it only sees "
+                    f"the fixed-size family '{SANS}', so it ignores the requested size.\n\n"
+                    "Fix: install Tcl/Tk with Xft and use a Python whose tkinter uses it.\n"
+                    "On Arch:  sudo pacman -S tk   and run the editor with /usr/bin/python3")
             return
         ui_scale["v"] = min(2.5, max(0.7, round(ui_scale["v"] + d, 2))); apply_ui_scale()
     apply_ui_scale()
@@ -113,18 +113,18 @@ def run_editor(path=None):
     root.bind("<Control-0>", lambda e: (ui_scale.update(v=1.0), apply_ui_scale()))
     tkimg = {}
 
-    # ---- layout: stage a la izquierda (se reescala), paneles a la derecha --
+    # ---- layout: stage on the left (rescales), panels on the right ---------
     root.columnconfigure(0, weight=1); root.rowconfigure(0, weight=1)
     stagef = tk.Frame(root, bg=BG); stagef.grid(row=0, column=0, padx=8, pady=8, sticky="nsew")
     canvas = tk.Canvas(stagef, width=rt.W, height=rt.H, highlightthickness=1,
                        highlightbackground="#2a3350", bg="black")
     canvas.pack(fill="both", expand=True)
     item = canvas.create_image(0, 0, anchor="nw")
-    disp = {"s": 1.0, "ox": 0, "oy": 0}      # escala y offset (letterbox) del stage
+    disp = {"s": 1.0, "ox": 0, "oy": 0}      # stage scale and (letterbox) offset
 
-    def fb_xy(e):                            # coords de pantalla -> coords del framebuffer
+    def fb_xy(e):                            # screen coords -> framebuffer coords
         return (e.x - disp["ox"]) / disp["s"], (e.y - disp["oy"]) / disp["s"]
-    # cuadro de diálogo (widgets reales -> soporta acentos)
+    # dialogue box (real widgets -> supports accented characters)
     dbox = tk.Frame(stagef, bg=PANEL, height=90); dbox.pack(fill="x", pady=(6, 0))
     who_l = tk.Label(dbox, bg=PANEL, fg=ACC, font=F["bold"], anchor="w")
     who_l.pack(fill="x", padx=10, pady=(6, 0))
@@ -147,10 +147,10 @@ def run_editor(path=None):
 
     # ---- toolbar ----------------------------------------------------------
     tb = tk.Frame(panel, bg=BG); tb.pack(fill="x")
-    for t, fn in (("Nuevo", lambda: new_project()), ("Abrir", lambda: open_project()),
+    for t, fn in (("New", lambda: new_project()), ("Open", lambda: open_project()),
                   ("▶ Play", lambda: play()), ("↶", lambda: undo()), ("↷", lambda: redo()),
-                  ("＋ Personaje", lambda: add_char()), ("Validar", lambda: do_validate()),
-                  ("Guardar .vn", lambda: save()), ("Exportar HTML", lambda: export()),
+                  ("＋ Character", lambda: add_char()), ("Validate", lambda: do_validate()),
+                  ("Save .vn", lambda: save()), ("Export HTML", lambda: export()),
                   ("A−", lambda: bump_ui(-0.1)), ("A+", lambda: bump_ui(0.1))):
         btn(tb, t, fn).pack(side="left", padx=2)
 
@@ -161,11 +161,11 @@ def run_editor(path=None):
         hist["undo"].clear(); hist["redo"].clear()
         cur["path"] = path
         st["scene"] = model["order"][0]; st["step"] = -1; st["play"] = False
-        root.title(f"znt · VN Studio · {os.path.basename(path) if path else 'nueva'}")
+        root.title(f"znt · VN Studio · {os.path.basename(path) if path else 'new'}")
         refresh_all()
 
     def new_project():
-        if messagebox.askyesno("Nuevo", "¿Descartar el proyecto actual?"):
+        if messagebox.askyesno("New", "Discard the current project?"):
             _load_model(vn.blank_model(), None, os.getcwd())
 
     def open_project():
@@ -176,42 +176,42 @@ def run_editor(path=None):
 
     def do_validate():
         probs = vn.validate(model, base)
-        messagebox.showinfo("Validación",
-                            "\n".join(probs) if probs else "Sin problemas ✔")
+        messagebox.showinfo("Validation",
+                            "\n".join(probs) if probs else "No problems ✔")
 
-    # ---- escenas ----------------------------------------------------------
-    lbl(panel, "Escenas").pack(anchor="w", pady=(10, 0))
+    # ---- scenes -----------------------------------------------------------
+    lbl(panel, "Scenes").pack(anchor="w", pady=(10, 0))
     scenes_lb = tk.Listbox(panel, height=6, width=34, bg=PANEL, fg=INK,
                            selectbackground="#26335c", highlightthickness=0, font=F["mono"])
     scenes_lb.pack()
     sc_btns = tk.Frame(panel, bg=BG); sc_btns.pack(fill="x")
-    btn(sc_btns, "＋ escena", lambda: add_scene()).pack(side="left", padx=2)
-    btn(sc_btns, "duplicar", lambda: dup_scene()).pack(side="left", padx=2)
-    btn(sc_btns, "renombrar", lambda: rename_scene()).pack(side="left", padx=2)
+    btn(sc_btns, "＋ scene", lambda: add_scene()).pack(side="left", padx=2)
+    btn(sc_btns, "duplicate", lambda: dup_scene()).pack(side="left", padx=2)
+    btn(sc_btns, "rename", lambda: rename_scene()).pack(side="left", padx=2)
     btn(sc_btns, "↑", lambda: move_scene_ui(-1)).pack(side="left")
     btn(sc_btns, "↓", lambda: move_scene_ui(1)).pack(side="left")
 
-    # ---- pasos ------------------------------------------------------------
-    lbl(panel, "Pasos de la escena").pack(anchor="w", pady=(10, 0))
+    # ---- steps ------------------------------------------------------------
+    lbl(panel, "Scene steps").pack(anchor="w", pady=(10, 0))
     steps_lb = tk.Listbox(panel, height=12, width=44, bg=PANEL, fg=INK,
                           selectbackground="#26335c", highlightthickness=0, font=F["mono"])
     steps_lb.pack()
     addf = tk.Frame(panel, bg=BG); addf.pack(fill="x", pady=2)
     add_op = tk.StringVar(value="say")
     ttk.Combobox(addf, textvariable=add_op, values=STEP_OPS, width=8, state="readonly").pack(side="left")
-    btn(addf, "＋ agregar", lambda: add_step()).pack(side="left", padx=2)
+    btn(addf, "＋ add", lambda: add_step()).pack(side="left", padx=2)
     btn(addf, "↑", lambda: move_step(-1)).pack(side="left")
     btn(addf, "↓", lambda: move_step(1)).pack(side="left")
     btn(addf, "dup", lambda: dup_step()).pack(side="left")
-    btn(addf, "borrar", lambda: del_step()).pack(side="left", padx=2)
-    btn(addf, "▶ probar", lambda: preview_transition()).pack(side="left", padx=2)
+    btn(addf, "delete", lambda: del_step()).pack(side="left", padx=2)
+    btn(addf, "▶ preview", lambda: preview_transition()).pack(side="left", padx=2)
 
-    # ---- propiedades del paso --------------------------------------------
-    lbl(panel, "Propiedades").pack(anchor="w", pady=(10, 0))
+    # ---- step properties --------------------------------------------------
+    lbl(panel, "Properties").pack(anchor="w", pady=(10, 0))
     propf = tk.Frame(panel, bg=PANEL); propf.pack(fill="x")
-    fields = {}   # nombre -> (widget, getter)
+    fields = {}   # name -> (widget, getter)
 
-    lbl(panel, "Assets del proyecto (doble-click: al show/bg activo)").pack(anchor="w", pady=(10, 0))
+    lbl(panel, "Project assets (double-click: into the active show/bg)").pack(anchor="w", pady=(10, 0))
     assets_lb = tk.Listbox(panel, height=5, width=44, bg=PANEL, fg=INK,
                            selectbackground="#26335c", highlightthickness=0, font=F["mono"])
     assets_lb.pack()
@@ -224,15 +224,15 @@ def run_editor(path=None):
         fb = rt.frame()
         base = tk.PhotoImage(data=base64.b64encode(fb.png_bytes(1)))
         cw = max(canvas.winfo_width(), 1); ch = max(canvas.winfo_height(), 1)
-        if cw <= 1 or ch <= 1: cw, ch = rt.W, rt.H          # aún no realizado
-        if cw >= rt.W and ch >= rt.H:                        # agrandar: zoom entero
+        if cw <= 1 or ch <= 1: cw, ch = rt.W, rt.H          # not realized yet
+        if cw >= rt.W and ch >= rt.H:                        # enlarge: integer zoom
             z = max(1, min(cw // rt.W, ch // rt.H)); img = base.zoom(z); disp["s"] = float(z)
-        else:                                               # achicar: subsample entero
+        else:                                               # shrink: integer subsample
             sub = max((rt.W + cw - 1) // cw, (rt.H + ch - 1) // ch, 1)
             img = base.subsample(sub); disp["s"] = 1.0 / sub
         dw, dh = int(rt.W * disp["s"]), int(rt.H * disp["s"])
         disp["ox"], disp["oy"] = (cw - dw) // 2, (ch - dh) // 2
-        tkimg["i"] = img                                    # mantener ref viva
+        tkimg["i"] = img                                    # keep the ref alive
         canvas.coords(item, disp["ox"], disp["oy"])
         canvas.itemconfig(item, image=img)
 
@@ -296,13 +296,13 @@ def run_editor(path=None):
 
     # ------------------------------------------------------------------ undo/redo
     def snapshot():
-        """Guardar el estado antes de una mutación. Llamar ANTES de tocar el modelo."""
+        """Save the state before a mutation. Call BEFORE touching the model."""
         hist["undo"].append(copy.deepcopy(model)); hist["redo"].clear()
         if len(hist["undo"]) > hist["max"]:
             hist["undo"].pop(0)
 
     def _restore(saved):
-        model.clear(); model.update(copy.deepcopy(saved))   # in-place: rt.model y los closures ven el cambio
+        model.clear(); model.update(copy.deepcopy(saved))   # in-place: rt.model and the closures see the change
         rt.invalidate()
         if st["scene"] not in model["scenes"]:
             st["scene"] = model["order"][0]
@@ -325,7 +325,7 @@ def run_editor(path=None):
             w.destroy()
         fields.clear()
         if not (0 <= st["step"] < len(steps())):
-            lbl(propf, "(elegí un paso)", bg=PANEL).pack(anchor="w", padx=6, pady=6); return
+            lbl(propf, "(pick a step)", bg=PANEL).pack(anchor="w", padx=6, pady=6); return
         s = steps()[st["step"]]; op = s["op"]
         chars = list(model["characters"])
         def field(name, widget, getter):
@@ -347,11 +347,11 @@ def run_editor(path=None):
                        else sp.get("color") if sp["kind"] == "solid" else sp.get("file", ""))
             w, g = entry(cur_arg); field("bg", w, g)
             def pick_bg(s=s):
-                p = filedialog.askopenfilename(filetypes=[("imagen", "*.png *.jpg *.jpeg *.webp *.gif")])
+                p = filedialog.askopenfilename(filetypes=[("image", "*.png *.jpg *.jpeg *.webp *.gif")])
                 if p:
                     snapshot()
                     s["spec"] = {"kind": "img", "file": _rel(p)}; rt.invalidate(); refresh_all()
-            btn(propf, "imagen de fondo…", pick_bg).pack(padx=6, pady=2, anchor="w")
+            btn(propf, "background image…", pick_bg).pack(padx=6, pady=2, anchor="w")
         elif op in ("show", "hide"):
             w, g = combo(s["id"], chars); field("id", w, g)
             if op == "show":
@@ -366,58 +366,58 @@ def run_editor(path=None):
                              (max(1, min(others) - 1) if others else 10)
                     refresh_all()
                 zf = tk.Frame(propf, bg=PANEL); zf.pack(fill="x", padx=6, pady=1)
-                btn(zf, "▲ al frente", lambda: set_z(True)).pack(side="left", padx=2)
-                btn(zf, "▼ al fondo", lambda: set_z(False)).pack(side="left", padx=2)
+                btn(zf, "▲ to front", lambda: set_z(True)).pack(side="left", padx=2)
+                btn(zf, "▼ to back", lambda: set_z(False)).pack(side="left", padx=2)
                 cur_zoom = rt.stage[s["id"]].zoom if s["id"] in rt.stage else s.get("zoom", 100)
                 wzm, gzm = entry(str(int(cur_zoom))); field("zoom%", wzm, gzm)
                 cur_op = rt.stage[s["id"]].opacity if s["id"] in rt.stage else s.get("opacity", 100)
                 wop, gop = entry(str(int(cur_op))); field("opac%", wop, gop)
-                wtn, gtn = entry(s.get("tint", "")); field("tinte", wtn, gtn)
+                wtn, gtn = entry(s.get("tint", "")); field("tint", wtn, gtn)
                 spr = model["characters"].get(s["id"], {}).get("sprite")
                 lbl(propf, f"sprite: {spr or '(placeholder)'}", bg=PANEL).pack(anchor="w", padx=6)
                 def pick_sprite(cid=s["id"]):
-                    p = filedialog.askopenfilename(filetypes=[("imagen", "*.png *.jpg *.jpeg *.webp *.gif")])
+                    p = filedialog.askopenfilename(filetypes=[("image", "*.png *.jpg *.jpeg *.webp *.gif")])
                     if p:
                         snapshot()
                         model["characters"][cid]["sprite"] = _rel(p); rt.invalidate(); refresh_all()
-                btn(propf, "asignar sprite…", pick_sprite).pack(padx=6, pady=2, anchor="w")
-                btn(propf, "renombrar personaje…", lambda cid=s["id"]: rename_char_ui(cid)).pack(padx=6, pady=2, anchor="w")
-                lbl(propf, "arrastrá el sprite en el escenario para ubicarlo", bg=PANEL).pack(anchor="w", padx=6)
+                btn(propf, "assign sprite…", pick_sprite).pack(padx=6, pady=2, anchor="w")
+                btn(propf, "rename character…", lambda cid=s["id"]: rename_char_ui(cid)).pack(padx=6, pady=2, anchor="w")
+                lbl(propf, "drag the sprite on the stage to place it", bg=PANEL).pack(anchor="w", padx=6)
         elif op == "say":
-            w, g = combo(s.get("who", "narrator"), chars); field("quién", w, g)
-            w2, g2 = entry(s.get("text", "")); field("texto", w2, g2)
+            w, g = combo(s.get("who", "narrator"), chars); field("who", w, g)
+            w2, g2 = entry(s.get("text", "")); field("text", w2, g2)
             if s.get("who", "narrator") != "narrator":
-                btn(propf, "renombrar personaje…", lambda cid=s["who"]: rename_char_ui(cid)).pack(padx=6, pady=2, anchor="w")
+                btn(propf, "rename character…", lambda cid=s["who"]: rename_char_ui(cid)).pack(padx=6, pady=2, anchor="w")
         elif op == "animate":
             w, g = combo(s["id"], [c for c in chars if c != "narrator"]); field("id", w, g)
-            w2, g2 = combo(s["kind"], list(CURVES) + list(ACTIONS) + ["move"]); field("tipo", w2, g2)
+            w2, g2 = combo(s["kind"], list(CURVES) + list(ACTIONS) + ["move"]); field("type", w2, g2)
             kv = " ".join(f"{k}={v}" for k, v in s.get("params", {}).items())
             w3, g3 = entry(kv); field("params", w3, g3)
         elif op in ("bgm", "se"):
-            w, g = entry(s.get("file", "")); field("archivo", w, g)
+            w, g = entry(s.get("file", "")); field("file", w, g)
             def pick_audio(s=s):
                 p = filedialog.askopenfilename(filetypes=[("audio", "*.ogg *.mp3 *.wav *.m4a")])
                 if p:
                     snapshot(); s["file"] = _rel(p); s.pop("stop", None); refresh_all()
-            btn(propf, "elegir sonido…", pick_audio).pack(padx=6, pady=2, anchor="w")
+            btn(propf, "choose sound…", pick_audio).pack(padx=6, pady=2, anchor="w")
             if op == "bgm":
                 sv = tk.BooleanVar(value=bool(s.get("stop")))
-                tk.Checkbutton(propf, text="detener bgm", variable=sv, bg=PANEL, fg=MUT,
+                tk.Checkbutton(propf, text="stop bgm", variable=sv, bg=PANEL, fg=MUT,
                                selectcolor="#0f1525", font=F["ui"]).pack(anchor="w", padx=6)
                 fields["stop"] = (sv, lambda: sv.get())
         elif op == "goto":
-            w, g = combo(s.get("target", model["order"][0]), model["order"]); field("a", w, g)
+            w, g = combo(s.get("target", model["order"][0]), model["order"]); field("to", w, g)
         elif op == "choice":
             txt = tk.Text(propf, height=4, width=34, bg="#0f1525", fg=INK, insertbackground=INK,
                           relief="flat", font=F["mono"])
             txt.insert("1.0", "\n".join(f"{o['label']} -> {o['target']}" for o in s.get("options", [])))
             txt.pack(fill="x", padx=6, pady=2)
             fields["opts"] = (txt, lambda: txt.get("1.0", "end"))
-            lbl(propf, "etiqueta -> escena  (una por línea)", bg=PANEL).pack(anchor="w", padx=6)
+            lbl(propf, "label -> scene  (one per line)", bg=PANEL).pack(anchor="w", padx=6)
         else:
-            lbl(propf, "(sin propiedades)", bg=PANEL).pack(anchor="w", padx=6, pady=6)
+            lbl(propf, "(no properties)", bg=PANEL).pack(anchor="w", padx=6, pady=6)
         if op != "end":
-            btn(propf, "Aplicar", apply_props).pack(pady=4)
+            btn(propf, "Apply", apply_props).pack(pady=4)
 
     def apply_props():
         if not (0 <= st["step"] < len(steps())):
@@ -441,23 +441,23 @@ def run_editor(path=None):
                     if g.get("opac%", "").strip():
                         try: s["opacity"] = int(g["opac%"])
                         except ValueError: pass
-                    tn = g.get("tinte", "").strip()
+                    tn = g.get("tint", "").strip()
                     if tn: s["tint"] = tn
                     else: s.pop("tint", None)
             elif op == "say":
-                s["who"] = g["quién"]; s["text"] = g["texto"]
+                s["who"] = g["who"]; s["text"] = g["text"]
             elif op == "animate":
-                s["id"] = g["id"]; s["kind"] = g["tipo"]
+                s["id"] = g["id"]; s["kind"] = g["type"]
                 s["params"] = _parse_kv(g["params"])
             elif op == "bgm":
                 if g.get("stop"):
                     s.clear(); s["op"] = "bgm"; s["stop"] = True
                 else:
-                    s.pop("stop", None); s["file"] = g["archivo"].strip()
+                    s.pop("stop", None); s["file"] = g["file"].strip()
             elif op == "se":
-                s["file"] = g["archivo"].strip()
+                s["file"] = g["file"].strip()
             elif op == "goto":
-                s["target"] = g["a"]
+                s["target"] = g["to"]
             elif op == "choice":
                 s["options"] = [{"label": ln.split("->")[0].strip(),
                                  "target": ln.split("->")[1].strip()}
@@ -477,9 +477,9 @@ def run_editor(path=None):
                     except ValueError: p[k] = v
         return p
 
-    # ------------------------------------------------------------------ acciones
+    # ------------------------------------------------------------------ actions
     def add_scene():
-        name = simpledialog.askstring("Escena", "id de la nueva escena:", parent=root)
+        name = simpledialog.askstring("Scene", "id of the new scene:", parent=root)
         if name and name not in model["scenes"]:
             snapshot()
             model["scenes"][name] = []; model["order"].append(name)
@@ -487,13 +487,13 @@ def run_editor(path=None):
 
     def rename_scene():
         old = st["scene"]
-        name = simpledialog.askstring("Renombrar", "nuevo id:", initialvalue=old, parent=root)
+        name = simpledialog.askstring("Rename", "new id:", initialvalue=old, parent=root)
         if name and name != old and name not in model["scenes"]:
             snapshot()
             model["scenes"][name] = model["scenes"].pop(old)
             model["order"][model["order"].index(old)] = name
             if model.get("start") == old: model["start"] = name
-            for sid in model["scenes"]:                      # reapuntar gotos/choices
+            for sid in model["scenes"]:                      # repoint gotos/choices
                 for s in model["scenes"][sid]:
                     if s["op"] == "goto" and s["target"] == old: s["target"] = name
                     if s["op"] == "choice":
@@ -502,20 +502,20 @@ def run_editor(path=None):
             st["scene"] = name; refresh_all()
 
     def rename_char_ui(cid):
-        new = simpledialog.askstring("Renombrar personaje", f"nuevo id para '{cid}':",
+        new = simpledialog.askstring("Rename character", f"new id for '{cid}':",
                                      initialvalue=cid, parent=root)
         if new and new != cid:
             snapshot()
             if vn.rename_character(model, cid, new):
                 refresh_all()
             else:
-                messagebox.showerror("Error", "id en uso o inexistente")
+                messagebox.showerror("Error", "id in use or does not exist")
 
     def add_char():
-        cid = simpledialog.askstring("Personaje", "id (ej: saito):", parent=root)
+        cid = simpledialog.askstring("Character", "id (e.g. saito):", parent=root)
         if not cid: return
-        name = simpledialog.askstring("Personaje", "nombre visible:", initialvalue=cid, parent=root) or cid
-        color = simpledialog.askstring("Personaje", "color #hex:", initialvalue="#7cc4ff", parent=root) or "#7cc4ff"
+        name = simpledialog.askstring("Character", "display name:", initialvalue=cid, parent=root) or cid
+        color = simpledialog.askstring("Character", "color #hex:", initialvalue="#7cc4ff", parent=root) or "#7cc4ff"
         snapshot()
         model["characters"][cid] = {"name": name, "color": color}
         build_props()
@@ -565,9 +565,9 @@ def run_editor(path=None):
                                          filetypes=[("HTML", "*.html")])
         if not p: return
         open(p, "w", encoding="utf-8").write(vn.render_html(vn._link_choices(model), base))
-        messagebox.showinfo("Export", f"Player HTML escrito:\n{p}")
+        messagebox.showinfo("Export", f"HTML player written:\n{p}")
 
-    # ------------------------------------------------------------------ posicionar (drag)
+    # ------------------------------------------------------------------ positioning (drag)
     def _hit(mx, my):
         best, bl = None, -1
         for name, l in rt.stage.items():
@@ -592,20 +592,20 @@ def run_editor(path=None):
             if rt.done and not rt.choices: stop_play()
 
     def on_press(e):
-        if st["play"]:                      # en Play, el click avanza el diálogo
+        if st["play"]:                      # in Play, a click advances the dialogue
             play_advance(); return
-        fx, fy = fb_xy(e)                    # en edición, arrastra el sprite (coords del fb)
+        fx, fy = fb_xy(e)                    # while editing, drag the sprite (fb coords)
         name = _hit(fx, fy)
         if not name:
             return
         s = _show_step_for(name)
         if not s:
             return
-        snapshot()                          # un undo por gesto de arrastre
+        snapshot()                          # one undo per drag gesture
         r = rt.layer_rect(name)
         drag.update(name=name, ox=fx - r[0], oy=fy - r[1], step=s)
 
-    SNAP = 12   # px de imán
+    SNAP = 12   # snap px
 
     def _nearest(v, targets):
         best, bd = None, SNAP + 1
@@ -624,20 +624,20 @@ def run_editor(path=None):
         raw_x = (fx - drag["ox"]) - (rt.W // 2 - w // 2)
         raw_y = (fy - drag["oy"]) - (rt.H - h)
         canvas.delete("guide")
-        if e.state & 0x0001:                      # Shift = arrastre libre (sin snap)
+        if e.state & 0x0001:                      # Shift = free drag (no snap)
             nx, ny = raw_x, raw_y
         else:
             others = [o for k, o in rt.stage.items()
                       if k not in (name, "bg") and o.rows and o.show]
             xt = [0.0, float(POS["left"]), float(POS["right"])] + [o.x for o in others]
-            yt = [0.0] + [o.y for o in others]     # 0 = apoyado en el piso
+            yt = [0.0] + [o.y for o in others]     # 0 = resting on the floor
             nx, sx = _nearest(raw_x, xt)
             ny, sy = _nearest(raw_y, yt)
             s, ox, oy = disp["s"], disp["ox"], disp["oy"]   # fb -> canvas
-            if sx:                                 # guía vertical (centro alineado)
+            if sx:                                 # vertical guide (centers aligned)
                 gx = ox + (nx + rt.W / 2) * s
                 canvas.create_line(gx, oy, gx, oy + rt.H * s, fill="#5fd0e0", dash=(4, 3), tags="guide")
-            if sy:                                 # guía horizontal (misma base)
+            if sy:                                 # horizontal guide (same baseline)
                 gy = oy + (ny + rt.H) * s
                 canvas.create_line(ox, gy, ox + rt.W * s, gy, fill="#e8b04b", dash=(4, 3), tags="guide")
         l.x, l.y = float(nx), float(ny)
@@ -651,20 +651,20 @@ def run_editor(path=None):
     canvas.bind("<Button-1>", on_press)
     canvas.bind("<B1-Motion>", on_motion)
     canvas.bind("<ButtonRelease-1>", on_release)
-    canvas.bind("<Configure>", lambda e: present())   # reescalar el stage con la ventana
+    canvas.bind("<Configure>", lambda e: present())   # rescale the stage with the window
 
-    # ------------------------------------------------------------------ probar transición
+    # ------------------------------------------------------------------ preview transition
     def preview_transition():
         if st["play"] or st["step"] < 0:
             return
-        rt.preview_upto(st["scene"], st["step"], settle=False)   # transición viva desde t=0
+        rt.preview_upto(st["scene"], st["step"], settle=False)   # live transition from t=0
         st["preview"] = [0]
         def loop():
             p = st.get("preview")
             if not p:
                 return
             rt.tick(33); present(); p[0] += 1
-            if not rt.animating() or p[0] > 90:                 # fin, o tope ~3s (acciones continuas)
+            if not rt.animating() or p[0] > 90:                 # end, or ~3s cap (continuous actions)
                 st["preview"] = None; refresh_preview(); return
             root.after(33, loop)
         loop()
@@ -695,7 +695,7 @@ def run_editor(path=None):
             w.config(state="normal")
         refresh_all()
 
-    # ------------------------------------------------------------------ eventos
+    # ------------------------------------------------------------------ events
     def on_scene(_=None):
         sel = scenes_lb.curselection()
         if sel:
@@ -712,6 +712,6 @@ def run_editor(path=None):
     root.bind("<Control-z>", undo)
     root.bind("<Control-y>", redo)
     root.bind("<Control-Z>", redo)          # Ctrl+Shift+Z
-    root.title(f"znt · VN Studio · {os.path.basename(cur['path']) if cur['path'] else 'nueva'}")
+    root.title(f"znt · VN Studio · {os.path.basename(cur['path']) if cur['path'] else 'new'}")
     refresh_all()
     root.mainloop()

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="es"><head><meta charset="utf-8">
+<html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>VN Studio</title>
 <style>
@@ -12,7 +12,7 @@
     color-scheme: dark;
   }
   *{box-sizing:border-box}
-  [hidden]{display:none!important}   /* una regla de id le gana al [hidden] del browser */
+  [hidden]{display:none!important}   /* an id rule beats the browser's [hidden] */
   html,body{height:100%}
   body{margin:0;background:var(--bg);color:var(--ink);font:12.5px/1.45 var(--ui);
        overflow:hidden;user-select:none}
@@ -50,12 +50,12 @@
   .hsplit{cursor:row-resize;background:var(--bg)}
   .vsplit:hover,.hsplit:hover,.vsplit.drag,.hsplit.drag{background:var(--acc2)}
 
-  /* ---------- modo Play: se apaga todo menos el juego y el timeline ---------- */
+  /* ---------- Play mode: everything dims except the game and the timeline ---------- */
   body.playing #outliner, body.playing #inspector,
   body.playing #topbar > :not(#b-play):not(#b-playmode):not(.grow){opacity:.28;pointer-events:none;
        filter:saturate(.4);transition:opacity .15s}
   body.playing #timeline{box-shadow:inset 0 2px 0 var(--acc)}
-  body.playing #timeline .bar{opacity:.28;pointer-events:none}   /* no se edita en Play */
+  body.playing #timeline .bar{opacity:.28;pointer-events:none}   /* no editing in Play */
   .clip.playing{outline:2px solid var(--acc);outline-offset:-1px;filter:brightness(1.4)}
   body.playing .playhead{width:2px;box-shadow:0 0 8px var(--acc)}
 
@@ -186,7 +186,7 @@
          border-radius:5px;padding:8px 12px;box-shadow:0 8px 30px #000a;font-size:12px}
   #toast.bad{border-left-color:#e2586a;color:#ffd7dc}
 
-  /* ---------- diálogos ---------- */
+  /* ---------- dialogs ---------- */
   dialog{border:1px solid var(--edge);border-radius:8px;background:var(--panel);
          color:var(--ink);padding:0;min-width:320px;box-shadow:0 20px 60px #000a}
   dialog::backdrop{background:#000a}
@@ -232,42 +232,42 @@
 
   <header id="topbar">
     <div class="brand">VN<b>Studio</b></div>
-    <button id="b-new" class="ico" title="Nuevo proyecto">✧</button>
-    <button id="b-open" class="ico" title="Abrir .vn">📂</button>
-    <button id="b-save" class="ico" title="Guardar (Ctrl+S)">💾</button>
-    <button id="b-export" title="Exportar player HTML">Exportar</button>
+    <button id="b-new" class="ico" title="New project">✧</button>
+    <button id="b-open" class="ico" title="Open .vn">📂</button>
+    <button id="b-save" class="ico" title="Save (Ctrl+S)">💾</button>
+    <button id="b-export" title="Export HTML player">Export</button>
     <div class="sep"></div>
-    <button id="b-undo" class="ico" title="Deshacer (Ctrl+Z)">↶</button>
-    <button id="b-redo" class="ico" title="Rehacer (Ctrl+Y)">↷</button>
+    <button id="b-undo" class="ico" title="Undo (Ctrl+Z)">↶</button>
+    <button id="b-redo" class="ico" title="Redo (Ctrl+Y)">↷</button>
     <div class="sep"></div>
-    <button id="b-char" title="Nuevo personaje">＋ Personaje</button>
-    <button id="b-validate" title="Validar el proyecto">Validar</button>
-    <button id="b-graph" title="Vista de flujo: qué escena lleva a cuál">⌥ flujo</button>
+    <button id="b-char" title="New character">＋ Character</button>
+    <button id="b-validate" title="Validate the project">Validate</button>
+    <button id="b-graph" title="Flow view: which scene leads where">⌥ flow</button>
     <div class="grow"></div>
-    <button id="b-help" class="ico" title="Atajos (?)">?</button>
-    <button id="b-probar" title="Previsualizar la transición del paso">▶ Probar paso</button>
-    <button id="b-play" title="Reproducir la escena (Space)">▶ Play</button>
-    <button id="b-playmode" title="Ritmo del Play: un paso por click, o como lo ve el jugador (hasta el próximo diálogo)">paso a paso</button>
+    <button id="b-help" class="ico" title="Shortcuts (?)">?</button>
+    <button id="b-probar" title="Preview the step's transition">▶ Try step</button>
+    <button id="b-play" title="Play the scene (Space)">▶ Play</button>
+    <button id="b-playmode" title="Play pacing: one step per click, or as the player sees it (up to the next dialogue)">step by step</button>
   </header>
 
   <div id="body">
     <aside class="pane" id="outliner">
-      <div class="phead">Escenas<span class="grow"></span><span id="m-count"></span></div>
+      <div class="phead">Scenes<span class="grow"></span><span id="m-count"></span></div>
       <div class="pbody" style="flex:0 1 auto;max-height:32%"><ul class="list" id="scenes"></ul></div>
       <div class="bar">
-        <button id="b-scene-add" class="ico" title="Nueva escena">＋</button>
-        <button id="b-scene-dup" class="ico" title="Duplicar">⧉</button>
-        <button id="b-scene-ren" class="ico" title="Renombrar">✎</button>
-        <button id="b-scene-del" class="ico" title="Borrar escena">🗑</button>
+        <button id="b-scene-add" class="ico" title="New scene">＋</button>
+        <button id="b-scene-dup" class="ico" title="Duplicate">⧉</button>
+        <button id="b-scene-ren" class="ico" title="Rename">✎</button>
+        <button id="b-scene-del" class="ico" title="Delete scene">🗑</button>
         <span class="grow"></span>
-        <button id="b-scene-up" class="ico" title="Subir">↑</button>
-        <button id="b-scene-dn" class="ico" title="Bajar">↓</button>
+        <button id="b-scene-up" class="ico" title="Move up">↑</button>
+        <button id="b-scene-dn" class="ico" title="Move down">↓</button>
       </div>
-      <div class="phead">Capas<span class="grow"></span><span id="m-layers"></span></div>
+      <div class="phead">Layers<span class="grow"></span><span id="m-layers"></span></div>
       <div class="pbody"><ul class="list" id="layers"></ul></div>
-      <div class="phead">Grupos<span class="grow"></span><span id="m-groups"></span></div>
+      <div class="phead">Groups<span class="grow"></span><span id="m-groups"></span></div>
       <div class="pbody" style="flex:0 1 auto;max-height:20%"><ul class="list" id="groups"></ul></div>
-      <div class="phead">Personajes<span class="grow"></span><span id="m-chars"></span></div>
+      <div class="phead">Characters<span class="grow"></span><span id="m-chars"></span></div>
       <div class="pbody" style="flex:0 1 auto;max-height:26%"><ul class="list" id="chars"></ul></div>
     </aside>
 
@@ -288,24 +288,24 @@
         </div>
         <div id="gv" hidden></div><div id="gh" hidden></div>
         <img id="anim" hidden alt="">
-        <div id="animbar" hidden><span>reproduciendo la transición…</span>
-          <button id="b-anim-x">✕ salir</button></div>
+        <div id="animbar" hidden><span>playing the transition…</span>
+          <button id="b-anim-x">✕ close</button></div>
       </div>
       <div id="vpbar">
-        <button id="b-guides" title="Guías: centro / tercios / zona segura (G)">⊞ guías</button>
-        <button id="b-overlay" title="Mostrar/ocultar el cuadro de diálogo y las opciones">👁 diálogo</button>
+        <button id="b-guides" title="Guides: center / thirds / safe area (G)">⊞ guides</button>
+        <button id="b-overlay" title="Show/hide the dialogue box and the choices">👁 dialogue</button>
         <span class="grow"></span>
         <span id="vptag"></span>
-        <button id="b-cps" hidden title="Velocidad del tipeo del texto">⌨</button>
-        <button id="b-adv" hidden title="Siguiente paso (click en el escenario o Espacio)">⏭ paso</button>
-        <button id="b-exit" hidden title="Salir (Esc)">⏹ salir</button>
+        <button id="b-cps" hidden title="Text typing speed">⌨</button>
+        <button id="b-adv" hidden title="Next step (click the stage or Space)">⏭ step</button>
+        <button id="b-exit" hidden title="Exit (Esc)">⏹ exit</button>
       </div>
     </main>
 
     <div class="vsplit" data-pane="ins"></div>
 
     <aside class="pane" id="inspector">
-      <div class="phead">Propiedades<span class="grow"></span><span id="m-op"></span></div>
+      <div class="phead">Properties<span class="grow"></span><span id="m-op"></span></div>
       <div id="probs"></div>
       <div class="pbody"><div id="props"></div></div>
     </aside>
@@ -318,20 +318,20 @@
     <div id="tlbody"></div>
     <div class="bar">
       <select id="newop" style="width:auto"></select>
-      <button id="b-step-add" class="ico" title="Agregar paso">＋</button>
-      <button id="b-step-dup" class="ico" title="Duplicar paso">⧉</button>
-      <button id="b-step-del" class="ico" title="Borrar paso (Del)">🗑</button>
-      <button id="b-group" title="Agrupar los pasos elegidos: se ejecutan de una en Play (Ctrl+G)">⧈ agrupar</button>
+      <button id="b-step-add" class="ico" title="Add step">＋</button>
+      <button id="b-step-dup" class="ico" title="Duplicate step">⧉</button>
+      <button id="b-step-del" class="ico" title="Delete step (Del)">🗑</button>
+      <button id="b-group" title="Group the selected steps: they run in one go in Play (Ctrl+G)">⧈ group</button>
       <div class="sep"></div>
-      <button id="b-step-up" class="ico" title="Mover antes">◀</button>
-      <button id="b-step-dn" class="ico" title="Mover después">▶</button>
+      <button id="b-step-up" class="ico" title="Move earlier">◀</button>
+      <button id="b-step-dn" class="ico" title="Move later">▶</button>
       <div class="sep"></div>
-      <select id="quick-who" title="quién habla" style="width:auto"></select>
-      <input id="quick" placeholder="escribí un diálogo y Enter — se agrega después del paso elegido"
-             title="Enter agrega el diálogo y te deja seguir escribiendo">
+      <select id="quick-who" title="who speaks" style="width:auto"></select>
+      <input id="quick" placeholder="type a line and press Enter — it goes after the selected step"
+             title="Enter adds the line and lets you keep typing">
       <span class="grow"></span>
-      <button id="b-prev" class="ico" title="Paso anterior (←)">⏮</button>
-      <button id="b-next" class="ico" title="Paso siguiente (→)">⏭</button>
+      <button id="b-prev" class="ico" title="Previous step (←)">⏮</button>
+      <button id="b-next" class="ico" title="Next step (→)">⏭</button>
     </div>
   </section>
 
@@ -347,42 +347,42 @@
 <dialog id="dlg"><form method="dialog">
   <h3 id="dlg-title"></h3>
   <div id="dlg-body"></div>
-  <menu><button type="button" id="dlg-cancel" onclick="this.closest('dialog').close('')">Cancelar</button>
-        <button value="ok" id="dlg-ok" class="primary">Aceptar</button></menu>
+  <menu><button type="button" id="dlg-cancel" onclick="this.closest('dialog').close('')">Cancel</button>
+        <button value="ok" id="dlg-ok" class="primary">OK</button></menu>
 </form></dialog>
 
 <dialog id="brw"><form method="dialog">
-  <h3 id="brw-title">Elegir archivo</h3>
+  <h3 id="brw-title">Choose file</h3>
   <div id="brw-crumbs"></div>
   <ul id="brw-list"></ul>
   <div id="brw-foot">
     <input id="brw-path" spellcheck="false">
-    <button type="button" id="brw-up" title="Carpeta de arriba">↑</button>
-    <button type="button" id="brw-home" title="Ir a tu carpeta">⌂</button>
-    <button type="button" id="brw-upload" title="Subir un archivo desde el diálogo del sistema">⇧ subir</button>
+    <button type="button" id="brw-up" title="Parent folder">↑</button>
+    <button type="button" id="brw-home" title="Go to your home folder">⌂</button>
+    <button type="button" id="brw-upload" title="Upload a file via the system dialog">⇧ upload</button>
   </div>
-  <menu><button type="button" onclick="this.closest('dialog').close('')">Cancelar</button>
-        <button value="ok" class="primary">Elegir</button></menu>
+  <menu><button type="button" onclick="this.closest('dialog').close('')">Cancel</button>
+        <button value="ok" class="primary">Choose</button></menu>
 </form></dialog>
 
 <dialog id="find"><form method="dialog">
-  <h3>Buscar</h3>
-  <div id="dlg-body-find" style="padding:12px 14px 0"><input id="find-q" placeholder="texto de un diálogo o de una opción" autocomplete="off"></div>
+  <h3>Find</h3>
+  <div id="dlg-body-find" style="padding:12px 14px 0"><input id="find-q" placeholder="text from a line or a choice" autocomplete="off"></div>
   <ul id="find-list"></ul>
-  <menu><button type="button" onclick="this.closest('dialog').close('')">Cerrar</button></menu>
+  <menu><button type="button" onclick="this.closest('dialog').close('')">Close</button></menu>
 </form></dialog>
 
 <dialog id="graph"><form method="dialog">
-  <h3>Flujo de escenas</h3>
+  <h3>Scene flow</h3>
   <div id="graph-box"><svg id="graph-svg" xmlns="http://www.w3.org/2000/svg"></svg></div>
-  <menu><span class="hint" style="margin:0 auto 0 0">click en una escena para ir · rojo = sin salida</span>
-        <button type="button" onclick="this.closest('dialog').close('')">Cerrar</button></menu>
+  <menu><span class="hint" style="margin:0 auto 0 0">click a scene to go there · red = no exit</span>
+        <button type="button" onclick="this.closest('dialog').close('')">Close</button></menu>
 </form></dialog>
 
 <dialog id="help"><form method="dialog">
-  <h3>Atajos</h3>
+  <h3>Shortcuts</h3>
   <table id="help-body"></table>
-  <menu><button value="" class="primary">Cerrar</button></menu>
+  <menu><button value="" class="primary">Close</button></menu>
 </form></dialog>
 
 <script src="/static/logic.js"></script>

@@ -3,21 +3,21 @@ const A = require(require("path").join(__dirname, "../../znt/web/static/logic.js
 
 const prev = { model: {x: 1}, scene: "s", step: 2 };
 
-// respuesta normal: se adopta
+// normal response: adopted
 let r = A.mergeState(prev, { model: {x: 2}, scene: "s", step: 3 });
 assert.deepStrictEqual(r.state.model, {x: 2});
 assert.strictEqual(r.error, null);
 
-// respuesta con error: se avisa y se CONSERVA el estado anterior
-r = A.mergeState(prev, { model: {x: 9}, scene: "s", step: 0, error: "op desconocida: foo" });
-assert.strictEqual(r.error, "op desconocida: foo");
-assert.deepStrictEqual(r.state.model, {x: 9}, "el server igual manda estado válido");
+// response with error: reported, and the previous state is KEPT
+r = A.mergeState(prev, { model: {x: 9}, scene: "s", step: 0, error: "unknown op: foo" });
+assert.strictEqual(r.error, "unknown op: foo");
+assert.deepStrictEqual(r.state.model, {x: 9}, "the server still sends a valid state");
 
-// respuesta rota (400/500, sin model): no se pisa nada
-r = A.mergeState(prev, { error: "Boom: qué se yo" });
-assert.strictEqual(r.state, prev, "la UI no se queda sin modelo");
-assert.strictEqual(r.error, "Boom: qué se yo");
+// broken response (400/500, no model): nothing gets overwritten
+r = A.mergeState(prev, { error: "Boom: who knows" });
+assert.strictEqual(r.state, prev, "the UI is never left without a model");
+assert.strictEqual(r.error, "Boom: who knows");
 r = A.mergeState(prev, null);
 assert.strictEqual(r.state, prev);
-assert.ok(r.error, "el fetch fallido también se avisa");
+assert.ok(r.error, "a failed fetch is reported too");
 console.log("STATE GREEN");

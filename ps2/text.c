@@ -1,4 +1,4 @@
-/* Corte de líneas del cuadro de diálogo. Ver text.h. Sólo stdlib mínima. */
+/* Line wrapping for the dialogue box. See text.h. Minimal stdlib only. */
 #include "text.h"
 
 unsigned int text_utf8_next(const char *s, int len, int *i)
@@ -26,7 +26,7 @@ void text_wrap_init(TextWrap *w, const char *s, int len)
 int text_wrap_next(TextWrap *w, int cols, int *off, int *n)
 {
     const char *s = w->s;
-    while (w->pos < w->len && s[w->pos] == ' ') w->pos++;      /* la línea no empieza con espacios */
+    while (w->pos < w->len && s[w->pos] == ' ') w->pos++;      /* a line does not start with spaces */
     if (w->pos >= w->len) return 0;
 
     int start = w->pos, i = w->pos, taken = 0, last_space = -1;
@@ -39,13 +39,13 @@ int text_wrap_next(TextWrap *w, int cols, int *off, int *n)
     }
 
     int end;
-    if (i < w->len && s[i] == '\n') { end = i; w->pos = i + 1; }   /* salto explícito */
-    else if (i >= w->len)           { end = i; w->pos = i; }       /* último renglón */
-    else if (s[i] == ' ')           { end = i; w->pos = i; }       /* justo terminó una palabra */
-    else if (last_space >= 0)       { end = last_space; w->pos = last_space; }  /* volver al espacio */
-    else                            { end = i; w->pos = i; }       /* palabra más larga que el renglón */
+    if (i < w->len && s[i] == '\n') { end = i; w->pos = i + 1; }   /* explicit newline */
+    else if (i >= w->len)           { end = i; w->pos = i; }       /* last line */
+    else if (s[i] == ' ')           { end = i; w->pos = i; }       /* a word ended right here */
+    else if (last_space >= 0)       { end = last_space; w->pos = last_space; }  /* back to the space */
+    else                            { end = i; w->pos = i; }       /* word longer than the line */
 
-    while (end > start && s[end - 1] == ' ') end--;                /* sin espacios colgando */
+    while (end > start && s[end - 1] == ' ') end--;                /* no trailing spaces */
     *off = start; *n = end - start;
     return 1;
 }

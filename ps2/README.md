@@ -1,65 +1,65 @@
-# ELF player VN para PS2 (camino C del spike)
+# VN player ELF for PS2 (path C of the spike)
 
-Reproduce en PS2 una VN autoral compilada a blob `.vnp` (`znt iso build`). Es la
-pieza nativa: lo demás (autoría, compilación del blob, masterizado del ISO) está
-en el SDK Python.
+Plays on PS2 an authored VN compiled to a `.vnp` blob (`znt iso build`). It is the
+native piece: everything else (authoring, blob compilation, ISO mastering) lives
+in the Python SDK.
 
-## Estado
+## Status
 
-**Compila y bootea**, tanto por `Run ELF` como desde un **ISO** masterizado
-(`ps2/build.sh` con la imagen docker `ps2dev/ps2dev`; `tests/pcsx2_boot.sh` lo bootea
-y verifica por el log, `ZNT_ISO=x.iso` usa el ISO y `ZNT_SHOT=x.png` saca la foto).
+**Builds and boots**, both via `Run ELF` and from a mastered **ISO**
+(`ps2/build.sh` with the `ps2dev/ps2dev` docker image; `tests/pcsx2_boot.sh` boots it
+and verifies through the log, `ZNT_ISO=x.iso` uses the ISO and `ZNT_SHOT=x.png` takes the screenshot).
 
-- **`vnp.c`** (lector del blob v5): verificado en host. Carga **sólo la cabecera**;
-  imágenes y audio se leen por demanda, alineados al sector (**1.4 MB/s** desde el
-  DVD; con lecturas sin alinear eran 166 KB/s y un fondo tardaba 6.7 s).
-- **Imagen**: fondo sólido, degradé o textura, con **crossfade** (`fade=`); sprites
-  con alfa, orden Z, zoom, opacidad y **tinte**. Las texturas van en **8 bits con
-  paleta** cuando la imagen entra en 256 colores exactos (4x menos VRAM y disco); un
-  degradé pintado se queda en RGBA32 para no producir bandas.
-- **Animación**: tween en x/y con curvas y las seis acciones (`wave`, `jump`, `fall`…).
-- **Texto**: UTF-8 con la fuente horneada, **corte por palabra** y **tipeo** a 40 cps
-  (X completa la línea, la siguiente X avanza).
-- **Elecciones** con el pad, saltos entre escenas y final, verificados sin joystick
-  con el modo `autoplay`.
-- **Audio**: BGM en WAV/PCM por streaming (loop, corta al cambiar) y **efectos en
-  ADPCM** en canales de la SPU2, que suenan encima de la música.
-- **Partidas**: Start abre el menú (Seguir / Guardar / Cargar); se guarda escena,
-  paso y música en la memory card, y al cargar se rehace la escena hasta ese paso.
-  Select muestra el **historial** de diálogos y Triángulo **saltea** texto rápido.
+- **`vnp.c`** (v5 blob reader): verified on the host. Loads **only the header**;
+  images and audio are read on demand, sector-aligned (**1.4 MB/s** from the
+  DVD; with unaligned reads it was 166 KB/s and a background took 6.7 s).
+- **Image**: solid, gradient or texture background, with **crossfade** (`fade=`); sprites
+  with alpha, Z order, zoom, opacity and **tint**. Textures go as **8-bit with
+  palette** when the image fits in 256 exact colours (4x less VRAM and disk); a
+  painted gradient stays RGBA32 to avoid banding.
+- **Animation**: tween on x/y with curves and the six actions (`wave`, `jump`, `fall`…).
+- **Text**: UTF-8 with the baked font, **word wrap** and **typing** at 40 cps
+  (X completes the line, the next X advances).
+- **Choices** with the pad, jumps between scenes and end, verified without a joystick
+  with the `autoplay` mode.
+- **Audio**: streamed WAV/PCM BGM (loops, cuts on change) and **ADPCM effects**
+  on SPU2 channels, which play on top of the music.
+- **Saves**: Start opens the menu (Resume / Save / Load); scene, step and music
+  are saved to the memory card, and on load the scene is replayed up to that step.
+  Select shows the dialogue **history** and Triangle **skips** text fast.
 
-Pendiente: probarlo en una consola real (sólo corrió en PCSX2).
+Pending: trying it on a real console (it only ran in PCSX2).
 
-La **fuente** se hornea en el blob desde un `.psf` de consola (`znt iso build` la
-autodetecta; `--font ruta.psf` para elegirla, `--no-font` para omitirla). Solo se
-embeben los glifos que la VN usa. La licencia de la fuente elegida viaja con el
-`.vnp`, no con este repo.
+The **font** is baked into the blob from a console `.psf` (`znt iso build`
+autodetects it; `--font path.psf` to pick it, `--no-font` to leave it out). Only
+the glyphs the VN uses are embedded. The licence of the chosen font travels with the
+`.vnp`, not with this repo.
 
-## Build (con ps2dev)
+## Build (with ps2dev)
 
-Toolchain [ps2dev](https://github.com/ps2dev/ps2dev). Vía Docker:
+[ps2dev](https://github.com/ps2dev/ps2dev) toolchain. Via Docker:
 
 ```sh
 docker run --rm -v "$PWD:/src" -w /src/ps2 ps2dev/ps2dev sh -c 'make'
 # -> ZNTVN.ELF
 ```
 
-O con ps2dev instalado local (`$PS2SDK`, `$PS2DEV/bin` en el PATH): `cd ps2 && make`.
+Or with ps2dev installed locally (`$PS2SDK`, `$PS2DEV/bin` on the PATH): `cd ps2 && make`.
 
-## Probar en PCSX2
+## Try it in PCSX2
 
-1. Compilá una VN a blob:  `python3 -m znt iso build historia.vn out.vnp`  (sin `--elf`).
-2. Renombralo `ZNTVN.VNP` y ponelo donde el ELF lo busque:
-   - **host fs** (lo más rápido en PCSX2): al lado del ELF; PCSX2 con *Host filesystem* activo → `host:ZNTVN.VNP`.
-   - o dentro de un ISO:  `python3 -m znt iso build historia.vn historia.iso --elf ZNTVN.ELF`  y corré el ISO.
-3. En PCSX2: **Run ELF** (`ZNTVN.ELF`) o bootear el ISO.
+1. Compile a VN to a blob:  `python3 -m znt iso build story.vn out.vnp`  (without `--elf`).
+2. Rename it `ZNTVN.VNP` and put it where the ELF looks for it:
+   - **host fs** (fastest in PCSX2): next to the ELF; PCSX2 with *Host filesystem* enabled → `host:ZNTVN.VNP`.
+   - or inside an ISO:  `python3 -m znt iso build story.vn story.iso --elf ZNTVN.ELF`  and run the ISO.
+3. In PCSX2: **Run ELF** (`ZNTVN.ELF`) or boot the ISO.
 
-En consola real (PS2 modeada con FreeMcBoot): bootear el ISO por OPL (USB/HDD) o
-por DVD-R vía ESR. Ver `docs/spike-ps2-iso.md`.
+On a real console (modded PS2 with FreeMcBoot): boot the ISO via OPL (USB/HDD) or
+via DVD-R through ESR. See `docs/spike-ps2-iso.md`.
 
-## Archivos
+## Files
 
-- `vnp.h` / `vnp.c` — lector del blob (espejo de `znt/vniso.py`).
-- `main.c` — init gsKit, carga del blob, intérprete de escena, render, pad.
-- `test_vnp_host.c` — test del lector en el host (`make host`).
-- `Makefile` — build del ELF (PS2SDK) y del test host.
+- `vnp.h` / `vnp.c` — blob reader (mirror of `znt/vniso.py`).
+- `main.c` — gsKit init, blob loading, scene interpreter, render, pad.
+- `test_vnp_host.c` — host test of the reader (`make host`).
+- `Makefile` — build of the ELF (PS2SDK) and of the host test.

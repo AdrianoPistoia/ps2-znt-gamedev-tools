@@ -1,27 +1,27 @@
-"""Nada silencioso: una op desconocida o un asset ilegible se REPORTAN."""
+"""Nothing silent: an unknown op or an unreadable asset gets REPORTED."""
 import tempfile, os, base64
 from znt.web import server as ws
 
 d = tempfile.mkdtemp(); p = os.path.join(d, "h.vn")
 open(p, "w", encoding="utf-8").write(
-    'title: T\ncharacter a "Ana"\nscene s\n  show a\n  a: hola\n  end\n')
+    'title: T\ncharacter a "Ana"\nscene s\n  show a\n  a: hello\n  end\n')
 st = ws.Studio(p)
-antes = repr(st.model)
+before = repr(st.model)
 
-# 1) op que no existe (p.ej. un server viejo contra una UI nueva)
-r = st.op({"op": "upload_lo_que_sea", "id": "a"})
-assert "error" in r and "upload_lo_que_sea" in r["error"], r.get("error")
-assert repr(st.model) == antes, "no puede tocar el modelo"
-assert r.get("model"), "igual devuelve el estado completo, no rompe la UI"
+# 1) op that does not exist (e.g. an old server against a new UI)
+r = st.op({"op": "upload_whatever", "id": "a"})
+assert "error" in r and "upload_whatever" in r["error"], r.get("error")
+assert repr(st.model) == before, "must not touch the model"
+assert r.get("model"), "still returns the full state, does not break the UI"
 
-# 2) imagen que el lector no entiende: placeholder + aviso con el nombre
-open(os.path.join(d, "rota.png"), "wb").write(b"\x89PNG\r\n\x1a\nbasura")
-st.op({"op": "set_sprite", "id": "a", "file": "rota.png"})
+# 2) image the reader does not understand: placeholder + warning naming the file
+open(os.path.join(d, "broken.png"), "wb").write(b"\x89PNG\r\n\x1a\ngarbage")
+st.op({"op": "set_sprite", "id": "a", "file": "broken.png"})
 stg = st.stage("s", 0)
-assert stg["layers"], "la escena tiene que seguir dibujándose"
-assert any("rota.png" in w for w in stg.get("warnings", [])), stg.get("warnings")
+assert stg["layers"], "the scene must keep rendering"
+assert any("broken.png" in w for w in stg.get("warnings", [])), stg.get("warnings")
 
-# y una que sí se lee no deja aviso
+# and one that does read leaves no warning
 import zlib, struct
 ch = lambda t, dd: struct.pack(">I", len(dd)) + t + dd + struct.pack(">I", zlib.crc32(t + dd))
 raw = b"".join(b"\x00" + bytes([200, 100, 50]) * 8 for _ in range(8))
@@ -32,13 +32,13 @@ st.op({"op": "set_sprite", "id": "a", "file": "ok.png"})
 assert not st.stage("s", 0).get("warnings"), st.stage("s", 0).get("warnings")
 print("ERRORS GREEN")
 
-# 3) abrir un .vn que no existe (typo en la ruta) no puede quedar mudo:
-#    arranca en blanco PERO lo dice
-st3 = ws.Studio("/no/existe/historia.vn~")
-assert st3.path is None and st3.model["order"], "arranca en blanco igual"
-assert any("no existe" in p for p in st3.problems), st3.problems
+# 3) opening a .vn that does not exist (typo in the path) must not stay mute:
+#    it starts blank BUT says so
+st3 = ws.Studio("/does/not/exist/story.vn~")
+assert st3.path is None and st3.model["order"], "starts blank anyway"
+assert any("does not exist" in p for p in st3.problems), st3.problems
 assert st3.state()["problems"] == st3.problems
 
-r = ws.Studio(p).op({"op": "open_project", "path": "/tampoco/existe.vn"})
-assert r.get("error") and "existe" in r["error"], r.get("error")
+r = ws.Studio(p).op({"op": "open_project", "path": "/neither/exists.vn"})
+assert r.get("error") and "does not exist" in r["error"], r.get("error")
 print("ERRORS+OPEN GREEN")

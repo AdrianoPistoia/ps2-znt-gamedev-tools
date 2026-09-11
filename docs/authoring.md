@@ -1,93 +1,92 @@
-# Autoría de una VN nueva (capa 3)
+# Authoring a new VN (layer 3)
 
-Escribís tu historia en un archivo `.vn` de texto y `znt vn build` la compila a un
-**player HTML de una sola pieza** (JSON de escenas + motorcito JS + assets
-embebidos), que se juega en cualquier browser: click o espacio para avanzar,
-botones para elegir. Corre sobre el modelo de escena de la capa 1 (fondo +
-sprites + cuadro de diálogo), sin dependencias.
+You write your story in a plain-text `.vn` file and `znt vn build` compiles it into a
+**single-file HTML player** (scene JSON + a tiny JS engine + embedded assets) that
+plays in any browser: click or space to advance, buttons to choose. It runs on the
+layer-1 scene model (background + sprites + dialogue box), with no dependencies.
 
 ```sh
-python3 -m znt vn build historia.vn player.html
-python3 -m znt vn demo-build player.html          # genera un ejemplo jugable
+python3 -m znt vn build story.vn player.html
+python3 -m znt vn demo-build player.html          # generates a playable example
 ```
 
-## Formato `.vn`
+## `.vn` format
 
-Una directiva por línea. `#` es comentario.
+One directive per line. `#` is a comment.
 
-### Cabecera
+### Header
 ```
-title: Mi Historia
+title: My Story
 character saito "Saito" color=#7cc4ff
 character louise "Louise" color=#ff9ec2
-sprite saito saito.png            # opcional: arte del personaje (si no, placeholder)
+sprite saito saito.png            # optional: character art (placeholder otherwise)
 ```
-`narrator` existe por defecto (nombre vacío, para narración).
+`narrator` exists by default (empty name, for narration).
 
-### Escenas y pasos
+### Scenes and steps
 ```
-scene intro                       # abre una escena; los pasos siguen hasta el próximo 'scene'
-  bg grad:#101830,#2a4a80         # fondo: degradé vertical (arriba,abajo)
-  bg #223                         #   o color sólido
-  bg cuarto.png                   #   o imagen (se embebe en el HTML / va al blob PS2)
-  bg noche.png fade=600           #   fade=ms: crossfade desde el fondo anterior
-  show louise left                # mostrar sprite: left | center | right (x=-180 / 0 / 180)
-  show louise feliz right         # con expresión (ver 'sprite'); sin posición mantiene la que tenía
-  show louise x=40 y=0 z=5 zoom=120 opacity=80 tint=#ff8080   # capa: x/y en px desde el centro/piso,
-                                  #   z mayor = al frente, zoom y opacity en %, tint color
+scene intro                       # opens a scene; steps follow until the next 'scene'
+  bg grad:#101830,#2a4a80         # background: vertical gradient (top,bottom)
+  bg #223                         #   or solid color
+  bg room.png                     #   or image (embedded in the HTML / goes into the PS2 blob)
+  bg night.png fade=600           #   fade=ms: crossfade from the previous background
+  show louise left                # show sprite: left | center | right (x=-180 / 0 / 180)
+  show louise happy right         # with expression (see 'sprite'); without a position it keeps the one it had
+  show louise x=40 y=0 z=5 zoom=120 opacity=80 tint=#ff8080   # layer: x/y in px from center/floor,
+                                  #   higher z = in front, zoom and opacity in %, tint color
   hide louise
-  animate louise move x=200 y=-40 curve=accel time=400   # tween a esa x/y (curve: linear|accel|decel)
-  animate louise wave vib=16 cycle=340                    # acciones: wave | waveonce | jump | jumponce
+  animate louise move x=200 y=-40 curve=accel time=400   # tween to that x/y (curve: linear|accel|decel)
+  animate louise wave vib=16 cycle=340                    # actions: wave | waveonce | jump | jumponce
   animate louise fall dist=120 time=600                   #   | fall (dist, time) | vibrate (vib, wait)
-  louise: ¿Otra vez despierto?    # diálogo: <personaje>: texto
-  * Un silencio llenó la sala.    # narración (equivale a  narrator: ...)
-  bgm tema.wav                    # música en loop (WAV PCM para PS2; el HTML acepta lo que el browser toque)
+  louise: Awake again?            # dialogue: <character>: text
+  * A silence filled the room.    # narration (same as  narrator: ...)
+  bgm theme.wav                   # looping music (PCM WAV for PS2; the HTML takes whatever the browser plays)
   bgm stop
-  se golpe.wav                    # efecto (WAV PCM; en PS2 se convierte a ADPCM al compilar)
-  group intro                     # group … endgroup: en Play, todos esos pasos corren con un click
+  se hit.wav                      # sound effect (PCM WAV; on PS2 it is converted to ADPCM at compile time)
+  group intro                     # group … endgroup: in Play, all those steps run with one click
     show saito right
-    saito: ¡Hola!
+    saito: Hello!
   endgroup
-  choice                          # elección ramificada
-    - Insistir -> acerca          #   - etiqueta -> escena_destino
-    - Cambiar de tema -> tema
-  goto fin                        # saltar a otra escena
-  end                             # fin del juego
+  choice                          # branching choice
+    - Press on -> closer          #   - label -> target_scene
+    - Change the subject -> subject
+  goto ending                     # jump to another scene
+  end                             # end of the game
 ```
 
-Cabecera (antes de la primera `scene`):
+Header (before the first `scene`):
 
 ```
-title: Mi novela
-character louise "Louise" color=#ff9ec2   # id, nombre visible y color del nombre
-sprite louise louise.png                  # sprite base del personaje
-sprite louise feliz louise_feliz.png      # una expresión: `show louise feliz`
+title: My novel
+character louise "Louise" color=#ff9ec2   # id, display name and name color
+sprite louise louise.png                  # the character's base sprite
+sprite louise happy louise_happy.png      # an expression: `show louise happy`
 ```
 
-Reglas: cada `- opción` se engancha al `choice` inmediatamente anterior; `goto`
-y `end` cortan el flujo de la escena; el juego arranca en la **primera** escena
-declarada. Las líneas que empiezan con `#` son comentarios.
+Rules: each `- option` attaches to the immediately preceding `choice`; `goto`
+and `end` cut the scene's flow; the game starts at the **first** declared scene.
+Lines starting with `#` are comments.
 
 ## Assets
 
-`bg archivo.png` y `sprite <char> archivo.png` se resuelven **relativos al `.vn`**
-y se embeben como data URI, así el HTML resultante es autocontenido y compartible
-(no necesita la carpeta de assets al lado). Si un personaje no tiene `sprite`, se
-dibuja un placeholder con su inicial y su color.
+`bg file.png` and `sprite <char> file.png` are resolved **relative to the `.vn`**
+and embedded as data URIs, so the resulting HTML is self-contained and shareable
+(it does not need the assets folder next to it). If a character has no `sprite`, a
+placeholder with its initial and its color is drawn.
 
-## Ejemplo mínimo
+## Minimal example
 
 ```
-title: Prueba
+title: Test
 character a "Ana" color=#8fd
-scene uno
+scene one
   bg grad:#202040,#404080
   show a center
-  a: Hola.
-  * Fin de la prueba.
+  a: Hello.
+  * End of the test.
   end
 ```
 
-*Alcance:* la misma `.vn` sale como player HTML (`znt vn build`) o como blob para el
-player nativo de PS2 (`znt iso build`, ver [`build-ps2.md`](build-ps2.md)). Empaquetarla
-al formato del juego original (.HD/.BIN, Squirrel del engine) no está incluido.
+*Scope:* the same `.vn` comes out as an HTML player (`znt vn build`) or as a blob for the
+native PS2 player (`znt iso build`, see [`build-ps2.md`](build-ps2.md)). Packing it
+into the original game's format (.HD/.BIN, the engine's Squirrel) is not included.

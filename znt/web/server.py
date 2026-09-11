@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Servidor del editor web (stdlib). `Studio` es el estado del editor (modelo,
-selección, historial) sin ninguna UI; el handler HTTP lo expone como API JSON.
+"""Web editor server (stdlib). `Studio` is the editor state (model, selection,
+history) with no UI at all; the HTTP handler exposes it as a JSON API.
 """
 import json, os, sys, copy, base64, errno, signal, time, mimetypes, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -12,20 +12,20 @@ UI = os.path.join(os.path.dirname(__file__), "ui.html")
 HIST_MAX = 60
 
 
-API = 4          # subilo cuando cambien las ops; la UI avisa si no coincide
+API = 4          # bump it when the ops change; the UI warns on a mismatch
 
 _NUM = ("x", "y", "z", "zoom", "opacity")
 
 
 class Studio:
-    """Estado del editor, agnóstico de UI (lo usa el server; testeable solo)."""
+    """Editor state, UI-agnostic (the server uses it; testable on its own)."""
 
     def __init__(self, path=None):
         self.problems = []
         self.dirty = False
-        if path and not os.path.exists(path):        # typo en la ruta: decilo
-            self.problems.append(f"no existe {path}: arranco un proyecto nuevo")
-            sys.stderr.write(f"⚠ no existe {path}: arranco un proyecto nuevo\n")
+        if path and not os.path.exists(path):        # typo in the path: say so
+            self.problems.append(f"{path} does not exist: starting a new project")
+            sys.stderr.write(f"⚠ {path} does not exist: starting a new project\n")
         if path and os.path.exists(path):
             self.model = vn._link_choices(vn.parse(open(path, encoding="utf-8").read()))
             self.base = os.path.dirname(os.path.abspath(path))
@@ -35,11 +35,11 @@ class Studio:
             self.base = os.getcwd()
             self.path = None
         self._autosave_notice()
-        self.rt = VNRuntime(self.model, self.base)   # render/animación reales
+        self.rt = VNRuntime(self.model, self.base)   # real render/animation
         self.scene = self.model["order"][0]
         self.step = -1
-        self.prt = None                              # runtime de reproducción (Play)
-        self.play_stepwise = True                    # Play: paso a paso (editor) o como el jugador
+        self.prt = None                              # playback runtime (Play)
+        self.play_stepwise = True                    # Play: step by step (editor) or as the player
         self.undo, self.redo = [], []
 
     # --- helpers -----------------------------------------------------------
@@ -47,12 +47,12 @@ class Studio:
         return self.model["scenes"][self.scene]
 
     def _autosave_notice(self):
-        """Si quedó un autosave más nuevo que el .vn (se cerró sin guardar), avisar."""
+        """If an autosave newer than the .vn was left behind (closed without saving), warn."""
         a = autosave_path(self.path) if self.path else None
         try:
             if a and os.path.getmtime(a) > os.path.getmtime(self.path):
-                self.problems.append(f"hay un autosave más nuevo que el proyecto: {a} "
-                                     f"(abrilo si perdiste cambios)")
+                self.problems.append(f"there is an autosave newer than the project: {a} "
+                                     f"(open it if you lost changes)")
         except OSError:
             pass
 
@@ -70,7 +70,7 @@ class Studio:
             self.undo.pop(0)
 
     def _restore(self, saved):
-        self.model.clear(); self.model.update(copy.deepcopy(saved))   # in-place: rt lo ve
+        self.model.clear(); self.model.update(copy.deepcopy(saved))   # in-place: rt sees it
         self.rt.invalidate()
         if self.scene not in self.model["scenes"]:
             self.scene = self.model["order"][0]
@@ -86,7 +86,7 @@ class Studio:
                 "step_ops": vn.STEP_OPS,
                 "can_undo": bool(self.undo), "can_redo": bool(self.redo)}
 
-    # --- operaciones -------------------------------------------------------
+    # --- operations -------------------------------------------------------
     def op(self, r):
         o = r.get("op")
         if o == "select":
@@ -98,7 +98,7 @@ class Studio:
         elif o == "add_step":
             self._snapshot()
             s = vn.default_step(r.get("kind", "say"), self.model)
-            s.update(r.get("props") or {})           # p.ej. el diálogo rápido
+            s.update(r.get("props") or {})           # e.g. the quick dialogue
             i = self.step + 1 if self.step >= 0 else len(self.steps())
             self.steps().insert(i, s); self.step = i
         elif o == "del_step":
@@ -106,10 +106,10 @@ class Studio:
                 self._snapshot(); self.steps().pop(self.step)
                 self.step = min(self.step, len(self.steps()) - 1)
         elif o == "paste_steps":
-            # portapapeles del cliente (JSON de pasos): copias independientes, un solo undo
+            # client clipboard (step JSON): independent copies, a single undo
             new = copy.deepcopy(r.get("steps") or [])
             if not new or any(not isinstance(x, dict) or x.get("op") not in vn.STEP_OPS for x in new):
-                st = self.state(); st["error"] = "no hay pasos válidos para pegar"; return st
+                st = self.state(); st["error"] = "no valid steps to paste"; return st
             self._snapshot()
             steps = self.steps()
             i = self.step + 1 if 0 <= self.step < len(steps) else len(steps)
@@ -140,7 +140,7 @@ class Studio:
                 self.steps()[i], self.steps()[j] = self.steps()[j], self.steps()[i]
                 self.step = j
         elif o == "move_step_to":
-            # el drag del timeline mueve a una posición cualquiera (no es un swap)
+            # the timeline drag moves to any position (not a swap)
             steps, to = self.steps(), int(r.get("to", -1))
             if 0 <= self.step < len(steps) and 0 <= to < len(steps):
                 self._snapshot()
@@ -165,19 +165,19 @@ class Studio:
                 self._snapshot(); self._rename_scene(self.scene, name); self.scene = name
         elif o == "del_scene":
             if len(self.model["order"]) <= 1:
-                st = self.state(); st["error"] = "no se puede borrar la última escena"; return st
+                st = self.state(); st["error"] = "the last scene cannot be deleted"; return st
             self._snapshot()
             del self.model["scenes"][self.scene]; self.model["order"].remove(self.scene)
             self.scene = self.model["order"][0]; self.step = -1
         elif o == "del_char":
             cid = r.get("id")
             if cid == "narrator" or cid not in self.model["characters"]:
-                st = self.state(); st["error"] = f"no se puede borrar {cid}"; return st
+                st = self.state(); st["error"] = f"{cid} cannot be deleted"; return st
             uses = sum(1 for steps in self.model["scenes"].values() for x in steps
                        if x.get("id") == cid or x.get("who") == cid)
             if uses:
                 st = self.state()
-                st["error"] = f"{cid} está en {uses} paso(s): sacalo de ahí antes de borrarlo"
+                st["error"] = f"{cid} is used in {uses} step(s): remove it from them before deleting"
                 return st
             self._snapshot(); del self.model["characters"][cid]
         elif o == "add_char":
@@ -201,10 +201,10 @@ class Studio:
         elif o == "rename_char":
             self._snapshot(); vn.rename_character(self.model, r.get("old"), r.get("new"))
         elif o == "import_asset":
-            # traer un archivo de cualquier carpeta del disco al lado del .vn
+            # copy a file from anywhere on disk next to the .vn
             src = os.path.expanduser(r.get("path") or "")
             if not os.path.isfile(src):
-                st = self.state(); st["error"] = f"no existe el archivo: {src}"
+                st = self.state(); st["error"] = f"file does not exist: {src}"
                 return st
             name = os.path.basename(src)
             dst = os.path.join(self.base or ".", name)
@@ -220,21 +220,21 @@ class Studio:
                 self._set_props(steps[self.step], {ap: name})
             self.rt.invalidate()
         elif o == "upload_sprite":
-            # el browser no ve el disco del server: manda la imagen elegida en base64.
+            # the browser cannot see the server's disk: it sends the chosen image as base64.
             c = self.model["characters"].get(r.get("id"))
             name = self._save_upload(r)
             if c is not None and name:
                 self._snapshot(); self._assign_sprite(c, name, r.get("expr"))
                 self.rt.invalidate()
         elif o == "upload":
-            # sube un archivo y (opcional) lo aplica a una prop del paso elegido.
+            # uploads a file and (optionally) applies it to a prop of the selected step.
             name, steps = self._save_upload(r), self.steps()
             ap = r.get("apply")
             if name and ap and 0 <= self.step < len(steps):
                 self._snapshot(); self._set_props(steps[self.step], {ap: name})
                 self.rt.invalidate()
         elif o == "set_z":
-            # ▲/▼: el orden Z vive en el `show`, como x/y.
+            # ▲/▼: the Z order lives in the `show`, like x/y.
             tgt = self._show_of(r.get("id"))
             if tgt is not None:
                 others = [l.level for k, l in self.rt.stage.items()
@@ -243,8 +243,8 @@ class Studio:
                 tgt["z"] = ((max(others) + 1) if others else 10) if r.get("front") \
                     else (max(1, min(others) - 1) if others else 10)
         elif o in ("set_layer", "set_layer_pos"):
-            # editar una CAPA (arrastre, handles, tinte) escribe en su `show`,
-            # aunque el paso elegido sea otro más adelante.
+            # editing a LAYER (drag, handles, tint) writes to its `show`,
+            # even if the selected step is a later one.
             tgt = self._show_of(r.get("id"))
             props = r.get("props") or {k: r[k] for k in ("x", "y") if k in r}
             if tgt is not None and props:
@@ -253,8 +253,8 @@ class Studio:
                                       for k, v in props.items()})
                 self.rt.invalidate()
         elif o == "play":
-            # arranca en el paso elegido (o el que mande el cliente), no en el 0.
-            # stepwise=false corre como el jugador: hasta el próximo diálogo u opción.
+            # starts at the selected step (or the one the client sends), not at 0.
+            # stepwise=false runs as the player would: up to the next dialogue or choice.
             self.prt = VNRuntime(self.model, self.base)
             self.play_stepwise = bool(r.get("stepwise", True))
             k = r.get("step", self.step if r.get("scene", self.scene) == self.scene else 0)
@@ -262,14 +262,14 @@ class Studio:
                               stepwise=self.play_stepwise)
         elif o == "play_advance":
             if self.prt:
-                if self.play_stepwise: self.prt.step_once()   # un paso (lo que sigue el timeline)
-                else: self.prt.advance()                      # hasta el próximo diálogo
+                if self.play_stepwise: self.prt.step_once()   # one step (what the timeline follows)
+                else: self.prt.advance()                      # up to the next dialogue
         elif o == "play_choose":
             if self.prt: self.prt.choose(int(r.get("i", 0)), stepwise=self.play_stepwise)
         elif o == "play_stop":
             self.prt = None
         elif o == "open_project" and not os.path.exists(os.path.expanduser(r.get("path") or "")):
-            st = self.state(); st["error"] = f"no existe el archivo: {r.get('path')}"
+            st = self.state(); st["error"] = f"file does not exist: {r.get('path')}"
             return st
         elif o == "open_project":
             path = r.get("path")
@@ -293,7 +293,7 @@ class Studio:
         elif o == "save":
             p = r.get("path") or self.path
             if not p:
-                st = self.state(); st["error"] = "el proyecto no tiene ruta todavía: elegí dónde guardarlo"
+                st = self.state(); st["error"] = "the project has no path yet: choose where to save it"
                 return st
             open(p, "w", encoding="utf-8").write(vn.to_text(self.model))
             self.path = p; self.dirty = False
@@ -306,33 +306,33 @@ class Studio:
         elif o == "export":
             p = r.get("path") or os.path.join(self.base, "player.html")
             open(p, "w", encoding="utf-8").write(vn.render_html(self.model, self.base))
-            st = self.state(); st["notice"] = f"player HTML escrito: {p}"; return st
+            st = self.state(); st["notice"] = f"HTML player written: {p}"; return st
         elif o == "export_ps2":
-            # blob .vnp del proyecto EN MEMORIA (no del .vn del disco); .iso si hay ELF
+            # .vnp blob of the IN-MEMORY project (not the .vn on disk); .iso if there is an ELF
             from .. import vniso, psf
             p = r.get("path") or os.path.join(self.base, "game.vnp")
             try:
                 blob = vniso.compile_blob(self.model, base=self.base, font=psf.find_default())
             except Exception as e:
-                st = self.state(); st["error"] = f"no se pudo compilar el blob: {e}"; return st
+                st = self.state(); st["error"] = f"could not compile the blob: {e}"; return st
             if p.lower().endswith(".iso"):
                 elf = os.path.expanduser(r.get("elf") or "")
                 if not os.path.isfile(elf):
-                    st = self.state(); st["error"] = "para un ISO hace falta el ELF del player (ps2/ZNTVN.ELF): elegilo"; return st
+                    st = self.state(); st["error"] = "an ISO needs the player ELF (ps2/ZNTVN.ELF): choose it"; return st
                 import shutil
                 if not shutil.which("genisoimage"):
-                    st = self.state(); st["error"] = "falta genisoimage (masteriza el ISO): instalalo"; return st
+                    st = self.state(); st["error"] = "genisoimage is missing (it masters the ISO): install it"; return st
                 bp = p[:-4] + ".vnp"
                 open(bp, "wb").write(blob)
                 try:
                     vniso.build_iso(elf, bp, p, name=r.get("name") or "ZNTVN")
                 except Exception as e:
-                    st = self.state(); st["error"] = f"genisoimage falló: {e}"; return st
-                st = self.state(); st["notice"] = f"ISO escrito: {p} (y el blob {bp})"; return st
+                    st = self.state(); st["error"] = f"genisoimage failed: {e}"; return st
+                st = self.state(); st["notice"] = f"ISO written: {p} (and the blob {bp})"; return st
             open(p, "wb").write(blob)
-            st = self.state(); st["notice"] = f"blob PS2 escrito: {p}"; return st
+            st = self.state(); st["notice"] = f"PS2 blob written: {p}"; return st
         else:
-            st = self.state(); st["error"] = f"op desconocida: {o}"
+            st = self.state(); st["error"] = f"unknown op: {o}"
             return st
         if o not in ("select", "validate", "save", "export", "export_ps2"):
             self.rt.invalidate()
@@ -340,15 +340,15 @@ class Studio:
         return self.state()
 
     def anim(self, scene, step, ms=1200, fps=15, shrink=2):
-        """Preview AUTORITATIVO: renderiza la transición con el engine real
-        (curvas y acciones de Python) y la empaqueta como APNG para que el
-        browser la reproduzca nativamente."""
+        """AUTHORITATIVE preview: renders the transition with the real engine
+        (Python curves and actions) and packs it as an APNG so the browser
+        plays it natively."""
         import tempfile
         if scene not in self.model["scenes"]:
             scene = self.model["order"][0]
         ms = max(200, min(int(ms), 3000))
         dt = max(1, 1000 // int(fps))
-        self.rt.preview_upto(scene, int(step), settle=False)   # animación viva desde t=0
+        self.rt.preview_upto(scene, int(step), settle=False)   # live animation from t=0
         frames = []
         for _ in range(max(2, ms // dt)):
             frames.append(bytes(self.rt.frame().buf))
@@ -363,9 +363,9 @@ class Studio:
             try: os.remove(tmp)
             except OSError: pass
 
-    # --- stage para que el browser componga con CSS ------------------------
+    # --- stage for the browser to compose with CSS ------------------------
     def stage(self, scene, step):
-        """Layout tras aplicar los pasos 0..step (para el editor)."""
+        """Layout after applying steps 0..step (for the editor)."""
         if scene not in self.model["scenes"]:
             scene = self.model["order"][0]
         self.rt.preview_upto(scene, int(step))
@@ -374,13 +374,13 @@ class Studio:
     def play_state(self):
         st = self._stage_from(self.prt)
         st["playing"] = True; st["done"] = self.prt.done
-        st["scene"], st["step"] = self.prt.scene_id, self.prt.cursor   # para el timeline
+        st["scene"], st["step"] = self.prt.scene_id, self.prt.cursor   # for the timeline
         st["se"], st["se_seq"] = self.prt.last_se, self.prt.se_seq     # audio
         st["stepwise"] = self.play_stepwise
         return st
 
     def _stage_from(self, rt):
-        """Describe qué dibujar y dónde; el browser lo compone con CSS."""
+        """Describes what to draw and where; the browser composes it with CSS."""
         url = lambda f: "/api/asset?f=" + urllib.parse.quote(f)
         sp = rt.bg_spec or {"kind": "solid", "color": "#000000"}
         bg = {"kind": "img", "url": url(sp["file"])} if sp.get("kind") == "img" else dict(sp)
@@ -407,9 +407,9 @@ class Studio:
 
 
     def browse(self, path, kind="any"):
-        """Lista una carpeta del disco para el explorador del editor.
-        (El server es local y el editor ya escribe donde le digas: esto no abre
-        nada que la ruta a mano no abriera igual.)"""
+        """Lists a folder on disk for the editor's file browser.
+        (The server is local and the editor already writes wherever you tell it:
+        this opens nothing a hand-typed path would not open anyway.)"""
         home = os.path.expanduser("~")
         path = os.path.abspath(os.path.expanduser(path or home))
         pick = None
@@ -439,7 +439,7 @@ class Studio:
         return vn.list_assets(self.base, kind)
 
     def _save_upload(self, r):
-        """Guarda el archivo que mandó el browser junto al .vn. Devuelve el nombre."""
+        """Saves the file the browser sent next to the .vn. Returns the name."""
         name = os.path.basename(r.get("name") or "")
         if name:
             open(os.path.join(self.base or ".", name), "wb").write(
@@ -448,7 +448,7 @@ class Studio:
 
     @staticmethod
     def _assign_sprite(c, f, expr=None):
-        """Sprite base (expr vacío) o de una expresión; sin archivo = quitarlo."""
+        """Base sprite (empty expr) or an expression's; no file = remove it."""
         expr = (expr or "").strip()
         if expr:
             ex = c.setdefault("expr", {})
@@ -458,10 +458,10 @@ class Studio:
         elif f:
             c["sprite"] = f
         else:
-            c.pop("sprite", None)                 # vuelve al placeholder
+            c.pop("sprite", None)                 # back to the placeholder
 
     def _show_of(self, cid):
-        """El último `show` de ese personaje en o antes del paso seleccionado."""
+        """The last `show` of that character at or before the selected step."""
         steps = self.steps()
         end = self.step if self.step >= 0 else len(steps) - 1
         for i in range(min(end, len(steps) - 1), -1, -1):
@@ -470,7 +470,7 @@ class Studio:
         return None
 
     def _load(self, m, path, base):
-        """Reemplaza el proyecto IN-PLACE (el runtime comparte la referencia)."""
+        """Replaces the project IN-PLACE (the runtime shares the reference)."""
         self.model.clear(); self.model.update(m)
         self.path, self.base = path, base
         self.rt.base = base; self.rt.invalidate()
@@ -481,9 +481,9 @@ class Studio:
 
     def _set_props(self, s, props):
         for k, v in props.items():
-            if k == "bg":                       # el cliente manda el arg tal cual
+            if k == "bg":                       # the client sends the arg as-is
                 s["spec"] = vn._bg(str(v).strip())
-            elif k == "options":                # choice: lista de {label,target}
+            elif k == "options":                # choice: list of {label,target}
                 s["options"] = v
             elif k == "params":
                 s["params"] = v
@@ -514,7 +514,7 @@ class _Handler(BaseHTTPRequestHandler):
     server_version = "znt-web"
 
     def log_message(self, *a):
-        pass                                     # silencio
+        pass                                     # quiet
 
     def _send(self, code, ctype, body):
         self.send_response(code)
@@ -533,12 +533,12 @@ class _Handler(BaseHTTPRequestHandler):
             try:
                 body = open(UI, "rb").read()
             except OSError:
-                body = b"<html><body>falta ui.html</body></html>"
+                body = b"<html><body>ui.html is missing</body></html>"
             return self._send(200, "text/html; charset=utf-8", body)
         if path.startswith("/static/"):
             f = os.path.join(os.path.dirname(__file__), "static", os.path.basename(path))
             if not os.path.isfile(f):
-                return self._json({"error": "no existe"}, 404)
+                return self._json({"error": "does not exist"}, 404)
             ctype = mimetypes.guess_type(f)[0] or "application/octet-stream"
             return self._send(200, ctype, open(f, "rb").read())
         if path == "/api/model":
@@ -564,13 +564,13 @@ class _Handler(BaseHTTPRequestHandler):
         self._json({"error": "not found"}, 404)
 
     def _asset(self, f):
-        """Sirve un archivo del proyecto. Bloquea salir del directorio base."""
+        """Serves a project file. Blocks escaping the base directory."""
         base = os.path.realpath(self.studio.base)
         full = os.path.realpath(os.path.join(base, f))
         if full != base and not full.startswith(base + os.sep):
-            return self._json({"error": "prohibido"}, 403)
+            return self._json({"error": "forbidden"}, 403)
         if not os.path.isfile(full):
-            return self._json({"error": "no existe"}, 404)
+            return self._json({"error": "does not exist"}, 404)
         ctype = mimetypes.guess_type(full)[0] or "application/octet-stream"
         self._send(200, ctype, open(full, "rb").read())
 
@@ -580,18 +580,18 @@ class _Handler(BaseHTTPRequestHandler):
         try:
             req = json.loads(self.rfile.read(n) or b"{}")
         except ValueError:
-            return self._json({"error": "json inválido"}, 400)
+            return self._json({"error": "invalid json"}, 400)
         if path == "/api/op":
             try:
                 return self._json(self.studio.op(req))
-            except Exception as e:                # no tirar el server por un op malo
+            except Exception as e:                # do not bring the server down over a bad op
                 return self._json({"error": f"{type(e).__name__}: {e}"}, 400)
         self._json({"error": "not found"}, 404)
 
 
 def make_server(studio, host="127.0.0.1", port=8765):
-    """Si el puerto está ocupado (típico: quedó otro VN Studio abierto), agarra
-    el siguiente libre en vez de morirse con un traceback."""
+    """If the port is busy (typically another VN Studio left open), grabs the
+    next free one instead of dying with a traceback."""
     handler = type("Handler", (_Handler,), {"studio": studio})
     for p in list(range(port, port + 10)) + [0]:
         try:
@@ -599,16 +599,16 @@ def make_server(studio, host="127.0.0.1", port=8765):
         except OSError as e:
             if e.errno != errno.EADDRINUSE:
                 raise
-    raise OSError("no hay puertos libres")
+    raise OSError("no free ports")
 
 
 def autosave_path(path):
-    """h.vn -> h.autosave.vn (visible y con .vn: se puede abrir desde el explorador)."""
+    """h.vn -> h.autosave.vn (visible and with .vn: it can be opened from the file browser)."""
     root, ext = os.path.splitext(path)
     return f"{root}.autosave{ext or '.vn'}"
 
 
-# --- procesos: encontrar / bajar el server que está corriendo -----------------
+# --- processes: find / stop the running server -----------------
 
 PIDDIR = os.path.join(os.environ.get("XDG_RUNTIME_DIR")
                       or os.path.join(os.path.expanduser("~"), ".cache"), "znt")
@@ -635,8 +635,8 @@ def _write_pid(port):
 
 
 def _scan_proc(port):
-    """Barrido de /proc: encuentra `python -m znt web` aunque no dejara pidfile
-    (p.ej. un server viejo). Sólo Linux; en otros SO queda el pidfile nomás."""
+    """Sweep of /proc: finds `python -m znt web` even if it left no pidfile
+    (e.g. an old server). Linux only; other OSes just get the pidfile."""
     out = []
     try:
         pids = [int(x) for x in os.listdir("/proc") if x.isdigit()]
@@ -650,7 +650,7 @@ def _scan_proc(port):
         except OSError:
             continue
         argv = [a.decode("utf-8", "replace") for a in argv if a]
-        if "web" in argv and "znt" in argv:            # tokens exactos, no substrings
+        if "web" in argv and "znt" in argv:            # exact tokens, not substrings
             got = 8765
             if "--port" in argv:
                 try:
@@ -662,7 +662,7 @@ def _scan_proc(port):
 
 
 def running(port=8765):
-    """[(pid, port)] de los VN Studio web que están corriendo en ese puerto."""
+    """[(pid, port)] of the VN Studio web servers running on that port."""
     found = {}
     f = _pidfile(port)
     try:
@@ -670,7 +670,7 @@ def running(port=8765):
         if _alive(pid):
             found[pid] = port
         else:
-            os.remove(f)                                # pidfile viejo
+            os.remove(f)                                # stale pidfile
     except (OSError, ValueError):
         pass
     for pid, p in _scan_proc(port):
@@ -680,7 +680,7 @@ def running(port=8765):
 
 
 def stop(port=8765, timeout=5.0):
-    """Baja el server de ese puerto. Devuelve los pids que bajó."""
+    """Stops the server on that port. Returns the pids it stopped."""
     killed = []
     for pid, _ in running(port):
         try:
@@ -693,7 +693,7 @@ def stop(port=8765, timeout=5.0):
             time.sleep(0.05)
         if _alive(pid):
             try:
-                os.kill(pid, signal.SIGKILL)            # no se fue por las buenas
+                os.kill(pid, signal.SIGKILL)            # did not go quietly
             except OSError:
                 pass
     try:
@@ -706,17 +706,17 @@ def stop(port=8765, timeout=5.0):
 def serve(path=None, host="127.0.0.1", port=8765, open_browser=True, restart=False):
     if restart:
         gone = stop(port)
-        print(f"bajé el server anterior (pid {', '.join(map(str, gone))})" if gone
-              else "no había ningún server corriendo en ese puerto")
+        print(f"stopped the previous server (pid {', '.join(map(str, gone))})" if gone
+              else "no server was running on that port")
     st = Studio(path)
     httpd = make_server(st, host, port)
     got = httpd.server_address[1]
     _write_pid(got)
     if port and got != port:
-        print(f"⚠ el puerto {port} ya estaba ocupado (¿otro VN Studio abierto?): "
-              f"uso el {got}. Cerrá el viejo si no lo querés.")
+        print(f"⚠ port {port} was already in use (another VN Studio open?): "
+              f"using {got}. Close the old one if you do not want it.")
     url = f"http://{host}:{got}/"
-    print(f"VN Studio (web) en {url}   — Ctrl+C para salir", flush=True)
+    print(f"VN Studio (web) at {url}   — Ctrl+C to quit", flush=True)
     if open_browser:
         try:
             import webbrowser; webbrowser.open(url)
@@ -725,7 +725,7 @@ def serve(path=None, host="127.0.0.1", port=8765, open_browser=True, restart=Fal
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
-        print("\nchau")
+        print("\nbye")
     finally:
         try:
             os.remove(_pidfile(got))
@@ -734,10 +734,10 @@ def serve(path=None, host="127.0.0.1", port=8765, open_browser=True, restart=Fal
 
 
 def demo():
-    """Self-check: ops del Studio en proceso + una vuelta por la capa HTTP."""
+    """Self-check: in-process Studio ops + one round trip through the HTTP layer."""
     import tempfile, threading, urllib.request
     d = tempfile.mkdtemp(); p = os.path.join(d, "d.vn")
-    open(p, "w", encoding="utf-8").write('title: T\ncharacter a "Ana"\nscene s\n  a: hola\n  end\n')
+    open(p, "w", encoding="utf-8").write('title: T\ncharacter a "Ana"\nscene s\n  a: hello\n  end\n')
     st = Studio(p)
     assert st.state()["model"]["title"] == "T" and st.scene == "s" and st.step == -1
     n = len(st.steps())
@@ -746,54 +746,54 @@ def demo():
     st.op({"op": "redo"});                    assert len(st.steps()) == n + 1
     st.op({"op": "undo"})
     st.op({"op": "select", "scene": "s", "step": 0})
-    st.op({"op": "set_props", "props": {"text": "chau"}})
-    assert st.steps()[0]["text"] == "chau", st.steps()[0]
+    st.op({"op": "set_props", "props": {"text": "bye"}})
+    assert st.steps()[0]["text"] == "bye", st.steps()[0]
     assert st.op({"op": "validate"})["problems"] == []
-    st.op({"op": "save"}); assert "chau" in open(p, encoding="utf-8").read()
-    # escena nueva + rename reapunta gotos
+    st.op({"op": "save"}); assert "bye" in open(p, encoding="utf-8").read()
+    # new scene + rename re-points gotos
     st.op({"op": "add_scene", "name": "dos"}); assert "dos" in st.model["scenes"]
     st.op({"op": "rename_scene", "name": "final"}); assert "final" in st.model["scenes"]
-    # stage: layout de capas para que el browser componga
+    # stage: layer layout for the browser to compose
     p2 = os.path.join(d, "s.vn")
     open(p2, "w", encoding="utf-8").write(
         'title: T2\ncharacter z "Zoe" color=#88ffdd\nscene s\n  bg grad:#101828,#304060\n'
-        '  show z left\n  z: hola\n  end\n')
+        '  show z left\n  z: hello\n  end\n')
     sg = Studio(p2).stage("s", 2)
     assert (sg["w"], sg["h"]) == (640, 448)
     assert sg["bg"]["kind"] == "grad" and sg["bg"]["a"] == "#101828"
     L = {l["id"]: l for l in sg["layers"]}
     assert L["z"]["x"] == -180 and L["z"]["url"] is None and L["z"]["color"] == "#88ffdd", L["z"]
     assert (L["z"]["w"], L["z"]["h"]) == (200, 300)          # placeholder
-    assert sg["say"]["name"] == "Zoe" and sg["say"]["text"] == "hola"
+    assert sg["say"]["name"] == "Zoe" and sg["say"]["text"] == "hello"
 
-    # drag: set_layer_pos escribe x/y en el último `show` de ese personaje
+    # drag: set_layer_pos writes x/y to that character's last `show`
     p3 = os.path.join(d, "g.vn")
     open(p3, "w", encoding="utf-8").write(
-        'title: T3\ncharacter z "Zoe"\nscene s\n  show z left\n  z: hola\n  end\n')
+        'title: T3\ncharacter z "Zoe"\nscene s\n  show z left\n  z: hello\n  end\n')
     s3 = Studio(p3)
     s3.op({"op": "select", "scene": "s", "step": 1})
     s3.op({"op": "set_layer_pos", "id": "z", "x": 42.4, "y": -7.6})
     sh = s3.model["scenes"]["s"][0]
     assert sh["op"] == "show" and sh["x"] == 42 and sh["y"] == -8, sh
-    assert s3.state()["can_undo"], "el drag debe entrar en el historial"
+    assert s3.state()["can_undo"], "the drag must go into the history"
 
-    # sprite del personaje: asignar y quitar (vuelve al placeholder)
+    # character sprite: assign and remove (back to the placeholder)
     s4 = Studio(p2)
     s4.op({"op": "set_sprite", "id": "z", "file": "zoe.png"})
     assert s4.model["characters"]["z"]["sprite"] == "zoe.png"
     s4.op({"op": "set_sprite", "id": "z", "file": ""})
     assert "sprite" not in s4.model["characters"]["z"]
 
-    # preview autoritativo: APNG renderizado con el engine real
+    # authoritative preview: APNG rendered with the real engine
     ap = Studio(p2).anim("s", 2, ms=200)
-    assert ap[:8] == b"\x89PNG\r\n\x1a\n" and b"acTL" in ap, "el preview debe ser un APNG"
+    assert ap[:8] == b"\x89PNG\r\n\x1a\n" and b"acTL" in ap, "the preview must be an APNG"
 
-    # capa HTTP
+    # HTTP layer
     httpd = make_server(st, "127.0.0.1", 0)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     port = httpd.server_address[1]
     got = json.load(urllib.request.urlopen(f"http://127.0.0.1:{port}/api/model"))
-    assert got["model"]["scenes"]["s"][0]["text"] == "chau"
+    assert got["model"]["scenes"]["s"][0]["text"] == "bye"
     httpd.shutdown(); httpd.server_close()
     print("demo OK")
 
@@ -803,7 +803,7 @@ if __name__ == "__main__":
 
 
 def cli(args):
-    """znt web [proyecto.vn] [--port N] [--restart] [--stop] [--no-browser]"""
+    """znt web [project.vn] [--port N] [--restart] [--stop] [--no-browser]"""
     port, path, restart, browser, do_stop = 8765, None, False, True, False
     i = 0
     while i < len(args):
@@ -821,7 +821,7 @@ def cli(args):
         i += 1
     if do_stop:
         gone = stop(port)
-        print(f"bajé el server (pid {', '.join(map(str, gone))})" if gone
-              else f"no había ningún VN Studio en el puerto {port}")
+        print(f"stopped the server (pid {', '.join(map(str, gone))})" if gone
+              else f"no VN Studio was running on port {port}")
         return
     serve(path, port=port, open_browser=browser, restart=restart)

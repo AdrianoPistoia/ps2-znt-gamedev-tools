@@ -67,7 +67,7 @@ for e in sd:
     u,c = struct.unpack('<II', e[:8])
     cand.append((e[8:], u, b'TIM2\x04\x00\x01\x00'+b'\x00'*8, struct.pack('<I', u-16), len(e)))
 cand.sort(key=lambda t: t[4])
-print("candidatas TIM2 (comp, usize):", [(t[4], t[1]) for t in cand[:5]])
+print("TIM2 candidates (comp, usize):", [(t[4], t[1]) for t in cand[:5]])
 cases = [(d,u,p,t) for d,u,p,t,_ in cand[:3]]
 r = solve(cases)
-print("\ntabla de opcodes:", r)
+print("\nopcode table:", r)

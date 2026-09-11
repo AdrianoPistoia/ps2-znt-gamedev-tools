@@ -1,11 +1,11 @@
-/* Lector del blob .vnp. Ver el layout en vnp.h y la fuente en znt/vniso.py. */
+/* Reader for the .vnp blob. See the layout in vnp.h and the source in znt/vniso.py. */
 #include "vnp.h"
 #include <string.h>
 
 static uint16_t rd16(const uint8_t *p) { return p[0] | (p[1] << 8); }
 static uint32_t rd32(const uint8_t *p) { return p[0] | (p[1]<<8) | (p[2]<<16) | ((uint32_t)p[3]<<24); }
 
-/* avanza p una escena entera (u32 nsteps + pasos), devolviendo el puntero siguiente */
+/* advances p past a whole scene (u32 nsteps + steps), returning the next pointer */
 static const uint8_t *skip_scene(const uint8_t *p);
 static const uint8_t *skip_step(const uint8_t *p);
 
@@ -22,13 +22,13 @@ int vnp_open(VnpDoc *d, const uint8_t *buf, uint32_t size)
     /* strings */
     d->n_strings = rd32(p); p += 4; d->p_strings = p;
     for (uint32_t i = 0; i < d->n_strings; i++) { uint16_t n = rd16(p); p += 2 + n; }
-    /* characters (10 bytes c/u) */
+    /* characters (10 bytes each) */
     d->n_chars = rd32(p); p += 4; d->p_chars = p;
     p += (uint32_t)d->n_chars * 10;
     /* images */
     d->n_images = rd32(p); p += 4; d->p_images = p;
     p += (uint32_t)d->n_images * 13;                       /* u16 w, u16 h, u8 fmt, u32 len, u32 off */
-    /* font (opcional) */
+    /* font (optional) */
     d->has_font = *p++;
     if (d->has_font) {
         d->font_w = rd16(p); p += 2; d->font_h = rd16(p); p += 2;
@@ -56,7 +56,7 @@ void vnp_audio(const VnpDoc *d, uint32_t i, VnpAudio *out)
 const uint8_t *vnp_glyph(const VnpDoc *d, uint32_t cp)
 {
     if (!d->has_font) return 0;
-    uint32_t lo = 0, hi = d->font_n;             /* codepoints ascendentes -> binaria */
+    uint32_t lo = 0, hi = d->font_n;             /* ascending codepoints -> binary search */
     while (lo < hi) {
         uint32_t mid = (lo + hi) / 2, v = rd32(d->font_cps + mid * 4);
         if (v == cp) {

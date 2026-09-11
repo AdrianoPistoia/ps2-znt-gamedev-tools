@@ -1,33 +1,33 @@
 #!/usr/bin/env python3
-"""Compila un modelo `.vn` a un **blob binario `.vnp`** que el ELF player de PS2
-(camino C del spike) lee y ejecuta. Headless y testeable; el `read_blob` de acá
-sirve de verificación y de **spec** para el lector en C.
+"""Compiles a `.vn` model into a **binary `.vnp` blob** that the PS2 ELF player
+(path C of the spike) reads and runs. Headless and testable; the `read_blob` here
+serves as verification and as the **spec** for the C reader.
 
-Formato (little-endian):
+Format (little-endian):
 
     "VNP1" | u16 version | u16 start_scene | u32 head_size
-    -- string pool --   u32 N ; por cada: u16 len + UTF-8      (idx 0xFFFFFFFF = none)
-    -- characters --    u32 N ; por cada: u32 name_str, u32 color_rgba, u16 sprite_img(0xFFFF none)
-    -- images --        u32 N ; por cada: u16 w, u16 h, u8 fmt, u32 len, u32 off
-                        fmt 0 = RGBA32 crudo; fmt 1 = 8bpp: CLUT de 1024 bytes (ya en
-                        orden del GS) + un byte por pixel. Ver znt/quant.py.
-    -- font --          u8 has ; u16 cw, u16 ch, u32 n, n*u32 cps, bitmap 1bpp
-    -- audio --         u32 N ; por cada: u32 name_str, u32 len, u32 off
-    -- scenes --        u32 N ; por cada: u32 nsteps ; por cada step: u8 op + payload
-    == head_size ==     de acá en adelante, la data cruda de imágenes y audios (off absoluto)
+    -- string pool --   u32 N ; each: u16 len + UTF-8      (idx 0xFFFFFFFF = none)
+    -- characters --    u32 N ; each: u32 name_str, u32 color_rgba, u16 sprite_img(0xFFFF none)
+    -- images --        u32 N ; each: u16 w, u16 h, u8 fmt, u32 len, u32 off
+                        fmt 0 = raw RGBA32; fmt 1 = 8bpp: 1024-byte CLUT (already in
+                        GS order) + one byte per pixel. See znt/quant.py.
+    -- font --          u8 has ; u16 cw, u16 ch, u32 n, n*u32 cps, 1bpp bitmap
+    -- audio --         u32 N ; each: u32 name_str, u32 len, u32 off
+    -- scenes --        u32 N ; each: u32 nsteps ; each step: u8 op + payload
+    == head_size ==     from here on, the raw image and audio data (absolute off)
 
-Cada dato (y la cabecera) arranca en un múltiplo de **2048**, el sector del DVD: el
-driver de cdvd lee sectores enteros, y pedirle un tramo sin alinear lo hace dar vueltas
-de más (166 KB/s medidos en PCSX2 contra >1 MB/s alineado). El relleno son ceros.
+Every datum (and the header) starts at a multiple of **2048**, the DVD sector: the
+cdvd driver reads whole sectors, and asking it for an unaligned span makes it spin
+extra (166 KB/s measured in PCSX2 vs >1 MB/s aligned). The padding is zeros.
 
-v5: la cabecera se lee sola (`head_size`) y cada imagen/audio se trae por demanda con
-su `off`: el ELF no carga el blob entero en RAM. `bg` termina en u16 fade (ms, 0 = corte);
-`anim` lleva i16 x, i16 y (0x7FFF = no dado: esa coordenada no se toca).
+v5: the header is read on its own (`head_size`) and each image/audio is fetched on
+demand via its `off`: the ELF does not load the whole blob into RAM. `bg` ends in a u16
+fade (ms, 0 = cut); `anim` carries i16 x, i16 y (0x7FFF = not given: that coordinate is left alone).
 
 Opcodes: 1 bg, 2 show, 3 hide, 4 say, 5 anim, 6 bgm, 7 se, 8 choice, 9 goto, 10 end.
-v4: `show` lleva u16 img (imagen de la expresión; 0xFFFF = el sprite base del personaje).
-(payloads: ver `_emit_step` / `_read_step`). Audio: opcode con el nombre de archivo,
-sin data embebida todavía (diferido, ver spike).
+v4: `show` carries u16 img (the expression's image; 0xFFFF = the character's base sprite).
+(payloads: see `_emit_step` / `_read_step`). Audio: opcode with the file name,
+no embedded data yet (deferred, see spike).
 """
 import struct, os, shutil, subprocess, tempfile
 
@@ -38,18 +38,18 @@ SYSTEM_CNF = "BOOT2 = cdrom0:\\{name}.ELF;1\r\nVER = 1.00\r\nVMODE = {vmode}\r\n
 MAGIC = b"VNP1"
 OP = dict(bg=1, show=2, hide=3, say=4, anim=5, bgm=6, se=7, choice=8, goto=9, end=10)
 IOP = {v: k for k, v in OP.items()}
-# códigos de animación (curvas + acciones)
+# animation codes (curves + actions)
 ANIM = {"linear": 0, "accel": 1, "decel": 2, "move": 3,
         "wave": 10, "waveonce": 11, "jump": 12, "jumponce": 13, "fall": 14, "vibrate": 15}
 IANIM = {v: k for k, v in ANIM.items()}
 NONE32 = 0xFFFFFFFF
 NONE16 = 0xFFFF
-NOCOORD = 0x7FFF                  # i16 "no dado" en anim (x/y)
-SECTOR = 2048                     # sector de DVD: todo dato arranca en un múltiplo
+NOCOORD = 0x7FFF                  # i16 "not given" in anim (x/y)
+SECTOR = 2048                     # DVD sector: every datum starts at a multiple
 
 
 def _up(n):
-    """Redondea hacia arriba al sector."""
+    """Rounds up to the sector."""
     return (n + SECTOR - 1) // SECTOR * SECTOR
 
 
@@ -71,7 +71,7 @@ class _W:
 
 
 def _codepoints(model):
-    """Todos los caracteres que la VN muestra (diálogos, opciones, nombres) + ASCII."""
+    """Every character the VN displays (dialogue, options, names) + ASCII."""
     cps = set(range(0x20, 0x7F))
     for c in model["characters"].values():
         cps |= set(ord(ch) for ch in c.get("name", ""))
@@ -86,8 +86,8 @@ def _codepoints(model):
 
 
 def bake_font(model, psf_path):
-    """Hornea un atlas 1bpp con los glifos que la VN usa, desde un .psf.
-    Devuelve (cell_w, cell_h, cps_ordenados, bitmap) o None si no hay fuente."""
+    """Bakes a 1bpp atlas with the glyphs the VN uses, from a .psf.
+    Returns (cell_w, cell_h, sorted_cps, bitmap) or None if there is no font."""
     if not psf_path:
         return None
     f = psf.load(psf_path)
@@ -106,7 +106,7 @@ def compile_blob(model, base=".", font=None, quantize="auto"):
     order = model["order"]
     scene_idx = {sid: i for i, sid in enumerate(order)}
 
-    # --- pool de strings (dedup) ---
+    # --- string pool (dedup) ---
     pool, pidx = [], {}
     def S(s):
         if s is None: return NONE32
@@ -114,7 +114,7 @@ def compile_blob(model, base=".", font=None, quantize="auto"):
             pidx[s] = len(pool); pool.append(s)
         return pidx[s]
 
-    # --- personajes (sin narrator) e índice ---
+    # --- characters (without narrator) and index ---
     char_idx = {}
     chars = []
     for cid, c in model["characters"].items():
@@ -122,7 +122,7 @@ def compile_blob(model, base=".", font=None, quantize="auto"):
             continue
         char_idx[cid] = len(chars); chars.append(c)
 
-    # --- imágenes (sprites de personajes + fondos img) ---
+    # --- images (character sprites + img backgrounds) ---
     img_idx = {}
     images = []
     def IMG(fname):
@@ -134,11 +134,11 @@ def compile_blob(model, base=".", font=None, quantize="auto"):
                 w, h, rows = image.load_png_file(f"{base}/{fname}")
                 data = b"".join(rows)
             except Exception:
-                w, h, data = 1, 1, b"\0\0\0\0"          # placeholder si falta
-            # 8bpp cuando el CLUT se paga solo (w*h*4 > 1024 + w*h) y no se pierde nada.
-            # Un degradé pintado tiene miles de colores: con 256 aparecen bandas visibles
-            # aunque el error medio sea bajo, así que ese se deja en RGBA32 (con la lectura
-            # alineada ya carga rápido). `quantize="always"` fuerza el ahorro igual.
+                w, h, data = 1, 1, b"\0\0\0\0"          # placeholder if missing
+            # 8bpp when the CLUT pays for itself (w*h*4 > 1024 + w*h) and nothing is lost.
+            # A painted gradient has thousands of colors: with 256 visible banding appears
+            # even if the mean error is low, so that one stays RGBA32 (with aligned reads
+            # it already loads fast). `quantize="always"` forces the saving anyway.
             if quantize and w * h * 3 > 1024 and (quantize == "always" or quant.is_lossless(data)):
                 clut, idx = quant.quantize(w, h, data)
                 fmt, data = 1, clut + idx
@@ -149,13 +149,13 @@ def compile_blob(model, base=".", font=None, quantize="auto"):
         c["_spr"] = IMG(c.get("sprite"))
     by_id = {cid: c for cid, c in model["characters"].items()}
 
-    def expr_img(s):                                 # show con expresión -> su imagen
+    def expr_img(s):                                 # show with expression -> its image
         ex = s.get("expr")
         c = by_id.get(s.get("id"), {})
         f = (c.get("expr") or {}).get(ex) if ex else None
         return IMG(f) if f else NONE16
 
-    # --- audio: bgm embebe el WAV tal cual (stream PCM); se va como ADPCM de SPU2 ---
+    # --- audio: bgm embeds the WAV as is (PCM stream); se goes as SPU2 ADPCM ---
     aud_idx = {}
     audios = []
     def AUD(fname, se=False):
@@ -168,15 +168,15 @@ def compile_blob(model, base=".", font=None, quantize="auto"):
                 if se:
                     data = adpcm.from_wav(data)
             except (OSError, ValueError):
-                aud_idx[key] = NONE16; return NONE16     # falta o no es WAV PCM: sin audio
-            aud_idx[key] = len(audios); audios.append((S(fname), data))  # nombre al pool
+                aud_idx[key] = NONE16; return NONE16     # missing or not PCM WAV: no audio
+            aud_idx[key] = len(audios); audios.append((S(fname), data))  # name into the pool
         return aud_idx[key]
 
-    S(model["title"])                                    # reservar título como string 0
+    S(model["title"])                                    # reserve the title as string 0
 
-    # cuerpo de escenas primero (llena el pool), luego se serializa el pool al final…
-    # más simple: serializar en orden fijo pero el pool debe estar completo antes.
-    # Estrategia: pre-pasar por todo para llenar el pool, luego emitir sin ambigüedad.
+    # scene bodies first (fills the pool), then the pool is serialized at the end…
+    # simpler: serialize in a fixed order, but the pool must be complete beforehand.
+    # Strategy: pre-pass over everything to fill the pool, then emit unambiguously.
     for c in chars:
         S(c["name"])
     scene_bytes = []
@@ -188,9 +188,9 @@ def compile_blob(model, base=".", font=None, quantize="auto"):
         scene_bytes.append(bytes(sw.b))
 
     fnt = bake_font(model, font)
-    datas = [d for _, _, _, d in images] + [d for _, d in audios]   # data cruda, después de la cabecera
+    datas = [d for _, _, _, d in images] + [d for _, d in audios]   # raw data, after the header
 
-    def head(base):                                  # cabecera con offsets absolutos desde `base`
+    def head(base):                                  # header with absolute offsets from `base`
         w = _W(); off = base
         w.b += MAGIC; w.u16(5); w.u16(scene_idx.get(model.get("start", order[0]), 0)); w.u32(base)
         w.u32(len(pool))
@@ -218,17 +218,17 @@ def compile_blob(model, base=".", font=None, quantize="auto"):
             w.b += sb
         return bytes(w.b)
 
-    base = _up(len(head(0)))                         # el tamaño no depende de los offsets
+    base = _up(len(head(0)))                         # the size does not depend on the offsets
     out = bytearray(head(base))
-    out += b"\0" * (base - len(out))                  # relleno hasta el primer sector de datos
+    out += b"\0" * (base - len(out))                  # padding up to the first data sector
     for d in datas:
         out += d; out += b"\0" * (_up(len(d)) - len(d))
     return bytes(out)
 
 
 def build_iso(elf_path, blob_path, out_iso, name="VN", vmode="NTSC"):
-    """Masteriza un ISO9660 booteable: SYSTEM.CNF (BOOT2 -> {name}.ELF), el ELF y el
-    blob .vnp. Requiere `genisoimage`. Nombres 8.3 en MAYÚSCULAS (iso-level 1)."""
+    """Masters a bootable ISO9660: SYSTEM.CNF (BOOT2 -> {name}.ELF), the ELF and the
+    .vnp blob. Requires `genisoimage`. UPPERCASE 8.3 names (iso-level 1)."""
     name = name.upper()[:8]
     stage = tempfile.mkdtemp()
     try:
@@ -256,10 +256,10 @@ def _emit_step(w, s, S, char_idx, scene_idx, IMG, AUD, expr_img=lambda s: NONE16
             w.u8(1); w.u32(_rgba(sp["a"])); w.u32(_rgba(sp["b"]))
         else:
             w.u8(2); w.u16(IMG(sp.get("file")))
-        w.u16(int(s.get("fade") or 0))              # v5: crossfade en ms
+        w.u16(int(s.get("fade") or 0))              # v5: crossfade in ms
     elif op == "show":
         w.u16(char_idx.get(s["id"], NONE16))
-        w.u16(expr_img(s))                          # v4: imagen de la expresión (NONE = base)
+        w.u16(expr_img(s))                          # v4: the expression's image (NONE = base)
         w.i16(s.get("x", vn.POS.get(s.get("pos"), 0)))     # preset left/center/right -> x
         w.i16(s.get("y", 0)); w.i16(s.get("z", 0))
         w.u16(int(s.get("zoom", 100))); w.u8(int(s.get("opacity", 100)))
@@ -270,9 +270,9 @@ def _emit_step(w, s, S, char_idx, scene_idx, IMG, AUD, expr_img=lambda s: NONE16
         w.u16(char_idx.get(s.get("who"), NONE16)); w.u32(S(s.get("text", "")))
     elif op == "animate":
         p = s.get("params", {})
-        w.u8(ANIM.get(s["kind"], 0))                     # curva-como-kind / move / acción
-        w.u8(ANIM.get(p.get("curve", "linear"), 0))      # curva (para move)
-        w.i16(p.get("x", NOCOORD)); w.i16(p.get("y", NOCOORD))     # v5: y; 0x7FFF = no dado
+        w.u8(ANIM.get(s["kind"], 0))                     # curve-as-kind / move / action
+        w.u8(ANIM.get(p.get("curve", "linear"), 0))      # curve (for move)
+        w.i16(p.get("x", NOCOORD)); w.i16(p.get("y", NOCOORD))     # v5: y; 0x7FFF = not given
         w.u16(int(p.get("time", p.get("falltime", 0))))
         w.i16(p.get("vib", p.get("vibration", 0))); w.u16(int(p.get("cycle", 0)))
         w.i16(p.get("dist", p.get("distance", 0)))
@@ -290,7 +290,7 @@ def _emit_step(w, s, S, char_idx, scene_idx, IMG, AUD, expr_img=lambda s: NONE16
         pass
 
 
-# --- lector de verificación (y spec del lector en C) ------------------------
+# --- verification reader (and spec for the C reader) ------------------------
 class _R:
     def __init__(self, b): self.b = b; self.o = 0
     def u8(self): v = self.b[self.o]; self.o += 1; return v
@@ -302,7 +302,7 @@ class _R:
 
 def read_blob(data):
     r = _R(data)
-    assert r.take(4) == MAGIC, "no es VNP"
+    assert r.take(4) == MAGIC, "not a VNP"
     version = r.u16(); start = r.u16(); head_size = r.u32()
     pool = []
     for _ in range(r.u32()):
@@ -366,16 +366,16 @@ def _read_step(r, S):
 
 
 def build(vn_path, out, elf=None, name="VN", font="auto"):
-    """Compila una .vn a blob; si se da un ELF, masteriza el .iso booteable.
-    Sin ELF, escribe sólo el blob .vnp (para probar el pipeline). `font`: ruta a un
-    .psf, "auto" (detecta una del sistema) o None (sin texto)."""
+    """Compiles a .vn to a blob; if an ELF is given, masters the bootable .iso.
+    Without an ELF, writes only the .vnp blob (to test the pipeline). `font`: path to a
+    .psf, "auto" (detects a system one) or None (no text)."""
     if font == "auto":
         font = psf.find_default()
     text = open(vn_path, encoding="utf-8").read()
     model = vn._link_choices(vn.parse(text))
     blob = compile_blob(model, os.path.dirname(os.path.abspath(vn_path)), font=font)
     if font:
-        print(f"fuente horneada: {os.path.basename(font)}")
+        print(f"baked font: {os.path.basename(font)}")
     if elf:
         tmp = out + ".vnp.tmp"
         open(tmp, "wb").write(blob)
@@ -383,11 +383,11 @@ def build(vn_path, out, elf=None, name="VN", font="auto"):
             build_iso(elf, tmp, out, name=name)
         finally:
             os.remove(tmp)
-        print(f"ISO booteable -> {out}  ({len(blob)} bytes de datos, ELF {os.path.basename(elf)})")
+        print(f"bootable ISO -> {out}  ({len(blob)} bytes of data, ELF {os.path.basename(elf)})")
     else:
         vnp = out if out.lower().endswith(".vnp") else out + ".vnp"
         open(vnp, "wb").write(blob)
-        print(f"blob -> {vnp} ({len(blob)} bytes). Pasá --elf <player.elf> para masterizar el .iso.")
+        print(f"blob -> {vnp} ({len(blob)} bytes). Pass --elf <player.elf> to master the .iso.")
     return out
 
 
@@ -422,7 +422,7 @@ def demo():
     ch = r["scenes"][0][3]
     assert len(ch["options"]) == 2 and ch["options"][0]["target"] == 1
     assert r["scenes"][1][-1]["op"] == "end"
-    # animate + imagen real embebida (round-trip)
+    # animate + real embedded image (round-trip)
     import tempfile, os, struct, zlib
     d = tempfile.mkdtemp()
     px = bytes((10, 20, 30, 255)) * (2 * 2)              # PNG RGBA 2x2
@@ -435,9 +435,9 @@ def demo():
                                    'scene s\n  show h center\n  animate h move x=200 curve=accel time=400\n'
                                    '  h: hi\n  end\n'))
     r2 = read_blob(compile_blob(m2, d))
-    assert r2["images"][0][:2] == (2, 2) and r2["images"][0][4] == 0, r2["images"]   # chica: RGBA32
-    assert r2["version"] == 5 and r2["font"] is None      # sin fuente -> sección vacía
-    # audio: bgm embebe el archivo; el paso guarda el índice
+    assert r2["images"][0][:2] == (2, 2) and r2["images"][0][4] == 0, r2["images"]   # small: RGBA32
+    assert r2["version"] == 5 and r2["font"] is None      # no font -> empty section
+    # audio: bgm embeds the file; the step stores the index
     open(f"{d}/tema.wav", "wb").write(b"RIFF....WAVEfake" * 4)
     m4 = vn._link_choices(vn.parse('title: t\ncharacter a "A"\nscene s\n  bgm tema.wav\n  a: h\n'
                                    '  bgm stop\n  end\n'))
@@ -447,14 +447,14 @@ def demo():
     assert r4["scenes"][0][2]["stop"] == 1 and r4["scenes"][0][2]["audio"] == 0xFFFF
     an = r2["scenes"][0][1]
     assert an["op"] == "animate" and an["kind"] == "move" and an["curve"] == "accel" and an["x"] == 200
-    # horneado de fuente (si hay una PSF de sistema)
+    # font baking (if there is a system PSF)
     pf = psf.find_default()
     if pf:
         m3 = vn._link_choices(vn.parse('title: t\ncharacter a "Añí"\nscene s\n  a: Holá ¿ñ?\n  end\n'))
         rf = read_blob(compile_blob(m3, ".", font=pf))
         assert rf["font"] and rf["font"]["cell"] == (8, 16), rf["font"]
         for ch in "Holá¿ñ?A":
-            assert ord(ch) in rf["font"]["cps"], f"falta glifo {ch!r}"
+            assert ord(ch) in rf["font"]["cps"], f"missing glyph {ch!r}"
     print("demo OK")
 
 

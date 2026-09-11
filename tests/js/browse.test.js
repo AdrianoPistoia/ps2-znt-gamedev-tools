@@ -9,9 +9,9 @@ assert.deepStrictEqual(A.crumbs("/home/adri/Downloads"), [
 ]);
 assert.deepStrictEqual(A.crumbs("/"), [{ name: "/", path: "/" }]);
 assert.deepStrictEqual(A.crumbs(""), []);
-assert.strictEqual(A.crumbs("/a/b/").length, 3, "la barra final no agrega un tramo");
+assert.strictEqual(A.crumbs("/a/b/").length, 3, "a trailing slash does not add a segment");
 
-// juntar carpeta + nombre para el 'guardar como'
+// join folder + name for 'save as'
 assert.strictEqual(A.joinPath("/home/adri", "h.vn"), "/home/adri/h.vn");
 assert.strictEqual(A.joinPath("/", "h.vn"), "/h.vn");
 assert.strictEqual(A.joinPath("/home/adri/", "h.vn"), "/home/adri/h.vn");

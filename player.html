@@ -1,10 +1,10 @@
-<!doctype html><html lang="es"><head><meta charset="utf-8">
+<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Nueva VN</title>
+<title>New VN</title>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
 <style>
-  /* Mundo oscuro comprometido (juego): noche indigo + candil ambar. Un solo tema. */
+  /* Committed dark world (game): indigo night + amber lamplight. Single theme. */
   :root{
     --ground:#0b0e1c; --stage:#05060f;
     --box-a:#141b3aee; --box-b:#0a0e22f2;
@@ -64,7 +64,7 @@
        color:var(--amber-soft);background:#03040acc}
   #hint{position:absolute;top:10px;right:14px;font-size:.7rem;letter-spacing:.1em;
         text-transform:uppercase;color:var(--muted);opacity:.55}
-  /* aproximación CSS de las acciones del engine (Python es la fuente de verdad) */
+  /* CSS approximation of the engine actions (Python is the source of truth) */
   @keyframes vn-jump{0%,100%{transform:translateY(0)}50%{transform:translateY(-6%)}}
   @keyframes vn-fall{0%{transform:translateY(-30%);opacity:.2}100%{transform:translateY(0);opacity:1}}
   @keyframes vn-shake{0%,100%{transform:translate(0,0)}25%{transform:translate(-1.5%,1%)}75%{transform:translate(1.5%,-1%)}}
@@ -78,13 +78,13 @@
   <div id="box"><div id="who"></div><div id="text"></div><div id="cursor">▼</div></div>
   <div id="choices" hidden></div>
   <div id="end" hidden></div>
-  <div id="hint">click / espacio</div>
+  <div id="hint">click / space</div>
   <audio id="bgm" loop></audio>
 </div>
 <script>
-const M = {"title": "Nueva VN", "characters": {"narrator": {"name": "", "color": "#cccccc"}, "asd": {"name": "asd", "color": "#7cc4ff"}}, "scenes": {"inicio": [{"op": "end"}]}, "order": ["inicio"], "start": "inicio"};
+const M = {"title": "New VN", "characters": {"narrator": {"name": "", "color": "#cccccc"}, "asd": {"name": "asd", "color": "#7cc4ff"}}, "scenes": {"inicio": [{"op": "end"}]}, "order": ["inicio"], "start": "inicio"};
 const $ = s => document.querySelector(s);
-const sprites = {};   // id -> elemento
+const sprites = {};   // id -> element
 let scene, ip;
 
 function setBg(spec){
@@ -110,7 +110,7 @@ function playBgm(s){
   if(s.stop){ a.pause(); return; }
   if(s.data){ a.src=s.data; a.play().catch(()=>{}); }
 }
-function animate(id,kind){        // aproximación CSS de las acciones del engine
+function animate(id,kind){        // CSS approximation of the engine actions
   const el = sprites[id]; if(!el) return;
   const css = {jump:"vn-jump .5s 2", jumponce:"vn-jump .5s 1", vibrate:"vn-shake .4s 3",
                wave:"vn-wave 1s 2", fall:"vn-fall .6s 1"}[kind];
@@ -153,11 +153,11 @@ function choose(s){
   s.options.forEach(o=>{ const b=document.createElement("button"); b.textContent=o.label;
     b.onclick=()=>{ box.hidden=true; enter(o.target); }; box.appendChild(b); });
 }
-function theEnd(){ $("#end").hidden=false; $("#end").textContent="Fin"; $("#cursor").hidden=true; }
+function theEnd(){ $("#end").hidden=false; $("#end").textContent="The End"; $("#cursor").hidden=true; }
 
 function advance(){
   if(!$("#choices").hidden || !$("#end").hidden) return;
-  if(finishType()) return;   // primer click completa el texto, el segundo avanza
+  if(finishType()) return;   // first click completes the text, the second advances
   step();
 }
 $("#stage").addEventListener("click", advance);

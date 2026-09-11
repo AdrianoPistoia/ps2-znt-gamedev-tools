@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Tokenizer + parser de Squirrel (2.x/3.x, el subconjunto que usa el juego).
+"""Squirrel tokenizer + parser (2.x/3.x, the subset the game uses).
 
-Produce un AST de tuplas `(kind, ...)` que consume el transpilador. No es el
-parser de referencia: cubre lo que aparece en el corpus de Zero no Tsukaima
-(clases con extends, closures, foreach, switch, ternario, delegados, corrutinas).
+Produces an AST of `(kind, ...)` tuples consumed by the transpiler. It is not the
+reference parser: it covers what shows up in the Zero no Tsukaima corpus
+(classes with extends, closures, foreach, switch, ternary, delegates, coroutines).
 
   python -m znt sqparse demo
-  python -m znt sqparse check scripts/       # parsea todo y reporta fallos
+  python -m znt sqparse check scripts/       # parse everything and report failures
 """
 import sys, glob
 
@@ -17,7 +17,7 @@ KEYWORDS = {
     "switch", "this", "throw", "try", "typeof", "while", "yield", "constructor",
     "static", "true", "false", "rawcall",
 }
-# operadores, del mas largo al mas corto para el maximal munch
+# operators, longest to shortest for maximal munch
 OPS = ["<=>", "...", "<<", ">>", "<=", ">=", "==", "!=", "&&", "||", "+=", "-=",
        "*=", "/=", "%=", "++", "--", "<-", "::",
        "+", "-", "*", "/", "%", "=", "<", ">", "!", "~", "&", "|", "^",
@@ -88,13 +88,13 @@ def tokenize(src):
             if src.startswith(op, i):
                 toks.append(Tok("op", op, ln)); i += len(op); break
         else:
-            raise SyntaxError(f"linea {ln}: caracter inesperado {c!r}")
+            raise SyntaxError(f"line {ln}: unexpected character {c!r}")
     toks.append(Tok("eof", None, ln))
     return toks
 
 
 # --- Pratt parser -----------------------------------------------------------
-# precedencias de operadores binarios
+# binary operator precedences
 BINPREC = {
     "||": 3, "&&": 4, "|": 5, "^": 6, "&": 7,
     "==": 8, "!=": 8, "<=>": 8, "<": 9, ">": 9, "<=": 9, ">=": 9,
@@ -118,7 +118,7 @@ class Parser:
     def eat(self, k, v=None):
         tk = self.t[self.p]
         if tk.k != k or (v is not None and tk.v != v):
-            raise SyntaxError(f"linea {tk.ln}: esperaba {k} {v}, vino {tk.k} {tk.v!r}")
+            raise SyntaxError(f"line {tk.ln}: expected {k} {v}, got {tk.k} {tk.v!r}")
         self.p += 1; return tk
 
     def opt(self, k, v=None):
@@ -222,7 +222,7 @@ class Parser:
 
     def st_function(self):
         self.nx(); name = self.eat("id").v
-        # funcion con nombre calificado a.b.c
+        # function with a qualified name a.b.c
         path = [name]
         while self.opt("op", "."): path.append(self.eat("id").v)
         params, defs, varg = self.params()
@@ -264,7 +264,7 @@ class Parser:
                 self.nx(); params, defs, varg = self.params()
                 members.append(("method", "constructor", params, defs, varg, self.block()))
             elif self.opt("kw", "function"):
-                name = self.nx().v; params, defs, varg = self.params()   # id o kw
+                name = self.nx().v; params, defs, varg = self.params()   # id or kw
                 members.append(("method", name, params, defs, varg, self.block()))
             else:
                 name = self.eat("id").v
@@ -325,9 +325,9 @@ class Parser:
         while True:
             tk = self.cur()
             if tk.k == "op" and tk.v == ".":
-                self.nx(); nm = self.nx()          # id o keyword (.constructor, .len...)
+                self.nx(); nm = self.nx()          # id or keyword (.constructor, .len...)
                 if nm.k not in ("id", "kw"):
-                    raise SyntaxError(f"linea {nm.ln}: esperaba nombre de campo, vino {nm.k}")
+                    raise SyntaxError(f"line {nm.ln}: expected field name, got {nm.k}")
                 e = ("field", e, nm.v)
             elif tk.k == "op" and tk.v == "[":
                 self.nx(); idx = self.expr(); self.eat("op", "]"); e = ("index", e, idx)
@@ -370,10 +370,10 @@ class Parser:
             if tk.v == "{":
                 return self.table()
             if tk.v == "::":
-                self.nx(); return ("name", self.eat("id").v)   # root: tratamos como global
+                self.nx(); return ("name", self.eat("id").v)   # root: treated as global
             if tk.v == "@":
                 self.nx(); return self.lambda_short()
-        raise SyntaxError(f"linea {tk.ln}: expresion inesperada {tk.k} {tk.v!r}")
+        raise SyntaxError(f"line {tk.ln}: unexpected expression {tk.k} {tk.v!r}")
 
     def lambda_(self):
         self.eat("kw", "function")
@@ -381,7 +381,7 @@ class Parser:
         return ("lambda", params, defs, varg, self.block())
 
     def lambda_short(self):
-        # @(a,b) expr   (lambda de expresion de Squirrel 3)
+        # @(a,b) expr   (Squirrel 3 expression lambda)
         params, defs, varg = self.params()
         return ("lambda_expr", params, defs, varg, self.assign())
 
@@ -428,7 +428,7 @@ def check(dirpath):
             parse(s); ok += 1
         except Exception as e:
             fail += 1; errs.append((p.split("/")[-1], str(e)[:90]))
-    print(f"parse: {ok}/{len(files)} OK, {fail} fallan")
+    print(f"parse: {ok}/{len(files)} OK, {fail} failed")
     for name, e in errs[:25]:
         print(f"  {name}: {e}")
     return fail

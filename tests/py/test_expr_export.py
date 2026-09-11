@@ -1,4 +1,4 @@
-"""Expresiones en el player HTML y en el blob PS2."""
+"""Expressions in the HTML player and in the PS2 blob."""
 import tempfile, os, zlib, struct, base64
 from znt import vn, vniso
 
@@ -15,13 +15,13 @@ m = vn._link_choices(vn.parse(
     'title: T\ncharacter ana "Ana" color=#fff\nsprite ana ana.png\nsprite ana feliz feliz.png\n'
     'scene s\n  show ana left\n  ana: hola\n  show ana feliz\n  ana: chau\n  end\n'))
 
-# --- player HTML: lleva la imagen de cada expresión y el show dice cuál usar
+# --- HTML player: carries each expression's image and the show says which one to use
 html = vn.render_html(m, d)
-assert base64.b64encode(feliz).decode()[:40] in html, "la imagen de la expresión va embebida"
-assert '"feliz"' in html, "y el show/personaje la nombra"
+assert base64.b64encode(feliz).decode()[:40] in html, "the expression image is embedded"
+assert '"feliz"' in html, "and the show/character names it"
 assert "exprData" in html
 
-# --- blob PS2: el show lleva el índice de imagen de la expresión (0xFFFF = base del personaje)
+# --- PS2 blob: the show carries the expression's image index (0xFFFF = the character's base)
 blob = vniso.compile_blob(m, base=d, font=None)
 r = vniso.read_blob(blob)
 assert r["version"] >= 4, r["version"]
@@ -29,7 +29,7 @@ st = r["scenes"][0]
 assert st[0]["op"] == "show" and st[0]["img"] == 0xFFFF, st[0]
 assert st[2]["op"] == "show" and st[2]["img"] != 0xFFFF, st[2]
 img = r["images"][st[2]["img"]]                       # (w, h, off, len, fmt)
-assert tuple(img[:2]) == (8, 6), "apunta a feliz.png"
+assert tuple(img[:2]) == (8, 6), "points to feliz.png"
 ana = next(c for c in r["characters"] if c["sprite"] != 0xFFFF)
-assert r["images"][ana["sprite"]][0] == 4, "el sprite base sigue siendo ana.png"
+assert r["images"][ana["sprite"]][0] == 4, "the base sprite is still ana.png"
 print("EXPR EXPORT GREEN")

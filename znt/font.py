@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-"""La fuente del juego: NORMAL.BIN #0006, un BMP monocromo de 1bpp.
+"""The game's font: NORMAL.BIN #0006, a 1bpp monochrome BMP.
 
-Atlas de 1024x1380, celdas de 24x26, 42 glifos por fila, 53 filas. El mapeo
-Shift-JIS -> indice de glifo es NORMAL.BIN #0005, un archivo de texto CP932 de
-42 caracteres por linea: la linea N es la fila N del atlas.
+1024x1380 atlas, 24x26 cells, 42 glyphs per row, 53 rows. The Shift-JIS ->
+glyph index mapping is NORMAL.BIN #0005, a CP932 text file with 42 characters
+per line: line N is row N of the atlas.
 
   python -m znt font info   0006.bmp
   python -m znt font png    0006.bmp out.png [x y w h]
-  python -m znt font widths 0006.bmp 0005.txt      > anchos de tinta por glifo
+  python -m znt font widths 0006.bmp 0005.txt      > ink widths per glyph
 """
 import struct, sys, zlib
 
-# Geometria del atlas, derivada en el analisis (ver README 2.4)
+# Atlas geometry, derived in the analysis (see README 2.4)
 CELL_W, CELL_H, PER_ROW = 24, 26, 42
 
 
@@ -51,12 +51,12 @@ def png(rs, path):
 
 
 def parse_table(data):
-    """NORMAL #0005: texto CP932, 42 caracteres por linea. Indice = posicion."""
+    """NORMAL #0005: CP932 text, 42 characters per line. Index = position."""
     return [c for line in data.decode("cp932").split("\r\n") for c in line]
 
 
 def ink_width(rs, i):
-    """Ancho de tinta del glifo i dentro de su celda. Base para el VWF."""
+    """Ink width of glyph i within its cell. Basis for the VWF."""
     r, c = divmod(i, PER_ROW)
     cols = [x for x in range(CELL_W)
             if any(rs[r*CELL_H + y][c*CELL_W + x] for y in range(CELL_H))]
@@ -64,15 +64,15 @@ def ink_width(rs, i):
 
 
 class Font:
-    """Atlas de glifos + mapeo caracter->indice. Construida desde bytes."""
+    """Glyph atlas + character->index mapping. Built from bytes."""
 
     def __init__(self, atlas_bmp, mapping_bytes):
         self._rows = rows(parse(atlas_bmp))
-        self.chars = parse_table(mapping_bytes)          # indice -> caracter
-        self.index = {c: i for i, c in enumerate(self.chars)}   # caracter -> indice
+        self.chars = parse_table(mapping_bytes)          # index -> character
+        self.index = {c: i for i, c in enumerate(self.chars)}   # character -> index
 
     def cell(self, ch):
-        """Pixeles (filas de 0/255) de la celda 24x26 del caracter, o None."""
+        """Pixels (rows of 0/255) of the character's 24x26 cell, or None."""
         i = self.index.get(ch)
         if i is None:
             return None
@@ -92,7 +92,7 @@ class Font:
 
 
 def demo():
-    """Self-check con un BMP sintetico de 1bpp, sin depender del juego."""
+    """Self-check with a synthetic 1bpp BMP, independent of the game."""
     w, h = 16, 2
     pix = bytes([0b10100000, 0, 0, 0]) + bytes([0, 0b00000001, 0, 0])
     d = (b"BM" + struct.pack("<IHHI", 62 + len(pix), 0, 0, 62)
@@ -103,7 +103,7 @@ def demo():
     rs = rows(f)
     assert [x for x, v in enumerate(rs[0]) if v] == [0, 2], rs[0]
     assert [x for x, v in enumerate(rs[1]) if v] == [15], rs[1]
-    # mapeo: dos lineas CP932 separadas por CRLF
+    # mapping: two CP932 lines separated by CRLF
     chars = parse_table("ABC\r\nXYZ".encode("cp932"))
     assert chars == list("ABCXYZ") and chars[4] == "Y"
     print("demo OK")
@@ -125,7 +125,7 @@ def cli(argv):
         if len(argv) > 6:
             x, y, w, h = map(int, argv[3:7])
             rs = [r[x:x+w] for r in rs[y:y+h]]
-        print("escrito", *png(rs, argv[2]), "->", argv[2])
+        print("wrote", *png(rs, argv[2]), "->", argv[2])
 
 
 if __name__ == "__main__":

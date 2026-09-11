@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Lector minimo de TIM2 y volcado a PNG en escala de grises (solo stdlib).
+"""Minimal TIM2 reader and grayscale PNG dump (stdlib only).
 
   python -m znt tim2 info  a.tm2
-  python -m znt tim2 png   a.tm2 salida.png [x y w h]     recorte opcional
+  python -m znt tim2 png   a.tm2 out.png [x y w h]     optional crop
 """
 import struct, sys, zlib
 
@@ -10,7 +10,7 @@ FMT = {1: '16bpp', 2: '24bpp', 3: '32bpp', 4: '4bpp-idx', 5: '8bpp-idx'}
 
 
 def parse(d):
-    assert d[:4] == b'TIM2', "no es TIM2"
+    assert d[:4] == b'TIM2', "not a TIM2"
     o = 0x10
     tot, clut, img, hdr, ncol = struct.unpack('<IIIHH', d[o:o+16])
     ityp, mip, ctyp, icol = d[o+16:o+20]
@@ -22,14 +22,14 @@ def parse(d):
 
 
 def gray(t):
-    """indice -> luminancia. Devuelve una fila de bytes por scanline."""
+    """index -> luminance. Returns one row of bytes per scanline."""
     w, h, f, pix, pal = t['w'], t['h'], t['fmt'], t['pix'], t['pal']
     lut = []
     step = 4 if len(pal) >= t['ncol'] * 4 else 3
     for i in range(t['ncol']):
         r, g, b = pal[i*step:i*step+3] if (i+1)*step <= len(pal) else (0, 0, 0)
         a = pal[i*step+3] if step == 4 and (i+1)*step <= len(pal) else 0x80
-        # alfa de PS2: 0x80 = opaco. Se compone contra negro.
+        # PS2 alpha: 0x80 = opaque. Composited against black.
         lum = (r*299 + g*587 + b*114) // 1000
         lut.append(min(255, lum * min(a, 0x80) // 0x80 * 2))
     rows = []
@@ -45,13 +45,13 @@ def gray(t):
         for y in range(h):
             rows.append(bytes(lut[c] for c in pix[y*w:(y+1)*w]))
     else:
-        raise SystemExit(f"formato {FMT.get(f, f)} no soportado para volcado")
+        raise SystemExit(f"format {FMT.get(f, f)} not supported for dumping")
     return rows
 
 
 def _unswizzle_clut(entries):
-    """CLUT de PS2 en 8bpp (CSM1): en cada bloque de 32, los runs [8:16] y
-    [16:24] van intercambiados. Sin esto los colores salen permutados."""
+    """PS2 CLUT at 8bpp (CSM1): in each block of 32, the runs [8:16] and
+    [16:24] are swapped. Without this the colors come out permuted."""
     out = list(entries)
     for i in range(0, len(out) - 31, 32):
         out[i+8:i+16], out[i+16:i+24] = out[i+16:i+24], out[i+8:i+16]
@@ -59,14 +59,14 @@ def _unswizzle_clut(entries):
 
 
 def rgba(t):
-    """indice -> (r,g,b,a). Devuelve una fila de bytes RGBA por scanline."""
+    """index -> (r,g,b,a). Returns one row of RGBA bytes per scanline."""
     w, h, f, pix, pal = t['w'], t['h'], t['fmt'], t['pix'], t['pal']
     step = 4 if len(pal) >= t['ncol'] * 4 else 3
     ent = []
     for i in range(t['ncol']):
         r, g, b = pal[i*step:i*step+3] if (i+1)*step <= len(pal) else (0, 0, 0)
         a = pal[i*step+3] if step == 4 and (i+1)*step <= len(pal) else 0x80
-        ent.append((r, g, b, min(255, a * 2)))     # alfa PS2: 0x80 = opaco
+        ent.append((r, g, b, min(255, a * 2)))     # PS2 alpha: 0x80 = opaque
     if f == 5:
         ent = _unswizzle_clut(ent)
     lut = [bytes(e) for e in ent]
@@ -83,7 +83,7 @@ def rgba(t):
         for y in range(h):
             rows.append(b"".join(lut[c] for c in pix[y*w:(y+1)*w]))
     else:
-        raise SystemExit(f"formato {FMT.get(f, f)} no soportado para color")
+        raise SystemExit(f"format {FMT.get(f, f)} not supported for color")
     return rows
 
 
@@ -102,7 +102,7 @@ def png(rows, path):
 
 
 class Texture:
-    """Un TIM2 en memoria. `.png(path)` lo vuelca; `.rows()` da luminancia."""
+    """A TIM2 in memory. `.png(path)` dumps it; `.rows()` gives luminance."""
 
     def __init__(self, data):
         self.data = data
@@ -128,7 +128,7 @@ class Texture:
         return rs
 
     def rgba(self):
-        """Filas de bytes RGBA (4 bytes/pixel)."""
+        """Rows of RGBA bytes (4 bytes/pixel)."""
         return rgba(self._t)
 
     def png(self, path, box=None):
@@ -139,7 +139,7 @@ class Texture:
 
 
 def demo():
-    """Self-check con un TIM2 sintetico 2x2 de 8bpp indexado."""
+    """Self-check with a synthetic 2x2 8bpp indexed TIM2."""
     hdr = struct.pack('<IIIHH', 0, 4*4, 4, 0x30, 4) + bytes([0, 0, 0, 5]) + struct.pack('<HH', 2, 2)
     pix = bytes([0, 1, 2, 3])
     pal = bytes([0, 0, 0, 0x80,  255, 255, 255, 0x80,  128, 0, 0, 0x80,  0, 0, 0, 0x80])
@@ -149,9 +149,9 @@ def demo():
     rs = t.rows()
     assert rs[0][0] == 0 and rs[0][1] == 255, rs[0]
     rg = t.rgba()
-    assert rg[0][0:4] == bytes([0, 0, 0, 255]), rg[0][:4]          # indice 0 negro opaco
-    assert rg[0][4:8] == bytes([255, 255, 255, 255]), rg[0][4:8]   # indice 1 blanco opaco
-    # des-swizzle: bloque de 32, swap [8:16]<->[16:24]
+    assert rg[0][0:4] == bytes([0, 0, 0, 255]), rg[0][:4]          # index 0 opaque black
+    assert rg[0][4:8] == bytes([255, 255, 255, 255]), rg[0][4:8]   # index 1 opaque white
+    # unswizzle: block of 32, swap [8:16]<->[16:24]
     sw = _unswizzle_clut(list(range(32)))
     assert sw[8:16] == list(range(16, 24)) and sw[16:24] == list(range(8, 16)), sw
     print("demo OK")
@@ -166,7 +166,7 @@ def cli(argv):
         print(f"{t.w}x{t.h}  {t.fmt}")
     else:
         box = tuple(map(int, argv[3:7])) if len(argv) > 6 else None
-        print("escrito", *t.png(argv[2], box), "->", argv[2])
+        print("wrote", *t.png(argv[2], box), "->", argv[2])
 
 
 if __name__ == "__main__":

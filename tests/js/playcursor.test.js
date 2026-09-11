@@ -1,8 +1,8 @@
 const assert = require("assert");
 const A = require(require("path").join(__dirname, "../../znt/web/static/logic.js"));
 
-/* El timeline sigue al Play: mientras se reproduce, escena y paso son los del
-   runtime (que puede haber saltado de escena por un choice/goto). */
+/* The timeline follows Play: while playing, scene and step are the runtime's
+   (which may have jumped scenes via a choice/goto). */
 const edit = { scene: "s", step: 3, play: null };
 assert.deepStrictEqual(A.playCursor(edit), { scene: "s", step: 3, playing: false });
 const playing = { scene: "s", step: 3, play: { scene: "t", step: 0 } };

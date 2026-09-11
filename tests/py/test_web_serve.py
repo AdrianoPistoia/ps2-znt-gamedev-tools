@@ -1,28 +1,28 @@
-"""Levantar el server: puerto ocupado, versión de API y guardar sin ruta."""
+"""Bringing up the server: busy port, API version and saving without a path."""
 import socket, tempfile, os
 from znt.web import server as ws
 
 d = tempfile.mkdtemp(); p = os.path.join(d, "h.vn")
-open(p, "w", encoding="utf-8").write('title: T\ncharacter a "Ana"\nscene s\n  a: hola\n  end\n')
+open(p, "w", encoding="utf-8").write('title: T\ncharacter a "Ana"\nscene s\n  a: hello\n  end\n')
 st = ws.Studio(p)
 
-# 1) si el puerto está ocupado (otro VN Studio abierto), busca otro en vez de explotar
+# 1) if the port is busy (another VN Studio open), it picks another instead of blowing up
 busy = socket.socket(); busy.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 busy.bind(("127.0.0.1", 0)); busy.listen(1)
 port = busy.getsockname()[1]
 srv = ws.make_server(st, "127.0.0.1", port)
-assert srv.server_address[1] != port, "tendría que haber elegido otro puerto"
+assert srv.server_address[1] != port, "should have picked another port"
 srv.server_close(); busy.close()
 
-# 2) la UI tiene que poder darse cuenta de que el server es viejo
+# 2) the UI must be able to tell the server is old
 assert isinstance(ws.API, int) and ws.API > 0
-assert st.state()["api"] == ws.API, "el estado viaja con la versión de la API"
+assert st.state()["api"] == ws.API, "the state carries the API version"
 
-# 3) guardar un proyecto nuevo (sin ruta) no puede ser un no-op silencioso
+# 3) saving a new project (no path) must not be a silent no-op
 st2 = ws.Studio(None)
 r = st2.op({"op": "save"})
-assert r.get("error"), "sin ruta hay que avisar, no tragarse el guardado"
-r = st2.op({"op": "save", "path": os.path.join(d, "nuevo.vn")})
-assert not r.get("error") and os.path.exists(os.path.join(d, "nuevo.vn"))
-assert r["path"].endswith("nuevo.vn"), "y queda como ruta del proyecto"
+assert r.get("error"), "without a path it must warn, not swallow the save"
+r = st2.op({"op": "save", "path": os.path.join(d, "new.vn")})
+assert not r.get("error") and os.path.exists(os.path.join(d, "new.vn"))
+assert r["path"].endswith("new.vn"), "and it becomes the project path"
 print("SERVE GREEN")

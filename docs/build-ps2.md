@@ -1,69 +1,69 @@
-# Compilar el ELF y correr la VN en PS2 (PCSX2)
+# Building the ELF and running the VN on PS2 (PCSX2)
 
-Guía de la **primera** compilación del player nativo (`ps2/`) y de cómo probar una
-VN en el emulador. Requiere la toolchain **ps2dev**; el SDK Python arma el blob y
-el ISO. Ver el estado y las notas del ELF en [`ps2/README.md`](../ps2/README.md).
+Guide to the **first** build of the native player (`ps2/`) and to trying a VN in
+the emulator. Requires the **ps2dev** toolchain; the Python SDK builds the blob and
+the ISO. See the status and notes of the ELF in [`ps2/README.md`](../ps2/README.md).
 
-## 0. Verificar sin PS2 (rápido)
+## 0. Verify without a PS2 (quick)
 
-El lector del blob es correcto y se prueba en el host, sin toolchain:
+The blob reader is correct and is tested on the host, without a toolchain:
 
 ```sh
-python3 -m znt iso build historia.vn game.vnp        # compila el blob
+python3 -m znt iso build story.vn game.vnp           # compiles the blob
 cd ps2 && make host && ./test_vnp ../game.vnp        # -> "C READER OK"
 ```
 
-## 1. Toolchain ps2dev (Docker)
+## 1. ps2dev toolchain (Docker)
 
-Lo más simple es la imagen oficial (trae PS2SDK, gsKit, audsrv):
+The simplest option is the official image (ships PS2SDK, gsKit, audsrv):
 
 ```sh
 cd ~/Projects/ps2-znt-gamedev-tools
-ps2/build.sh            # docker run … ps2dev/ps2dev (instala make en el contenedor) -> ps2/ZNTVN.ELF
+ps2/build.sh            # docker run … ps2dev/ps2dev (installs make in the container) -> ps2/ZNTVN.ELF
 ```
 
-Con ps2dev instalado local (`$PS2DEV`, `$PS2SDK`, `$PS2DEV/bin` en el PATH):
+With ps2dev installed locally (`$PS2DEV`, `$PS2SDK`, `$PS2DEV/bin` on the PATH):
 `cd ps2 && make`.
 
-> Si el link falla por audsrv/gsKit, revisá que la imagen los tenga (`ls
-> $PS2SDK/ports/lib`). El audio carga `freesd.irx`+`audsrv.irx` en `audio_init()`:
-> ajustá ese `SifLoadModule` a tu entorno (ver `ps2/README.md`).
+> If the link fails on audsrv/gsKit, check that the image has them (`ls
+> $PS2SDK/ports/lib`). Audio loads `freesd.irx`+`audsrv.irx` in `audio_init()`:
+> adjust that `SifLoadModule` to your environment (see `ps2/README.md`).
 
-## 2. Preparar los datos
+## 2. Prepare the data
 
 ```sh
-python3 -m znt iso build historia.vn game.vnp        # sólo el blob (con fuente auto)
+python3 -m znt iso build story.vn game.vnp           # just the blob (with auto font)
 ```
 
-Para PS2 el BGM conviene en **WAV PCM** (ogg/mp3 no se decodifican en consola).
-`--font ruta.psf` elige la fuente; `--no-font` la omite.
+For PS2 the BGM should be **PCM WAV** (ogg/mp3 are not decoded on the console).
+`--font path.psf` picks the font; `--no-font` leaves it out.
 
-## 3. Probar en PCSX2
+## 3. Try it in PCSX2
 
-### A) Rápido — Run ELF + host filesystem
-1. Copiá el blob como `ZNTVN.VNP` **al lado** de `ZNTVN.ELF` (el player busca
+### A) Quick — Run ELF + host filesystem
+1. Copy the blob as `ZNTVN.VNP` **next to** `ZNTVN.ELF` (the player looks for
    `host:ZNTVN.VNP`).
-2. En PCSX2, activá el *Host filesystem* y **Run ELF** → `ps2/ZNTVN.ELF`.
-   (El soporte de `host:` varía por versión de PCSX2; si no toma, usá el ISO.)
+2. In PCSX2, enable the *Host filesystem* and **Run ELF** → `ps2/ZNTVN.ELF`.
+   (`host:` support varies by PCSX2 version; if it does not pick it up, use the ISO.)
 
-### B) Robusto — bootear un ISO
+### B) Robust — boot an ISO
 ```sh
-python3 -m znt iso build historia.vn historia.iso --elf ps2/ZNTVN.ELF --name ZNTVN
+python3 -m znt iso build story.vn story.iso --elf ps2/ZNTVN.ELF --name ZNTVN
 ```
-Cargá `historia.iso` en PCSX2 y arrancá. Este camino no depende del host fs.
+Load `story.iso` in PCSX2 and start it. This path does not depend on the host fs.
 
-## 4. En una PS2 real (opcional)
+## 4. On a real PS2 (optional)
 
-Consola con **FreeMcBoot**: bootear el ISO por **OPL** (USB/HDD) o por **DVD-R**
-vía **ESR**. Sin mods no bootea (igual que cualquier homebrew). Ver
+Console with **FreeMcBoot**: boot the ISO via **OPL** (USB/HDD) or via **DVD-R**
+through **ESR**. Without mods it does not boot (same as any homebrew). See
 [`docs/spike-ps2-iso.md`](spike-ps2-iso.md).
 
-## 5. Iterar
+## 5. Iterate
 
-Lo *nuestro* (formato, lector, fuente, math de animación) está verificado en el
-host; lo que suele necesitar ajuste al primer build es el glue marcado `/*GSKIT*/`
-(sprites/atlas/mode) y `/*AUDIO*/` (carga de módulos, formato audsrv). Editás
-`ps2/main.c`, recompilás (paso 1) y volvés a PCSX2.
+*Our* part (format, reader, font, animation math) is verified on the host; what
+usually needs adjusting on the first build is the glue marked `/*GSKIT*/`
+(sprites/atlas/mode) and `/*AUDIO*/` (module loading, audsrv format). Edit
+`ps2/main.c`, rebuild (step 1) and go back to PCSX2.
 
-Verificación automática: `tests/pcsx2_boot.sh` (boot por log) y `tests/checklist.sh`
-(todo el plan de `docs/checklist.md` en orden, con build + boot + VN de features).
+Automated verification: `tests/pcsx2_boot.sh` (boot by log) and `tests/checklist.sh`
+(the whole plan in `docs/checklist.md` in order, with build + boot + the features VN).

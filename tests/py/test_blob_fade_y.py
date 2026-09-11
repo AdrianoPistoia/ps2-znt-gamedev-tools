@@ -1,5 +1,5 @@
-"""Blob v5: `bg X fade=ms` viaja como u16 fade en todo bg; `animate move` lleva y
-(0x7FFF = no dado, para no pisar la coordenada que el autor no tocó)."""
+"""Blob v5: `bg X fade=ms` travels as a u16 fade on every bg; `animate move` carries y
+(0x7FFF = not given, so as not to clobber the coordinate the author did not touch)."""
 from znt import vn, vniso
 m = vn._link_choices(vn.parse(
     'title: T\ncharacter a "A" color=#fff\n'

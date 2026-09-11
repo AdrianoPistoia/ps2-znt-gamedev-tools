@@ -1,13 +1,13 @@
-"""Frentes interactivos (tkinter) de znt — TODOS opcionales.
+"""Interactive (tkinter) frontends for znt — ALL optional.
 
-Este subpaquete es el **front**: la ventana en vivo (`window.play`), el banco de
-pruebas (`testbench`) y el editor VN Studio (`studio.run_editor`). El motor
-headless (el resto de `znt`) no importa nada de acá: se puede **borrar
-`znt/gui/` entero** y el core sigue funcionando (data, codec, render, runtime,
-transpilador, `record` a APNG, y el runtime `VNRuntime` de VN).
+This subpackage is the **frontend**: the live window (`window.play`), the test
+bench (`testbench`) and the VN Studio editor (`studio.run_editor`). The headless
+engine (the rest of `znt`) imports nothing from here: you can **delete
+`znt/gui/` entirely** and the core keeps working (data, codec, render, runtime,
+transpiler, `record` to APNG, and the VN `VNRuntime`).
 
-tkinter se importa de forma perezosa (dentro de las funciones), así que importar
-este paquete no requiere un display.
+tkinter is imported lazily (inside the functions), so importing this package
+does not require a display.
 """
 from . import studio, testbench, window
 
@@ -16,5 +16,5 @@ play = window.play
 
 
 def demo():
-    """Self-check headless de los frentes (Bench del engine, sin display)."""
-    testbench.demo()      # imprime "demo OK"
+    """Headless self-check of the frontends (engine Bench, no display)."""
+    testbench.demo()      # prints "demo OK"

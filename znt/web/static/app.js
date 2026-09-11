@@ -1,15 +1,15 @@
-/* VN Studio (web) — comportamiento del editor.
- * El servidor Python es la fuente de verdad: acá sólo pintamos su estado y
- * mandamos ops. La lógica pura (layout, snap, geometría) vive en logic.js. */
+/* VN Studio (web) — editor behavior.
+ * The Python server is the source of truth: here we only paint its state and
+ * send ops. Pure logic (layout, snap, geometry) lives in logic.js. */
 "use strict";
 const $ = s => document.querySelector(s);
-const API = 4;             // tiene que coincidir con znt/web/server.py
-let S = null;              // estado del servidor
-let SG = null;             // stage actual (layout que manda Python)
+const API = 4;             // must match znt/web/server.py
+let S = null;              // server state
+let SG = null;             // current stage (layout sent by Python)
 let ASSETS = [], AUDIO = [];
-let SEL = null;            // capa seleccionada (sólo del cliente)
-let SELS = [], ANCHOR = -1; // selección múltiple de pasos (timeline) y ancla del Shift
-let CLIP = [];             // portapapeles de pasos (JSON), vive entre escenas
+let SEL = null;            // selected layer (client-side only)
+let SELS = [], ANCHOR = -1; // multi-selection of steps (timeline) and Shift anchor
+let CLIP = [];             // step clipboard (JSON), survives across scenes
 let GUIDE = "off", SHOWDLG = true;
 try { GUIDE = localStorage.getItem("vnsguide") || "off";
       SHOWDLG = localStorage.getItem("vnsdlg") !== "0"; } catch (e) {}
@@ -28,13 +28,13 @@ function toast(msg, bad){
   t.textContent = msg; t.classList.toggle("bad", !!bad); t.hidden = false;
   clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, bad ? 7000 : 3000);
 }
-window.__vns = { busy: 0 };                        // ops en vuelo (lo mira el QA)
+window.__vns = { busy: 0 };                        // ops in flight (the QA watches it)
 async function op(o){
   window.__vns.busy++;
   try {
     let res = null;
     try { res = await api.op(o); }
-    catch (e) { res = { error: String(e) }; }       // el server se cayó / red
+    catch (e) { res = { error: String(e) }; }       // server down / network
     const m = VNS.mergeState(S, res);
     S = m.state;
     if (m.error) toast(m.error, true);
@@ -43,7 +43,7 @@ async function op(o){
   } finally { window.__vns.busy--; }
 }
 
-/* ---------- paneles: splitters con memoria ---------- */
+/* ---------- panes: splitters with memory ---------- */
 const PANES = {
   out: {var:"--outw", min:170, other:520, axis:"x"},
   ins: {var:"--insw", min:220, other:470, axis:"x"},
@@ -74,7 +74,7 @@ for (const [k, p] of Object.entries(PANES)) {
   });
 }
 
-/* ---------- viewport: el stage entra entero y centrado ---------- */
+/* ---------- viewport: the whole stage fits, centered ---------- */
 function layoutStage(){
   const vp = $("#viewport").getBoundingClientRect();
   const r = VNS.fitRect(vp.width - 28, vp.height - 28, SG ? SG.w : 640, SG ? SG.h : 448);
@@ -83,7 +83,7 @@ function layoutStage(){
 }
 addEventListener("resize", layoutStage);
 
-/* ---------- listas ---------- */
+/* ---------- lists ---------- */
 function stepText(s){
   switch(s.op){
     case "bg": { const p = s.spec||{};
@@ -118,25 +118,25 @@ function renderLists(){
   $("#probs").textContent = (S.problems||[]).concat((SG && SG.warnings) || []).join("\n");
   $("#m-count").textContent = S.model.order.length;
   $("#m-scene").textContent = S.play
-    ? `▶ ${S.play.scene} · paso ${S.play.step + 1}${S.play.done ? " · fin" : ""} — Esc para salir`
-    : `${S.scene} · paso ${S.step < 0 ? "—" : S.step + 1}/${steps.length}`;
+    ? `▶ ${S.play.scene} · step ${S.play.step + 1}${S.play.done ? " · end" : ""} — Esc to exit`
+    : `${S.scene} · step ${S.step < 0 ? "—" : S.step + 1}/${steps.length}`;
   $("#m-op").textContent = S.step >= 0 && steps[S.step] ? steps[S.step].op : "";
-  $("#m-path").textContent = S.path || "(sin guardar)";
+  $("#m-path").textContent = S.path || "(unsaved)";
   $("#m-path").classList.toggle("dirty", !!S.dirty);
-  $("#m-path").title = S.dirty ? "hay cambios sin guardar (Ctrl+S)" : "";
+  $("#m-path").title = S.dirty ? "unsaved changes (Ctrl+S)" : "";
   document.title = (S.dirty ? "● " : "") + "VN Studio";
   renderChars(); renderQuickWho(); renderGroups();
   $("#b-play").classList.toggle("on", !!S.play);
 }
 
-/* ---------- grupos de la escena ---------- */
+/* ---------- scene groups ---------- */
 function renderGroups(){
   const ul = $("#groups"); ul.innerHTML = "";
   const runs = VNS.groupRuns(S.model.scenes[S.scene] || []);
   runs.forEach(g => {
     const li = document.createElement("li");
     li.innerHTML = `<span>⧈ ${g.name}</span><span class="grow"></span><span class="n">${g.a + 1}–${g.b + 1}</span>`;
-    li.title = "click: seleccionar los pasos del grupo";
+    li.title = "click: select the group's steps";
     li.onclick = () => { SELS = []; for (let i = g.a; i <= g.b; i++) SELS.push(i); ANCHOR = g.a;
                          op({op:"select", scene:S.scene, step:g.b}); };
     ul.appendChild(li);
@@ -146,19 +146,19 @@ function renderGroups(){
 async function groupCmd(){
   const steps = S.model.scenes[S.scene] || [];
   const idx = SELS.length ? SELS : (S.step >= 0 ? [S.step] : []);
-  if (!idx.length) return toast("elegí pasos en el timeline (Shift+click para varios)");
+  if (!idx.length) return toast("select steps in the timeline (Shift+click for several)");
   const inGroup = idx.every(i => steps[i] && steps[i].group);
   if (inGroup) {
-    if (await ask("Desagrupar", [], `¿Sacar ${idx.length} paso(s) del grupo "${steps[idx[0]].group}"?`))
+    if (await ask("Ungroup", [], `Remove ${idx.length} step(s) from group "${steps[idx[0]].group}"?`))
       op({op:"set_group", indices: idx, name: ""});
     return;
   }
-  const n = await askOne("Agrupar pasos", "nombre del grupo", "grupo" + (VNS.groupRuns(steps).length + 1));
+  const n = await askOne("Group steps", "group name", "group" + (VNS.groupRuns(steps).length + 1));
   if (n) op({op:"set_group", indices: idx, name: n});
 }
 $("#b-group").onclick = groupCmd;
 
-/* ---------- personajes del proyecto (roster) ---------- */
+/* ---------- project characters (roster) ---------- */
 function renderChars(){
   const ul = $("#chars"); ul.innerHTML = "";
   const ids = Object.keys(S.model.characters).filter(c => c !== "narrator");
@@ -166,15 +166,15 @@ function renderChars(){
     const c = S.model.characters[id], li = document.createElement("li");
     li.innerHTML = `<span class="chip" style="background:${c.color || "#888"}"></span>` +
       `<span>${c.name || id}</span><span class="n">${id}</span><span class="grow"></span>` +
-      `<span class="x" title="borrar personaje">🗑</span>`;
-    li.title = "doble click: renombrar id";
+      `<span class="x" title="delete character">🗑</span>`;
+    li.title = "double click: rename id";
     li.ondblclick = async () => {
-      const n = await askOne("Renombrar personaje", "nuevo id", id);
+      const n = await askOne("Rename character", "new id", id);
       if (n && n !== id) op({op:"rename_char", old:id, new:n});
     };
     li.querySelector(".x").onclick = async e => {
       e.stopPropagation();
-      if (await ask("Borrar personaje", [], `¿Borrar a "${c.name || id}"? Si está en algún paso, no se deja.`))
+      if (await ask("Delete character", [], `Delete "${c.name || id}"? If it is used in any step, it will be refused.`))
         op({op:"del_char", id});
     };
     ul.appendChild(li);
@@ -182,12 +182,12 @@ function renderChars(){
   $("#m-chars").textContent = ids.length || "";
 }
 
-/* ---------- audio (sólo en Play, y ▶ para escuchar en edición) ---------- */
+/* ---------- audio (only in Play, plus ▶ to listen while editing) ---------- */
 const assetUrl = f => "/api/asset?f=" + encodeURIComponent(f);
 let seSeq = null;
 function playAudio(el, f){
   el.setAttribute("src", assetUrl(f)); el.load();
-  el.play().catch(() => {});                          // sin gesto o archivo inválido: silencio
+  el.play().catch(() => {});                          // no gesture or invalid file: silence
 }
 function syncAudio(){
   const bgm = $("#bgm"), sfx = $("#sfx");
@@ -195,12 +195,12 @@ function syncAudio(){
   const want = S.play.bgm ? assetUrl(S.play.bgm) : null;
   if (!want) { bgm.pause(); bgm.removeAttribute("src"); }
   else if (bgm.getAttribute("src") !== want) playAudio(bgm, S.play.bgm);
-  if (seSeq === null) seSeq = S.play.se_seq;         // al entrar no se dispara lo viejo
+  if (seSeq === null) seSeq = S.play.se_seq;         // on entry, do not fire the old one
   else if (S.play.se_seq !== seSeq) { seSeq = S.play.se_seq; if (S.play.se) playAudio(sfx, S.play.se); }
 }
 
-/* ---------- efecto de tipeo (sólo en Play) ---------- */
-let CPS = 40;                                       // caracteres por segundo (0 = sin efecto)
+/* ---------- typing effect (only in Play) ---------- */
+let CPS = 40;                                       // characters per second (0 = no effect)
 try { const v = localStorage.getItem("vnscps"); if (v !== null) CPS = +v; } catch (e) {}
 let typing = null;                                  // {text, t0, raf}
 function typeText(text, animate){
@@ -217,17 +217,17 @@ function typeText(text, animate){
   typing = { text, t0, raf: 0 }; step();
 }
 const typingDone = () => !typing;
-function finishTyping(){                            // click mientras tipea: mostrar todo
+function finishTyping(){                            // click while typing: show everything
   if (!typing) return false;
   cancelAnimationFrame(typing.raf); $("#text").textContent = typing.text; typing = null; return true;
 }
 function cycleCps(){
   CPS = ({0: 20, 20: 40, 40: 80, 80: 0})[CPS] ?? 40;
   try { localStorage.setItem("vnscps", CPS); } catch (e) {}
-  $("#b-cps").textContent = "⌨ " + (CPS ? CPS + " cps" : "sin tipeo");
+  $("#b-cps").textContent = "⌨ " + (CPS ? CPS + " cps" : "no typing");
 }
 
-/* ---------- capas del escenario ---------- */
+/* ---------- stage layers ---------- */
 function selectLayer(id){
   SEL = SEL === id ? null : id;
   renderLayers(); markSelection();
@@ -246,7 +246,7 @@ function markSelection(){
   $("#m-sel").textContent = SEL ? `⬚ ${SEL}` : "";
 }
 
-/* guías: centro / tercios / zona segura */
+/* guides: center / thirds / safe area */
 function renderGuides(){
   const g = VNS.guides(GUIDE), box = $("#guides"); box.innerHTML = "";
   g.xs.forEach(x => box.insertAdjacentHTML("beforeend",
@@ -257,7 +257,7 @@ function renderGuides(){
     `<div class="safe" style="left:${g.rect.x*100}%;top:${g.rect.y*100}%;` +
     `width:${g.rect.w*100}%;height:${g.rect.h*100}%"></div>`);
   $("#b-guides").classList.toggle("on", GUIDE !== "off");
-  $("#b-guides").textContent = "⊞ " + (GUIDE === "off" ? "guías" : GUIDE);
+  $("#b-guides").textContent = "⊞ " + (GUIDE === "off" ? "guides" : GUIDE);
 }
 function cycleGuides(){
   GUIDE = VNS.nextGuide(GUIDE);
@@ -265,18 +265,18 @@ function cycleGuides(){
   renderGuides();
 }
 $("#b-guides").onclick = cycleGuides;
-$("#b-overlay").onclick = () => {                 // ojo: apaga los overlays para trabajar
+$("#b-overlay").onclick = () => {                 // eye: turns the overlays off to work
   SHOWDLG = !SHOWDLG;
   try { localStorage.setItem("vnsdlg", SHOWDLG ? "1" : "0"); } catch (e) {}
   renderStage();
 };
 
-/* handles: arrastrar una esquina cambia el zoom de la capa */
+/* handles: dragging a corner changes the layer zoom */
 $("#frame").addEventListener("pointerdown", e => {
   const h = e.target.closest(".hnd"); if (!h || !SEL) return;
   const l = SG.layers.find(x => x.id === SEL); if (!l) return;
   const dir = +h.dataset.h, x0 = e.clientX, z0 = l.zoom == null ? 100 : l.zoom;
-  const scale = SG.w / $("#stagewrap").getBoundingClientRect().width;   // px de pantalla -> stage
+  const scale = SG.w / $("#stagewrap").getBoundingClientRect().width;   // screen px -> stage
   h.setPointerCapture(e.pointerId);
   const move = ev => {
     l.zoom = VNS.resizeZoom({w: l.w, h: l.h, zoom: z0}, dir, (ev.clientX - x0) * scale);
@@ -294,14 +294,14 @@ $("#frame").addEventListener("pointerdown", e => {
 function renderLayers(){
   const ul = $("#layers"); ul.innerHTML = "";
   const rows = SG ? VNS.outlineRows(SG.layers) : [];
-  if (SEL && !rows.some(r => r.id === SEL)) SEL = null;    // ya no está en escena
+  if (SEL && !rows.some(r => r.id === SEL)) SEL = null;    // no longer on stage
   rows.forEach(r => {
     const li = document.createElement("li");
     li.innerHTML = `<span class="chip" style="background:${r.color}"></span>` +
       `<span>${r.name}${r.expr ? ` <span class="n">· ${r.expr}</span>` : ""}</span><span class="grow"></span>` +
       `<span class="n">${r.sprite ? "🖼" : "●"} z${r.z}</span>`;
     if (r.id === SEL) li.className = "sel";
-    li.title = "click: seleccionar · doble click: ir al paso que la muestra";
+    li.title = "click: select · double click: go to the step that shows it";
     li.onclick = () => selectLayer(r.id);
     li.ondblclick = () => {
       const i = VNS.showStepIndex(S.model.scenes[S.scene] || [], r.id, S.step);
@@ -312,7 +312,7 @@ function renderLayers(){
   $("#m-layers").textContent = rows.length || "";
 }
 
-/* ---------- timeline: los pasos como clips en pistas ---------- */
+/* ---------- timeline: steps as clips in lanes ---------- */
 const TLV = { cw: 118, lh: 22, gap: 2, ruler: 18 };
 try { TLV.cw = parseInt(localStorage.getItem("vnscw"), 10) || TLV.cw; } catch (e) {}
 const trackX = e => {
@@ -362,7 +362,7 @@ function renderTimeline(){
     inner.appendChild(c);
   });
 
-  VNS.groupRuns(steps).forEach(g => {                // banda del grupo sobre la regla
+  VNS.groupRuns(steps).forEach(g => {                // group band over the ruler
     const band = document.createElement("div"); band.className = "gband";
     band.style.left = (g.a * TLV.cw + 2) + "px"; band.style.width = ((g.b - g.a + 1) * TLV.cw - 4) + "px";
     const lab = document.createElement("div"); lab.className = "glabel"; lab.textContent = "⧈ " + g.name;
@@ -373,7 +373,7 @@ function renderTimeline(){
     const ph = document.createElement("div");
     ph.className = "playhead"; ph.style.left = (cur.step * TLV.cw) + "px";
     inner.appendChild(ph);
-    if (cur.playing) {                        // que el paso en curso quede a la vista
+    if (cur.playing) {                        // keep the current step in view
       const t = $("#tlbody .tl-track"), x = cur.step * TLV.cw;
       if (x < t.scrollLeft || x + TLV.cw > t.scrollLeft + t.clientWidth) t.scrollLeft = x - 40;
     }
@@ -381,9 +381,9 @@ function renderTimeline(){
   $("#tlbody .tl-track").scrollLeft = sx;
 }
 
-/* arrastrar un clip lo reordena; arrastrar la regla mueve el playhead */
+/* dragging a clip reorders it; dragging the ruler moves the playhead */
 $("#tlbody").addEventListener("pointerdown", e => {
-  if (S.play) {                               // en Play: saltar a ese paso
+  if (S.play) {                               // in Play: jump to that step
     const c = e.target.closest(".clip");
     const n = (S.model.scenes[S.play.scene] || []).length;
     const i = c ? +c.dataset.i : VNS.dropIndex(trackX(e), TLV, n);
@@ -415,7 +415,7 @@ $("#tlbody").addEventListener("pointerdown", e => {
     e.preventDefault(); return;
   }
   if (!steps.length) return;
-  const seek = ev => {                        // scrub: elegí paso arrastrando
+  const seek = ev => {                        // scrub: pick a step by dragging
     const i = VNS.dropIndex(trackX(ev), TLV, steps.length);
     if (i !== S.step) op({op:"select", scene:S.scene, step:i});
   };
@@ -426,7 +426,7 @@ $("#tlbody").addEventListener("pointerdown", e => {
   seek(e);
 });
 $("#tlbody").addEventListener("dblclick", () => $("#b-probar").click());
-$("#tlbody").addEventListener("wheel", e => {   // Ctrl+rueda: zoom del timeline
+$("#tlbody").addEventListener("wheel", e => {   // Ctrl+wheel: timeline zoom
   if (!e.ctrlKey) return;
   e.preventDefault();
   TLV.cw = Math.max(48, Math.min(260, TLV.cw - Math.sign(e.deltaY) * 12));
@@ -466,7 +466,7 @@ function renderStage(){
   syncAudio();
   $("#m-bgm").textContent = SG.bgm ? `♪ ${SG.bgm}` : "";
   $("#vptag").textContent = S.play
-    ? (SG.done ? "▶ PLAY · fin" : "▶ PLAY · click o Espacio = siguiente paso") : "";
+    ? (SG.done ? "▶ PLAY · end" : "▶ PLAY · click or Space = next step") : "";
   markSelection(); renderGuides();
   layoutStage();
 }
@@ -489,18 +489,18 @@ function upload(req, accept){
   f.type = "file"; f.accept = accept || "image/*";
   f.onchange = () => {
     const file = f.files[0]; if (!file) return;
-    if (file.size > 12 << 20) return toast(`${file.name} pesa demasiado (máx 12 MB)`, true);
-    toast(`subiendo ${file.name}…`);
+    if (file.size > 12 << 20) return toast(`${file.name} is too big (max 12 MB)`, true);
+    toast(`uploading ${file.name}…`);
     const rd = new FileReader();
     rd.onload = () => op(Object.assign({name: file.name,
-                                        data: rd.result.split(",")[1]}, req));  // sin data: URI
-    rd.onerror = () => toast("no se pudo leer el archivo: " + file.name, true);
+                                        data: rd.result.split(",")[1]}, req));  // without the data: URI prefix
+    rd.onerror = () => toast("could not read the file: " + file.name, true);
     rd.readAsDataURL(file);
   };
   f.click();
 }
-/* ---------- explorador de archivos del disco ----------
-   Estándar: TODO campo que apunte a un archivo lleva su botón 📁. */
+/* ---------- disk file browser ----------
+   Standard: EVERY field that points to a file gets its 📁 button. */
 let brwDir = null;
 async function browseTo(dir, kind, sel){
   const r = await api.browse(dir, kind);
@@ -533,7 +533,7 @@ async function browseTo(dir, kind, sel){
   $("#brw-up").onclick = () => r.parent && browseTo(r.parent, kind);
   $("#brw-home").onclick = () => browseTo(r.home, kind);
 }
-/* kind: "vn" | "img" | "audio" | "any". Devuelve la ruta elegida o null. */
+/* kind: "vn" | "img" | "audio" | "any". Returns the chosen path or null. */
 function browse(title, kind, start, onUpload){
   const dlg = $("#brw");
   $("#brw-title").textContent = title;
@@ -545,42 +545,42 @@ function browse(title, kind, start, onUpload){
     res(dlg.returnValue === "ok" ? ($("#brw-path").value.trim() || null) : null);
   }, {once:true}));
 }
-/* botón 📁 para cualquier campo de archivo */
+/* 📁 button for any file field */
 function fileBtn(title, kind, start, onPick, onUpload){
   const b = document.createElement("button");
-  b.textContent = "📁"; b.title = "buscar en el disco";
+  b.textContent = "📁"; b.title = "browse the disk";
   b.style.flex = "0 0 auto";
   b.onclick = async () => { const p = await browse(title, kind, start, onUpload); if (p) onPick(p); };
   return b;
 }
 
-/* selector de asset + botón 📁 (traer del disco) y ⇧ (subir) */
+/* asset picker + 📁 button (import from disk) and ⇧ (upload) */
 function picker(cur, list, onpick, apply, accept){
   const sel = select(cur, [""].concat(list.includes(cur) || !cur ? list : list.concat(cur)));
-  sel.querySelector('option[value=""]').textContent = "(ninguno)";
+  sel.querySelector('option[value=""]').textContent = "(none)";
   sel.onchange = () => onpick(sel.value);
   const kind = accept && accept.startsWith("audio") ? "audio" : "img";
-  const b = fileBtn("Elegir archivo", kind, S.path || "",
+  const b = fileBtn("Choose file", kind, S.path || "",
                     p => op({op:"import_asset", path:p, apply}),
                     () => upload({op:"upload", apply}, accept));
   const w = document.createElement("div");
   w.style.cssText = "display:flex;gap:4px;flex:1"; w.append(sel, b);
-  if (kind === "audio") {                            // ▶ escuchar lo elegido
-    const pl = document.createElement("button"); pl.textContent = "▶"; pl.title = "escuchar";
+  if (kind === "audio") {                            // ▶ listen to the chosen one
+    const pl = document.createElement("button"); pl.textContent = "▶"; pl.title = "listen";
     pl.style.flex = "0 0 auto";
     pl.onclick = () => { if (sel.value) playAudio($("#sfx"), sel.value); };
     w.append(pl);
   }
   return w;
 }
-/* Sección PERSONAJE: el ÚNICO lugar donde se elige y se edita un personaje.
-   `assign` cambia a qué personaje apunta el paso; lo demás edita al personaje. */
+/* CHARACTER section: the ONLY place where a character is chosen and edited.
+   `assign` changes which character the step points at; the rest edits the character. */
 function charSection(cid, chars, assign, withSprite){
-  const sec = sect("Personaje", true);
+  const sec = sect("Character", true);
   const sel = select(cid, chars);
-  sel.dataset.role = "char";                        // uno solo por inspector
+  sel.dataset.role = "char";                        // only one per inspector
   sel.onchange = () => assign(sel.value);
-  sec.add(field("personaje", sel));
+  sec.add(field("character", sel));
   const c = S.model.characters[cid];
   if (!c) return sec;
 
@@ -588,76 +588,76 @@ function charSection(cid, chars, assign, withSprite){
   col.type = "color"; col.style.padding = "0";
   const apply = () => op({op:"set_char", id: cid, name: nm.value, color: col.value});
   nm.onchange = apply; col.onchange = apply;
-  sec.add(field("nombre", nm)); sec.add(field("color", col));
+  sec.add(field("name", nm)); sec.add(field("color", col));
 
-  if (withSprite) {                                 // el sprite es del personaje
+  if (withSprite) {                                 // the sprite belongs to the character
     const cur = c.sprite || "";
     const sp = select(cur, [""].concat(ASSETS.includes(cur) || !cur ? ASSETS : ASSETS.concat(cur)));
     sp.querySelector('option[value=""]').textContent = "(placeholder)";
     sp.onchange = () => op({op:"set_sprite", id: cid, file: sp.value});
-    const b = fileBtn("Elegir imagen del personaje", "img", S.base || "",
+    const b = fileBtn("Choose the character's image", "img", S.base || "",
                       pa => op({op:"import_asset", path:pa, id:cid}),
                       () => upload({op:"upload_sprite", id:cid}));
     const w = document.createElement("div");
     w.style.cssText = "display:flex;gap:4px;flex:1"; w.append(sp, b);
     sec.add(field("sprite", w));
 
-    /* expresiones: nombre -> imagen; el show elige cuál */
+    /* expressions: name -> image; the show picks which */
     const ew = document.createElement("div");
     Object.entries(c.expr || {}).forEach(([ex, f]) => {
       const row = document.createElement("div"); row.className = "expr";
       const nm = document.createElement("span"); nm.className = "n"; nm.textContent = ex;
       const sel = select(f, ASSETS.includes(f) ? ASSETS : ASSETS.concat(f));
       sel.onchange = () => op({op:"set_sprite", id: cid, expr: ex, file: sel.value});
-      const fb = fileBtn(`Imagen para "${ex}"`, "img", S.base || "",
+      const fb = fileBtn(`Image for "${ex}"`, "img", S.base || "",
                          pa => op({op:"import_asset", path: pa, id: cid, expr: ex}),
                          () => upload({op:"upload_sprite", id: cid, expr: ex}));
-      const x = document.createElement("span"); x.className = "x"; x.textContent = "✕"; x.title = "quitar la expresión";
+      const x = document.createElement("span"); x.className = "x"; x.textContent = "✕"; x.title = "remove the expression";
       x.onclick = () => op({op:"set_sprite", id: cid, expr: ex, file: ""});
       row.append(nm, sel, fb, x); ew.appendChild(row);
     });
-    const addx = document.createElement("button"); addx.textContent = "+ expresión";
+    const addx = document.createElement("button"); addx.textContent = "+ expression";
     addx.onclick = async () => {
-      let n = await askOne("Nueva expresión", "nombre (p.ej. feliz)"); if (!n) return;
+      let n = await askOne("New expression", "name (e.g. happy)"); if (!n) return;
       n = n.replace(/\s+/g, "_");
-      if (["left", "center", "right"].includes(n)) return toast("ese nombre es una posición, elegí otro", true);
-      const pa = await browse(`Imagen para "${n}"`, "img", S.base || "",
+      if (["left", "center", "right"].includes(n)) return toast("that name is a position, pick another", true);
+      const pa = await browse(`Image for "${n}"`, "img", S.base || "",
                               () => upload({op:"upload_sprite", id: cid, expr: n}));
       if (pa) op({op:"import_asset", path: pa, id: cid, expr: n});
     };
     ew.appendChild(addx);
-    sec.add(field("expresiones", ew));
+    sec.add(field("expressions", ew));
   }
 
   const ren = document.createElement("button");
-  ren.textContent = "renombrar id…";
-  ren.title = "cambia el id y reapunta todos los pasos que lo usan";
+  ren.textContent = "rename id…";
+  ren.title = "changes the id and re-points every step that uses it";
   ren.onclick = async () => {
-    const n = await askOne("Renombrar personaje", "nuevo id", cid);
+    const n = await askOne("Rename character", "new id", cid);
     if (n && n !== cid) op({op:"rename_char", old: cid, new: n});
   };
   sec.add(field("id", ren));
   return sec;
 }
 
-/* parámetros de animación por tipo (los que usa el engine, ver vnstudio._animate) */
+/* animation params per kind (the ones the engine uses, see vnstudio._animate) */
 const APARAMS = {
   linear: ["x", "y", "time"], accel: ["x", "y", "time"], decel: ["x", "y", "time"],
   move: ["x", "y", "time", "curve"],
   wave: ["vib", "cycle"], waveonce: ["vib", "cycle"], jump: ["vib", "cycle"], jumponce: ["vib", "cycle"],
   fall: ["dist", "falltime"], vibrate: ["vib", "wait"],
 };
-const ALABEL = { x: "x destino", y: "y destino", time: "tiempo ms", curve: "curva", vib: "amplitud",
-                 cycle: "ciclo ms", dist: "distancia", falltime: "tiempo ms", wait: "cada ms" };
+const ALABEL = { x: "target x", y: "target y", time: "time ms", curve: "curve", vib: "amplitude",
+                 cycle: "cycle ms", dist: "distance", falltime: "time ms", wait: "every ms" };
 const ADEF = { x: 0, y: 0, time: 500, curve: "linear", vib: 18, cycle: 340, dist: 120, falltime: 600, wait: 40 };
-/* params completos para un tipo: conserva los que siguen aplicando, rellena el resto */
+/* full params for a kind: keeps the ones that still apply, fills in the rest */
 function animDefaults(kind, cur){
   const out = {};
   (APARAMS[kind] || []).forEach(k => { out[k] = (cur && cur[k] != null) ? cur[k] : ADEF[k]; });
   return out;
 }
 
-/* secciones plegables (recuerdan si quedaron abiertas) */
+/* collapsible sections (remember whether they were left open) */
 function sect(title, open){
   const d = document.createElement("details"), k = "vnssec:" + title;
   try { const v = localStorage.getItem(k); if (v !== null) open = v === "1"; } catch (e) {}
@@ -668,10 +668,10 @@ function sect(title, open){
   d.add = el => { d.appendChild(el); return d; };
   return d;
 }
-/* campo numérico: se escribe o se arrastra la etiqueta (Shift = fino) */
+/* numeric field: type it or drag the label (Shift = fine) */
 function num(label, v, opts, commit){
   const el = input(v), row = field(label, el), lab = row.querySelector("label");
-  lab.className = "scrub"; lab.title = "arrastrá para cambiar (Shift = fino)";
+  lab.className = "scrub"; lab.title = "drag to change (Shift = fine)";
   lab.addEventListener("pointerdown", e => {
     const x0 = e.clientX, v0 = el.value;
     lab.setPointerCapture(e.pointerId);
@@ -687,7 +687,7 @@ function num(label, v, opts, commit){
   el.onchange = () => { if (el.value !== "") commit(+el.value, false); };
   return row;
 }
-/* mientras se arrastra se ve en el escenario; al soltar se guarda en el `show` */
+/* while dragging it shows on the stage; on release it is saved to the `show` */
 function liveLayer(id, key){
   return (v, dragging) => {
     const l = SG.layers.find(x => x.id === id);
@@ -705,10 +705,10 @@ function renderProps(){
   const box = $("#props"); box.innerHTML = "";
   const steps = S.model.scenes[S.scene] || [];
   if (!(S.step >= 0 && S.step < steps.length)) {
-    box.innerHTML = '<div class="hint">(elegí un paso en el timeline)</div>'; return; }
+    box.innerHTML = '<div class="hint">(select a step in the timeline)</div>'; return; }
   const s = steps[S.step], chars = Object.keys(S.model.characters);
-  const paso = sect("Paso", true); box.appendChild(paso);
-  /* cada campo se aplica solo al cambiar (Enter o salir del campo): sin "Aplicar" */
+  const paso = sect("Step", true); box.appendChild(paso);
+  /* each field applies itself on change (Enter or leaving the field): no "Apply" */
   const add = (k, label, el) => {
     el.onchange = () => op({op:"set_props", props:{[k]: parseProp(k, el)}});
     if (el.tagName === "INPUT") el.onkeydown = e => { if (e.key === "Enter") el.blur(); };
@@ -717,28 +717,28 @@ function renderProps(){
 
   if (s.op === "bg") {
     const p = s.spec||{};
-    add("bg","fondo", input(p.kind==="grad" ? `grad:${p.a},${p.b}` : p.kind==="solid" ? p.color : (p.file||"")));
-    paso.add(field("imagen", picker(p.file || "", ASSETS,
+    add("bg","background", input(p.kind==="grad" ? `grad:${p.a},${p.b}` : p.kind==="solid" ? p.color : (p.file||"")));
+    paso.add(field("image", picker(p.file || "", ASSETS,
       v => op({op:"set_props", props:{bg: v || "#000000"}}), "bg", "image/*")));
     const fr = num("fade ms", s.fade, {def: 0, min: 0, max: 5000, step: 10},
                    (v, dragging) => { if (!dragging) op({op:"set_props", props:{fade: v}}); });
     fr.querySelector("input").dataset.p = "fade";
     paso.add(fr);
-    paso.insertAdjacentHTML("beforeend", '<div class="hint">grad:#a,#b · #rrggbb · archivo.png · fade 0 = corte seco</div>');
+    paso.insertAdjacentHTML("beforeend", '<div class="hint">grad:#a,#b · #rrggbb · file.png · fade 0 = hard cut</div>');
   } else if (s.op === "show" || s.op === "hide") {
     box.appendChild(charSection(s.id, chars, v => op({op:"set_props", props:{id: v}}),
                                 s.op === "show"));
     if (s.op === "show") {
       const posSel = select(s.pos || "", ["", "left", "center", "right"]);
-      posSel.querySelector('option[value=""]').textContent = "(donde está)";
+      posSel.querySelector('option[value=""]').textContent = "(where it is)";
       add("pos","pos", posSel);
       const exs = Object.keys((S.model.characters[s.id] || {}).expr || {});
-      if (exs.length) {                                // sólo si el personaje tiene expresiones
+      if (exs.length) {                                // only if the character has expressions
         const e = select(s.expr || "", [""].concat(exs));
         e.querySelector('option[value=""]').textContent = "(base)"; e.dataset.k = "expr";
-        add("expr", "expresión", e);
+        add("expr", "expression", e);
       }
-      const tr = sect("Transformar", true); box.appendChild(tr);
+      const tr = sect("Transform", true); box.appendChild(tr);
       tr.add(num("x", s.x, {def:0}, liveLayer(s.id, "x")));
       tr.add(num("y", s.y, {def:0}, liveLayer(s.id, "y")));
       tr.add(num("z", s.z, {def:10, min:1}, liveLayer(s.id, "z")));
@@ -747,28 +747,28 @@ function renderProps(){
       const tint = input(s.tint || "");
       tint.placeholder = "#rrggbb";
       tint.onchange = () => op({op:"set_layer", id:s.id, props:{tint: tint.value.trim()}});
-      tr.add(field("tinte", tint));
+      tr.add(field("tint", tint));
       const zf = document.createElement("div");
       zf.style.cssText = "display:flex;gap:4px;flex:1";
-      [["▲ al frente", true], ["▼ al fondo", false]].forEach(([t, front]) => {
+      [["▲ to front", true], ["▼ to back", false]].forEach(([t, front]) => {
         const b = document.createElement("button"); b.textContent = t;
         b.onclick = () => op({op:"set_z", id: s.id, front}); zf.appendChild(b);
       });
-      tr.add(field("orden", zf));
+      tr.add(field("order", zf));
 
       tr.insertAdjacentHTML("beforeend",
-        '<div class="hint">arrastrá el sprite o sus esquinas en el escenario</div>');
+        '<div class="hint">drag the sprite or its corners on the stage</div>');
     }
   } else if (s.op === "say") {
     const t = document.createElement("textarea"); t.rows = 3; t.value = s.text || "";
-    add("text", "texto", t);
+    add("text", "text", t);
     t.onkeydown = e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); t.blur(); } };
     box.appendChild(charSection(s.who, chars, v => op({op:"set_props", props:{who: v}}), true));
   } else if (s.op === "animate") {
     const kind = select(s.kind, Object.keys(APARAMS)); kind.dataset.k = "kind";
     kind.onchange = () => op({op:"set_props", props:{kind: kind.value, params: animDefaults(kind.value, s.params)}});
-    paso.add(field("tipo", kind));
-    const params = animDefaults(s.kind, s.params);   // campos según el tipo, no "k=v"
+    paso.add(field("kind", kind));
+    const params = animDefaults(s.kind, s.params);   // fields per kind, not "k=v"
     (APARAMS[s.kind] || []).forEach(k => {
       if (k === "curve") {
         const c = select(params.curve, ["linear", "accel", "decel"]); c.dataset.p = "curve";
@@ -781,41 +781,41 @@ function renderProps(){
       paso.add(row);
     });
     paso.insertAdjacentHTML("beforeend",
-      '<div class="hint">doble click en el timeline (o ▶ Probar paso) para verla</div>');
+      '<div class="hint">double click the timeline (or ▶ Try step) to see it</div>');
     box.appendChild(charSection(s.id, chars.filter(c => c !== "narrator"),
                                 v => op({op:"set_props", props:{id: v}}), true));
   } else if (s.op === "bgm" || s.op === "se") {
-    paso.add(field("archivo", picker(s.file || "", AUDIO,
+    paso.add(field("file", picker(s.file || "", AUDIO,
       v => op({op:"set_props", props:{file: v}}), "file", "audio/*")));
     if (s.op === "bgm") { const c = document.createElement("input"); c.type="checkbox"; c.checked=!!s.stop;
-                          c.style.width="auto"; add("stop","detener", c); }
+                          c.style.width="auto"; add("stop","stop", c); }
   } else if (s.op === "goto") {
-    add("target","a", select(s.target, S.model.order));
+    add("target","to", select(s.target, S.model.order));
   } else if (s.op === "choice") {
-    /* una fila por opción: etiqueta + escena destino + ✕ */
+    /* one row per option: label + target scene + ✕ */
     const opts = (s.options || []).map(o => Object.assign({}, o));
     const commit = () => op({op:"set_props", props:{options: opts}});
     const wrap = document.createElement("div");
     opts.forEach((o, i) => {
       const row = document.createElement("div"); row.className = "opt";
-      const lbl = input(o.label); lbl.placeholder = "etiqueta";
+      const lbl = input(o.label); lbl.placeholder = "label";
       lbl.onchange = () => { opts[i].label = lbl.value; commit(); };
       lbl.onkeydown = e => { if (e.key === "Enter") lbl.blur(); };
       const tgt = select(o.target, S.model.order);
       tgt.onchange = () => { opts[i].target = tgt.value; commit(); };
-      const x = document.createElement("span"); x.className = "x"; x.textContent = "✕"; x.title = "sacar la opción";
+      const x = document.createElement("span"); x.className = "x"; x.textContent = "✕"; x.title = "remove the option";
       x.onclick = () => { opts.splice(i, 1); commit(); };
       row.append(lbl, tgt, x); wrap.appendChild(row);
     });
-    const addb = document.createElement("button"); addb.textContent = "+ opción";
-    addb.onclick = () => { opts.push({label: "opción", target: S.model.order[0]}); commit(); };
+    const addb = document.createElement("button"); addb.textContent = "+ option";
+    addb.onclick = () => { opts.push({label: "option", target: S.model.order[0]}); commit(); };
     wrap.appendChild(addb);
     paso.add(wrap);
-    if (!opts.length) paso.insertAdjacentHTML("beforeend", '<div class="hint">sin opciones el choice no lleva a ningún lado</div>');
-  } else { paso.insertAdjacentHTML("beforeend", '<div class="hint">(sin propiedades)</div>'); return; }
+    if (!opts.length) paso.insertAdjacentHTML("beforeend", '<div class="hint">with no options the choice leads nowhere</div>');
+  } else { paso.insertAdjacentHTML("beforeend", '<div class="hint">(no properties)</div>'); return; }
 
 }
-/* valor de un campo del paso, con el tipo que espera el modelo */
+/* value of a step field, with the type the model expects */
 function parseProp(k, el){
   let v = el.type === "checkbox" ? el.checked : el.value;
   if (k === "options") return v.split("\n").filter(x => x.includes("->"))
@@ -829,12 +829,12 @@ async function refresh(){
   try {
     SG = S.play ? S.play : await api.stage(S.scene, S.step);
     const as = await api.assets(); ASSETS = as.assets; AUDIO = as.audio;
-  } catch (e) { toast("no se pudo dibujar el escenario: " + e, true); return; }
+  } catch (e) { toast("could not draw the stage: " + e, true); return; }
   renderLists(); renderStage(); renderProps();
   if ((SG.warnings || []).length) toast(SG.warnings.join("\n"), true);
 }
 
-/* ---------- diálogos propios (nada de prompt/confirm del browser) ---------- */
+/* ---------- our own dialogs (no browser prompt/confirm) ---------- */
 function ask(title, fields, msg){
   const dlg = $("#dlg"), body = $("#dlg-body");
   $("#dlg-title").textContent = title;
@@ -846,11 +846,11 @@ function ask(title, fields, msg){
     if (f.list) { const sl = select(f.v, f.list); els[f.k] = sl; body.appendChild(field(f.label, sl)); return; }
     els[f.k] = el; body.appendChild(field(f.label, el));
   });
-  $("#dlg-ok").textContent = fields.length ? "Aceptar" : "Sí";
+  $("#dlg-ok").textContent = fields.length ? "OK" : "Yes";
   dlg.showModal();
   const first = body.querySelector("input,select");
-  (first || $("#dlg-ok")).focus();                  // sin campos: Enter = Sí, no Cancelar
-  dlg.onkeydown = e => {                            // Enter acepta aunque el foco esté en un select
+  (first || $("#dlg-ok")).focus();                  // no fields: Enter = Yes, not Cancel
+  dlg.onkeydown = e => {                            // Enter accepts even when focus is on a select
     if (e.key === "Enter" && e.target.tagName !== "TEXTAREA") { e.preventDefault(); dlg.close("ok"); } };
   return new Promise(res => {
     dlg.addEventListener("close", () => {
@@ -867,17 +867,17 @@ const askOne = async (title, label, v) => {
 };
 const stepCount = () => (S.model.scenes[S.scene] || []).length;
 $("#b-new").onclick = async () => {
-  if (await ask("Nuevo proyecto", [], "Se descarta lo que no hayas guardado.")) op({op:"new_project"}); };
+  if (await ask("New project", [], "Anything you have not saved will be discarded.")) op({op:"new_project"}); };
 $("#b-open").onclick = async () => {
-  const p = await browse("Abrir proyecto (.vn)", "vn", S.path || "");
+  const p = await browse("Open project (.vn)", "vn", S.path || "");
   if (p) op({op:"open_project", path:p}); };
-/* Ritmo del Play. Paso a paso es el del editor (se ve aterrizar cada fondo y cada
-   sprite); "como el jugador" corre hasta el próximo diálogo, que es lo que hacen de
-   verdad el player HTML y el ELF de PS2. */
+/* Play pacing. Step by step is the editor's (you see every background and sprite
+   land); "as the player" runs up to the next dialogue, which is what the HTML
+   player and the PS2 ELF actually do. */
 let STEPWISE = true;
 try { STEPWISE = localStorage.getItem("vnsstepwise") !== "0"; } catch (e) {}
 function renderPlayMode(){
-  $("#b-playmode").textContent = STEPWISE ? "paso a paso" : "como el jugador";
+  $("#b-playmode").textContent = STEPWISE ? "step by step" : "as the player";
   $("#b-playmode").classList.toggle("on", !STEPWISE);
 }
 $("#b-playmode").onclick = () => {
@@ -892,33 +892,33 @@ $("#b-undo").onclick = () => op({op:"undo"});
 $("#b-redo").onclick = () => op({op:"redo"});
 $("#b-validate").onclick = async () => {
   await op({op:"validate"});
-  if (!(S.problems || []).length) toast("✓ proyecto válido: sin problemas");
-  else toast(`${S.problems.length} problema(s) — mirá el panel de propiedades`, true);
+  if (!(S.problems || []).length) toast("✓ project is valid: no problems");
+  else toast(`${S.problems.length} problem(s) — see the properties panel`, true);
 };
 $("#b-save").onclick = async () => {
   if (S.path) return op({op:"save"});
-  const sug = (S.model.title || "historia").toLowerCase().replace(/\s+/g, "-") + ".vn";
-  const p = await browse("Guardar como (.vn)", "vn", VNS.joinPath(S.base || "", sug));
+  const sug = (S.model.title || "story").toLowerCase().replace(/\s+/g, "-") + ".vn";
+  const p = await browse("Save as (.vn)", "vn", VNS.joinPath(S.base || "", sug));
   if (p) op({op:"save", path:p});
 };
 $("#b-export").onclick = async () => {
-  const r = await ask("Exportar", [{k:"kind", label:"formato", v:"html", list:["html", "vnp", "iso"]}],
-                      "html = player web · vnp = blob para la PS2 · iso = imagen booteable (necesita el ELF)");
+  const r = await ask("Export", [{k:"kind", label:"format", v:"html", list:["html", "vnp", "iso"]}],
+                      "html = web player · vnp = blob for the PS2 · iso = bootable image (needs the ELF)");
   if (!r) return;
   if (r.kind === "html") {
-    const p = await browse("Exportar player HTML", "any", VNS.joinPath(S.base || "", "player.html"));
+    const p = await browse("Export HTML player", "any", VNS.joinPath(S.base || "", "player.html"));
     if (p) op({op:"export", path:p});
   } else if (r.kind === "vnp") {
-    const p = await browse("Exportar blob PS2 (.vnp)", "any", VNS.joinPath(S.base || "", "game.vnp"));
+    const p = await browse("Export PS2 blob (.vnp)", "any", VNS.joinPath(S.base || "", "game.vnp"));
     if (p) op({op:"export_ps2", path:p});
   } else {
-    const elf = await browse("ELF del player (ps2/ZNTVN.ELF)", "any", S.base || "");
+    const elf = await browse("Player ELF (ps2/ZNTVN.ELF)", "any", S.base || "");
     if (!elf) return;
-    const p = await browse("Exportar ISO", "any", VNS.joinPath(S.base || "", "historia.iso"));
+    const p = await browse("Export ISO", "any", VNS.joinPath(S.base || "", "story.iso"));
     if (p) op({op:"export_ps2", path:p, elf});
   }
 };
-/* vista de flujo: SVG desde sceneGraph, click en un nodo va a la escena */
+/* flow view: SVG from sceneGraph, clicking a node goes to the scene */
 function renderGraph(){
   const g = VNS.sceneGraph(S.model), svg = $("#graph-svg");
   const W = Math.max(...g.nodes.map(n => n.x)) + 120, H = Math.max(...g.nodes.map(n => n.y)) + 60;
@@ -945,17 +945,17 @@ function renderGraph(){
 }
 $("#b-graph").onclick = () => { renderGraph(); $("#graph").showModal(); };
 $("#b-char").onclick = async () => {
-  const r = await ask("Nuevo personaje", [
-    {k:"id", label:"id"}, {k:"name", label:"nombre"},
+  const r = await ask("New character", [
+    {k:"id", label:"id"}, {k:"name", label:"name"},
     {k:"color", label:"color", v:"#7cc4ff", type:"color"}]);
   if (r && r.id) op({op:"add_char", id:r.id, name:r.name || r.id, color:r.color}); };
 $("#b-scene-add").onclick = async () => {
-  const n = await askOne("Nueva escena", "id"); if(n) op({op:"add_scene", name:n}); };
+  const n = await askOne("New scene", "id"); if(n) op({op:"add_scene", name:n}); };
 $("#b-scene-dup").onclick = () => op({op:"dup_scene"});
 $("#b-scene-ren").onclick = async () => {
-  const n = await askOne("Renombrar escena", "nuevo id", S.scene); if(n) op({op:"rename_scene", name:n}); };
+  const n = await askOne("Rename scene", "new id", S.scene); if(n) op({op:"rename_scene", name:n}); };
 $("#b-scene-del").onclick = async () => {
-  if (await ask("Borrar escena", [], `¿Borrar la escena "${S.scene}" con sus ${stepCount()} pasos?`))
+  if (await ask("Delete scene", [], `Delete scene "${S.scene}" with its ${stepCount()} steps?`))
     op({op:"del_scene"});
 };
 $("#b-scene-up").onclick = () => op({op:"move_scene", delta:-1});
@@ -965,7 +965,7 @@ $("#b-step-dup").onclick = () => op({op:"dup_step"});
 $("#b-step-up").onclick = () => op({op:"move_step", delta:-1});
 $("#b-step-dn").onclick = () => op({op:"move_step", delta:1});
 $("#b-step-del").onclick = () => SELS.length > 1 ? op({op:"del_steps", indices: SELS}) : op({op:"del_step"});
-/* diálogo rápido: la acción más común de una VN, sin pasar por el inspector */
+/* quick dialogue: the most common VN action, without going through the inspector */
 function renderQuickWho(){
   const sel = $("#quick-who"), cur = sel.value;
   const ids = Object.keys(S.model.characters);
@@ -980,11 +980,11 @@ $("#quick").addEventListener("keydown", async e => {
   e.preventDefault();
   $("#quick").value = "";
   await op({op:"add_step", kind:"say", props:{who: $("#quick-who").value, text}});
-  $("#quick").focus();                              // seguir escribiendo la siguiente línea
+  $("#quick").focus();                              // keep typing the next line
 });
 $("#b-prev").onclick = () => op({op:"select", scene:S.scene, step: Math.max(-1, S.step - 1)});
 $("#b-next").onclick = () => op({op:"select", scene:S.scene, step: Math.min(stepCount() - 1, S.step + 1)});
-/* preview AUTORITATIVO: lo renderiza Python con el engine real y llega como APNG */
+/* AUTHORITATIVE preview: Python renders it with the real engine and it arrives as an APNG */
 let animT = null;
 const ANIM_MS = 1200;
 function closeAnim(){
@@ -993,17 +993,17 @@ function closeAnim(){
   $("#animbar").hidden = true;
 }
 $("#b-probar").onclick = () => {
-  if (S.step < 0) return toast("elegí un paso en el timeline para probarlo");
+  if (S.step < 0) return toast("select a step in the timeline to try it");
   const a = $("#anim");
   a.src = `/api/anim?scene=${encodeURIComponent(S.scene)}&step=${S.step}&ms=${ANIM_MS}&_=${Date.now()}`;
   a.hidden = false; $("#animbar").hidden = false;
   clearTimeout(animT);
-  animT = setTimeout(closeAnim, ANIM_MS + 600);      // se va sola, no hay que adivinar
+  animT = setTimeout(closeAnim, ANIM_MS + 600);      // closes on its own, no guessing
 };
 $("#b-anim-x").onclick = closeAnim;
 $("#b-adv").onclick = () => { if (!finishTyping()) op({op:"play_advance"}); };
 $("#b-cps").onclick = cycleCps;
-$("#b-cps").textContent = "⌨ " + (CPS ? CPS + " cps" : "sin tipeo");
+$("#b-cps").textContent = "⌨ " + (CPS ? CPS + " cps" : "no typing");
 $("#b-exit").onclick = () => op({op:"play_stop"});
 $("#b-help").onclick = () => $("#help").showModal();
 function goFind(r){ $("#find").close(""); op({op:"select", scene:r.scene, step:r.step}); }
@@ -1030,8 +1030,8 @@ const CMDS = {
   copy:     () => {
     const steps = S.model.scenes[S.scene] || [];
     CLIP = SELS.filter(i => steps[i]).map(i => JSON.parse(JSON.stringify(steps[i])));
-    if (CLIP.length) toast(`${CLIP.length} paso(s) copiado(s)`); },
-  paste:    () => { if (CLIP.length) op({op:"paste_steps", steps: CLIP}); else toast("no hay pasos copiados"); },
+    if (CLIP.length) toast(`${CLIP.length} step(s) copied`); },
+  paste:    () => { if (CLIP.length) op({op:"paste_steps", steps: CLIP}); else toast("no copied steps"); },
   group:    () => groupCmd(),
   find:     () => { $("#find-q").value = ""; $("#find-list").innerHTML = ""; $("#find").showModal(); $("#find-q").focus(); },
   guides:   cycleGuides,
@@ -1047,7 +1047,7 @@ addEventListener("keydown", e => {
   const t = e.target.tagName;
   if (t === "INPUT" || t === "TEXTAREA" || t === "SELECT" || $("#dlg").open || $("#brw").open || $("#find").open || $("#graph").open) return;
   if ($("#help").open) return;
-  /* en Play, espacio/enter avanzan el diálogo */
+  /* in Play, space/enter advance the dialogue */
   if (S.play && (e.key === " " || e.key === "Enter") && !(SG.choices||[]).length && !SG.done) {
     e.preventDefault(); if (!finishTyping()) op({op:"play_advance"}); return; }
   const cmd = VNS.resolveKey(e);
@@ -1055,7 +1055,7 @@ addEventListener("keydown", e => {
   e.preventDefault(); CMDS[cmd]();
 });
 
-/* ---------- arrastrar sprites: 60fps en el cliente, sync al soltar ---------- */
+/* ---------- dragging sprites: 60fps on the client, sync on release ---------- */
 let drag = null;
 const stRect = () => $("#stagewrap").getBoundingClientRect();
 
@@ -1067,7 +1067,7 @@ function showGuides(gx, gy){
 }
 
 $("#stage").addEventListener("pointerdown", e => {
-  if (S.play) {                            // en Play el click completa el texto, después avanza
+  if (S.play) {                            // in Play the click completes the text, then advances
     if (finishTyping()) return;
     if (!SG.done && !(SG.choices||[]).length) op({op:"play_advance"});
     return;
@@ -1088,7 +1088,7 @@ $("#stage").addEventListener("pointermove", e => {
   const p = VNS.stageXY(e.clientX, e.clientY, stRect(), SG);
   let d = VNS.dragTo(drag.l, SG, drag.gdx, drag.gdy, p.x, p.y);
   let gx = null, gy = null;
-  if (!e.shiftKey) {                       // Shift = libre, sin imán
+  if (!e.shiftKey) {                       // Shift = free, no snapping
     const t = VNS.snapTargets(SG.layers, drag.l.id);
     const sx = VNS.snap(d.x, t.xs, 12), sy = VNS.snap(d.y, t.ys, 12);
     d = { x: sx.v, y: sy.v };
@@ -1114,9 +1114,9 @@ addEventListener("beforeunload", e => { if (S && S.dirty) { e.preventDefault(); 
 (async () => {
   S = await api.model();
   if (S.api !== API) {
-    toast(`El server que está corriendo es de otra versión (server api=${S.api == null ? "viejo" : S.api},` +
-          ` UI api=${API}). Cerralo con Ctrl+C y volvé a correr: python3 -m znt web`, true);
-    $("#probs").textContent = "Server desactualizado: reinicialo (Ctrl+C y python3 -m znt web).";
+    toast(`The running server is a different version (server api=${S.api == null ? "old" : S.api},` +
+          ` UI api=${API}). Close it with Ctrl+C and run again: python3 -m znt web`, true);
+    $("#probs").textContent = "Server out of date: restart it (Ctrl+C and python3 -m znt web).";
   }
   if (S.step < 0 && (S.model.scenes[S.scene] || []).length)
     S = await api.op({op:"select", scene:S.scene, step:0});

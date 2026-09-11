@@ -1,44 +1,44 @@
 #!/usr/bin/env python3
-"""Capa 3 — autoría: un formato de VN simple (.vn) y un player HTML autocontenido.
+"""Layer 3 — authoring: a simple VN format (.vn) and a self-contained HTML player.
 
-El autor escribe escenas en texto y assets PNG propios; `build` compila a un
-player HTML de una sola pieza (JSON de escenas + un motorcito JS + assets
-embebidos como data URI), que se juega en el browser: click para avanzar,
-botones para elegir. Reusa el modelo de escena de la capa 1 (fondo + sprites +
-cuadro de diálogo), pero corre en el browser para ser compartible sin deps.
+The author writes scenes as text plus their own PNG assets; `build` compiles them
+into a single-file HTML player (scene JSON + a tiny JS engine + assets embedded
+as data URIs) that plays in the browser: click to advance, buttons to choose.
+It reuses the layer-1 scene model (background + sprites + dialogue box) but runs
+in the browser so it can be shared with no deps.
 
-Formato (línea por línea):
+Format (one directive per line):
 
-    title: Mi Historia
+    title: My Story
     character saito "Saito" color=#6cd
     character louise "Louise" color=#e79
 
     scene intro
-      bg grad:#1a2340,#3a5a8a          # o  bg fondo.png  o  bg #223
+      bg grad:#1a2340,#3a5a8a          # or  bg room.png  or  bg #223
       show saito right
-      saito: Hola. Soy Saito.
-      louise: ¡Silencio, perro!
-      * Un silencio incómodo llenó la sala.
+      saito: Hi. I'm Saito.
+      louise: Silence, dog!
+      * An awkward silence filled the room.
       choice
-        - Disculparse -> paz
-        - Contestar   -> pelea
+        - Apologize -> peace
+        - Talk back  -> fight
 
-    scene paz
-      narrator: Hiciste las paces.
+    scene peace
+      narrator: You made peace.
       end
 
-  python -m znt vn build historia.vn player.html
+  python -m znt vn build story.vn player.html
   python -m znt vn demo
 """
 import sys, os, json, base64, html
 
 
 POS_NAMES = ("left", "center", "right")
-POS = {"left": -180, "center": 0, "right": 180}      # x del sprite por preset (px desde el centro)
+POS = {"left": -180, "center": 0, "right": 180}      # sprite x per preset (px from center)
 
 
 def _sprite_line(chars, rest):
-    """`ana ana.png` (sprite base) o `ana feliz feliz.png` (expresión)."""
+    """`ana ana.png` (base sprite) or `ana happy happy.png` (expression)."""
     parts = rest.split()
     c = chars.setdefault(parts[0], {"name": parts[0], "color": "#ccc"})
     if len(parts) >= 3:
@@ -48,7 +48,7 @@ def _sprite_line(chars, rest):
 
 
 def groups(steps):
-    """Corridas de pasos con el mismo grupo: [(nombre, desde, hasta)]."""
+    """Runs of steps sharing a group: [(name, from, to)]."""
     out, cur = [], None
     for i, s in enumerate(steps):
         g = s.get("group")
@@ -62,14 +62,14 @@ def groups(steps):
 
 
 def sprite_file(char, expr=None):
-    """Archivo del sprite para esa expresión (o el base si no hay/no existe)."""
+    """Sprite file for that expression (or the base one if missing/unknown)."""
     return (char.get("expr") or {}).get(expr) or char.get("sprite")
 
 
 def parse(text):
     title = "Visual Novel"
     chars = {"narrator": {"name": "", "color": "#cccccc"}}
-    scenes = {}          # id -> lista de pasos
+    scenes = {}          # id -> list of steps
     order = []
     cur = None; group = None
     for raw in text.splitlines():
@@ -85,18 +85,18 @@ def parse(text):
             if "color=" in rest:
                 pre, color = rest.rsplit("color=", 1)
                 name = pre.strip(); color = color.strip()
-            elif rest.rstrip().rsplit(None, 1)[-1].startswith("#"):   # color suelto al final
+            elif rest.rstrip().rsplit(None, 1)[-1].startswith("#"):   # bare color at the end
                 name, color = rest.rstrip().rsplit(None, 1)
             chars[cid] = {"name": name.strip().strip('"'), "color": color}
             continue
-        if line.startswith("sprite "):                # arte del personaje (top-level)
+        if line.startswith("sprite "):                # character art (top-level)
             _sprite_line(chars, line[7:])
             continue
         if line.startswith("scene "):
             cur = line[6:].strip(); scenes[cur] = []; order.append(cur); group = None; continue
         if cur is None:
-            raise SyntaxError(f"paso fuera de una escena: {line!r}")
-        if line.startswith("group "):                 # group nombre … endgroup: un click en Play
+            raise SyntaxError(f"step outside a scene: {line!r}")
+        if line.startswith("group "):                 # group name … endgroup: one click in Play
             group = line[6:].strip().replace(" ", "_"); continue
         if line == "endgroup":
             group = None; continue
@@ -105,7 +105,7 @@ def parse(text):
             if group: step["group"] = group
             scenes[cur].append(step)
     if not scenes:
-        raise SyntaxError("no hay escenas")
+        raise SyntaxError("no scenes")
     return {"title": title, "characters": chars, "scenes": scenes,
             "start": order[0], "order": order}
 
@@ -125,7 +125,7 @@ def _step(line, chars):
         parts = arg.split()
         cid = parts[0]; pos = None; step = {"op": "show", "id": cid}
         for p in parts[1:]:
-            if "=" in p:                       # x/y/z/zoom/opacity + tint : capa
+            if "=" in p:                       # x/y/z/zoom/opacity + tint : layer
                 k, v = p.split("=", 1)
                 if k in ("x", "y", "z", "zoom", "opacity"):
                     try: step[k] = int(v)
@@ -134,12 +134,12 @@ def _step(line, chars):
                     step["tint"] = v
             elif p in POS_NAMES:
                 pos = p
-            else:                              # una palabra suelta: expresión
+            else:                              # a bare word: expression
                 step["expr"] = p
         if pos:
             step["pos"] = pos
         return step
-    if head == "sprite":                 # sprite <char> [expresión] <file.png>
+    if head == "sprite":                 # sprite <char> [expression] <file.png>
         _sprite_line(chars, arg)
         return None
     if head == "animate":
@@ -166,7 +166,7 @@ def _step(line, chars):
         return {"op": "end"}
     if head == "choice":
         return {"op": "choice", "options": []}
-    if line.startswith("- "):            # opción de un choice previo (se enlaza al armar)
+    if line.startswith("- "):            # option of the previous choice (linked at build time)
         label, target = line[2:].rsplit("->", 1)
         return {"op": "_option", "label": label.strip(), "target": target.strip()}
     if head == "*":
@@ -174,7 +174,7 @@ def _step(line, chars):
     if head.endswith(":") or (":" in line and line.split(":", 1)[0].strip() in chars):
         who, text = line.split(":", 1)
         return {"op": "say", "who": who.strip(), "text": text.strip()}
-    raise SyntaxError(f"paso no reconocido: {line!r}")
+    raise SyntaxError(f"unrecognized step: {line!r}")
 
 
 def _bg(arg):
@@ -183,7 +183,7 @@ def _bg(arg):
         return {"kind": "grad", "a": a.strip(), "b": b.strip()}
     if arg.startswith("#"):
         return {"kind": "solid", "color": arg}
-    return {"kind": "img", "file": arg}          # se embebe al exportar (render_html)
+    return {"kind": "img", "file": arg}          # embedded on export (render_html)
 
 
 def _asset(fname, base_dir):
@@ -200,13 +200,13 @@ def _asset(fname, base_dir):
 
 
 def _link_choices(model):
-    """Une cada '- opción' al 'choice' inmediatamente anterior y las saca del flujo."""
+    """Attaches each '- option' to the immediately preceding 'choice' and drops it from the flow."""
     for sid, steps in model["scenes"].items():
         out = []
         for s in steps:
             if s["op"] == "_option":
                 if not out or out[-1]["op"] != "choice":
-                    raise SyntaxError(f"opción sin choice en escena {sid}")
+                    raise SyntaxError(f"option without a choice in scene {sid}")
                 out[-1]["options"].append({"label": s["label"], "target": s["target"]})
             else:
                 out.append(s)
@@ -218,7 +218,7 @@ STEP_OPS = ["bg", "show", "hide", "say", "animate", "bgm", "se", "choice", "goto
 
 
 def default_step(op, model):
-    """Paso nuevo con valores por defecto (compartido por los frontends)."""
+    """New step with default values (shared by the frontends)."""
     chars = [c for c in model["characters"] if c != "narrator"] or ["narrator"]
     return {
         "bg": {"op": "bg", "spec": {"kind": "grad", "a": "#101828", "b": "#304060"}},
@@ -235,8 +235,8 @@ def default_step(op, model):
     }[op]
 
 
-def blank_model(title="Nueva VN"):
-    """Proyecto mínimo válido para arrancar en el editor."""
+def blank_model(title="New VN"):
+    """Minimal valid project to start from in the editor."""
     return {"title": title,
             "characters": {"narrator": {"name": "", "color": "#cccccc"}},
             "scenes": {"inicio": [{"op": "end"}]},
@@ -249,8 +249,8 @@ _IMG_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}
 _SND_EXTS = {".wav", ".ogg", ".mp3"}
 
 def list_assets(base, kind="img"):
-    """Assets del directorio del proyecto, ordenados ([] si no existe).
-    kind: "img" (default), "audio" o "all"."""
+    """Assets in the project directory, sorted ([] if it does not exist).
+    kind: "img" (default), "audio" or "all"."""
     exts = {"img": _IMG_EXTS, "audio": _SND_EXTS}.get(kind, _IMG_EXTS | _SND_EXTS)
     try:
         names = os.listdir(base)
@@ -260,8 +260,8 @@ def list_assets(base, kind="img"):
 
 
 def validate(model, base=None):
-    """Lista de problemas del proyecto (vacía = OK): referencias a escenas o
-    personajes inexistentes, escenas sin salida, y (si se da `base`) assets faltantes."""
+    """List of project problems (empty = OK): references to missing scenes or
+    characters, scenes with no exit, and (if `base` is given) missing assets."""
     probs = []
     scenes, chars = model["scenes"], model["characters"]
     for sid in model.get("order", scenes):
@@ -269,45 +269,45 @@ def validate(model, base=None):
         for s in scenes[sid]:
             op = s["op"]
             if op in ("show", "hide", "animate") and s.get("id") not in chars:
-                probs.append(f"escena {sid}: personaje '{s.get('id')}' no existe")
+                probs.append(f"scene {sid}: character '{s.get('id')}' does not exist")
             elif op == "show" and s.get("expr") and s["expr"] not in (chars[s["id"]].get("expr") or {}):
-                probs.append(f"escena {sid}: {s['id']} no tiene la expresión '{s['expr']}'")
+                probs.append(f"scene {sid}: {s['id']} has no expression '{s['expr']}'")
             if op == "say" and s.get("who") not in chars:
-                probs.append(f"escena {sid}: personaje '{s.get('who')}' no existe")
+                probs.append(f"scene {sid}: character '{s.get('who')}' does not exist")
             if op == "goto":
                 has_exit = True
                 if s["target"] not in scenes:
-                    probs.append(f"escena {sid}: goto a '{s['target']}' inexistente")
+                    probs.append(f"scene {sid}: goto to missing '{s['target']}'")
             if op == "end":
                 has_exit = True
             if op == "choice":
                 has_exit = True
                 for o in s.get("options", []):
                     if o["target"] not in scenes:
-                        probs.append(f"escena {sid}: opción a '{o['target']}' inexistente")
+                        probs.append(f"scene {sid}: option to missing '{o['target']}'")
             if base and op == "bg" and s["spec"].get("kind") == "img":
                 if not os.path.exists(os.path.join(base, s["spec"]["file"])):
-                    probs.append(f"escena {sid}: falta el fondo '{s['spec']['file']}'")
+                    probs.append(f"scene {sid}: missing background '{s['spec']['file']}'")
             if base and op in ("bgm", "se") and s.get("file"):
                 if not os.path.exists(os.path.join(base, s["file"])):
-                    probs.append(f"escena {sid}: falta el audio '{s['file']}'")
+                    probs.append(f"scene {sid}: missing audio '{s['file']}'")
         if not has_exit:
-            probs.append(f"escena {sid}: sin salida (end/goto/choice)")
+            probs.append(f"scene {sid}: no exit (end/goto/choice)")
     if base:
         for cid, c in chars.items():
             if c.get("sprite") and not os.path.exists(os.path.join(base, c["sprite"])):
-                probs.append(f"personaje {cid}: falta el sprite '{c['sprite']}'")
+                probs.append(f"character {cid}: missing sprite '{c['sprite']}'")
             for ex, f in (c.get("expr") or {}).items():
                 if not os.path.exists(os.path.join(base, f)):
-                    probs.append(f"personaje {cid}: falta el sprite de '{ex}': '{f}'")
+                    probs.append(f"character {cid}: missing sprite for '{ex}': '{f}'")
     return probs
 
 
 def duplicate_scene(model, sid):
-    """Duplica una escena (contenido deep-copy) con id único, tras la original."""
+    """Duplicates a scene (deep-copied content) with a unique id, right after the original."""
     import copy
     scenes = model["scenes"]
-    base = f"{sid}_copia"; new = base; i = 2
+    base = f"{sid}_copy"; new = base; i = 2
     while new in scenes:
         new = f"{base}{i}"; i += 1
     scenes[new] = copy.deepcopy(scenes[sid])
@@ -316,13 +316,13 @@ def duplicate_scene(model, sid):
 
 
 def duplicate_step(steps, i):
-    """Inserta una copia del paso i justo después."""
+    """Inserts a copy of step i right after it."""
     import copy
     steps.insert(i + 1, copy.deepcopy(steps[i]))
 
 
 def move_scene(model, sid, delta):
-    """Mueve una escena en el orden. False si queda fuera de rango."""
+    """Moves a scene within the order. False if it would fall out of range."""
     o = model["order"]; i = o.index(sid); j = i + delta
     if 0 <= j < len(o):
         o[i], o[j] = o[j], o[i]
@@ -331,7 +331,7 @@ def move_scene(model, sid, delta):
 
 
 def rename_character(model, old, new):
-    """Renombra un personaje y reapunta todas sus referencias. False si no aplica."""
+    """Renames a character and repoints all its references. False if not applicable."""
     chars = model["characters"]
     if old not in chars or new in chars or old == "narrator" or not new:
         return False
@@ -346,7 +346,7 @@ def rename_character(model, old, new):
 
 
 def to_text(model):
-    """Serializa un modelo (el que devuelve parse) de vuelta a texto .vn."""
+    """Serializes a model (as returned by parse) back to .vn text."""
     out = [f"title: {model['title']}"]
     for cid, c in model["characters"].items():
         if cid == "narrator":
@@ -363,7 +363,7 @@ def to_text(model):
         cur_g = None
         for s in model["scenes"][sid]:
             g = s.get("group")
-            if g != cur_g:                              # marcadores alrededor de cada corrida
+            if g != cur_g:                              # markers around each run
                 if cur_g: out.append("  endgroup")
                 if g: out.append(f"  group {g}")
                 cur_g = g
@@ -379,7 +379,7 @@ def _step_text(s):
         sp = s["spec"]; fade = f" fade={s['fade']}" if s.get("fade") else ""
         if sp["kind"] == "grad": return f"bg grad:{sp['a']},{sp['b']}" + fade
         if sp["kind"] == "solid": return f"bg {sp['color']}" + fade
-        return f"bg {sp.get('file', '?.png')}" + fade   # ver nota en build()
+        return f"bg {sp.get('file', '?.png')}" + fade   # see note in build()
     if op == "show":
         t = f"show {s['id']}" + (f" {s['expr']}" if s.get("expr") else "") \
             + (f" {s['pos']}" if s.get("pos") else "")
@@ -407,7 +407,7 @@ def _step_text(s):
 
 
 def _embed(model, base_dir):
-    """Copia el modelo con los assets embebidos como data URI (para el HTML)."""
+    """Copy of the model with assets embedded as data URIs (for the HTML)."""
     import copy
     m = copy.deepcopy(model)
     def dat(f):
@@ -416,7 +416,7 @@ def _embed(model, base_dir):
     for c in m["characters"].values():
         if c.get("sprite"):
             c["spriteData"] = dat(c["sprite"])
-        if c.get("expr"):                          # una imagen por expresión
+        if c.get("expr"):                          # one image per expression
             c["exprData"] = {ex: dat(f) for ex, f in c["expr"].items()}
     for steps in m["scenes"].values():
         for s in steps:
@@ -433,7 +433,7 @@ def build(vn_path, out_html):
     base = os.path.dirname(os.path.abspath(vn_path))
     open(out_html, "w", encoding="utf-8").write(render_html(model, base))
     n = sum(len(v) for v in model["scenes"].values())
-    print(f"{len(model['scenes'])} escenas, {n} pasos -> {out_html}")
+    print(f"{len(model['scenes'])} scenes, {n} steps -> {out_html}")
     return out_html
 
 
@@ -442,13 +442,13 @@ def render_html(model, base_dir="."):
     return _TEMPLATE.replace("/*DATA*/", data).replace("__TITLE__", html.escape(model["title"]))
 
 
-_TEMPLATE = r"""<!doctype html><html lang="es"><head><meta charset="utf-8">
+_TEMPLATE = r"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>__TITLE__</title>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
 <style>
-  /* Mundo oscuro comprometido (juego): noche indigo + candil ambar. Un solo tema. */
+  /* Committed dark world (game): indigo night + amber lamplight. Single theme. */
   :root{
     --ground:#0b0e1c; --stage:#05060f;
     --box-a:#141b3aee; --box-b:#0a0e22f2;
@@ -509,7 +509,7 @@ _TEMPLATE = r"""<!doctype html><html lang="es"><head><meta charset="utf-8">
        color:var(--amber-soft);background:#03040acc}
   #hint{position:absolute;top:10px;right:14px;font-size:.7rem;letter-spacing:.1em;
         text-transform:uppercase;color:var(--muted);opacity:.55}
-  /* aproximación CSS de las acciones del engine (Python es la fuente de verdad) */
+  /* CSS approximation of the engine actions (Python is the source of truth) */
   @keyframes vn-jump{0%,100%{transform:translateY(0)}50%{transform:translateY(-6%)}}
   @keyframes vn-fall{0%{transform:translateY(-30%);opacity:.2}100%{transform:translateY(0);opacity:1}}
   @keyframes vn-shake{0%,100%{transform:translate(0,0)}25%{transform:translate(-1.5%,1%)}75%{transform:translate(1.5%,-1%)}}
@@ -523,13 +523,13 @@ _TEMPLATE = r"""<!doctype html><html lang="es"><head><meta charset="utf-8">
   <div id="box"><div id="who"></div><div id="text"></div><div id="cursor">▼</div></div>
   <div id="choices" hidden></div>
   <div id="end" hidden></div>
-  <div id="hint">click / espacio</div>
+  <div id="hint">click / space</div>
   <audio id="bgm" loop></audio>
 </div>
 <script>
 const M = /*DATA*/;
 const $ = s => document.querySelector(s);
-const sprites = {};   // id -> elemento
+const sprites = {};   // id -> element
 let scene, ip;
 
 function bgCss(spec){
@@ -539,7 +539,7 @@ function bgCss(spec){
 }
 function setBg(spec, fade){
   const bg = $("#bg"), old = $("#bg2");
-  if(fade && bg.style.background){          // crossfade: el viejo se desvanece encima del nuevo
+  if(fade && bg.style.background){          // crossfade: the old one fades out on top of the new one
     old.style.transition = "none"; old.style.background = bg.style.background; old.style.opacity = 1;
     void old.offsetWidth;
     old.style.transition = `opacity ${fade}ms linear`; old.style.opacity = 0;
@@ -552,7 +552,7 @@ function show(id,pos,expr){
   let el = sprites[id];
   const was = !!el;
   if(!el){ el = document.createElement("div"); el.className="sprite"; $("#sprites").appendChild(el); sprites[id]=el; }
-  if(pos || !was) el.className = "sprite "+(pos||"center");   // sin pos: se queda donde está
+  if(pos || !was) el.className = "sprite "+(pos||"center");   // no pos: stays where it is
   const img = (c.exprData||{})[expr] || c.spriteData;
   if(img){ el.innerHTML = `<img src="${img}">`; }
   else { const nm=c.name||id;
@@ -565,7 +565,7 @@ function playBgm(s){
   if(s.stop){ a.pause(); return; }
   if(s.data){ a.src=s.data; a.play().catch(()=>{}); }
 }
-function animate(id,kind){        // aproximación CSS de las acciones del engine
+function animate(id,kind){        // CSS approximation of the engine actions
   const el = sprites[id]; if(!el) return;
   const css = {jump:"vn-jump .5s 2", jumponce:"vn-jump .5s 1", vibrate:"vn-shake .4s 3",
                wave:"vn-wave 1s 2", fall:"vn-fall .6s 1"}[kind];
@@ -608,11 +608,11 @@ function choose(s){
   s.options.forEach(o=>{ const b=document.createElement("button"); b.textContent=o.label;
     b.onclick=()=>{ box.hidden=true; enter(o.target); }; box.appendChild(b); });
 }
-function theEnd(){ $("#end").hidden=false; $("#end").textContent="Fin"; $("#cursor").hidden=true; }
+function theEnd(){ $("#end").hidden=false; $("#end").textContent="The End"; $("#cursor").hidden=true; }
 
 function advance(){
   if(!$("#choices").hidden || !$("#end").hidden) return;
-  if(finishType()) return;   // primer click completa el texto, el segundo avanza
+  if(finishType()) return;   // first click completes the text, the second advances
   step();
 }
 $("#stage").addEventListener("click", advance);
@@ -622,40 +622,40 @@ enter(M.start);
 
 
 DEMO_VN = """\
-title: El Familiar de Cero — Demo SDK
+title: The Familiar of Zero — SDK Demo
 character saito "Saito" color=#7cc4ff
 character louise "Louise" color=#ff9ec2
 
 scene intro
   bg grad:#101830,#2a4a80
-  * Una torre de la Academia de Magia. Media noche.
+  * A tower of the Academy of Magic. Midnight.
   show louise left
-  louise: ¿Otra vez despierto, perro?
+  louise: Awake again, dog?
   show saito right
-  saito: No podía dormir. ¿Y vos?
-  louise: ...eso no es asunto tuyo.
+  saito: Couldn't sleep. And you?
+  louise: ...that's none of your business.
   choice
-    - Insistir con cuidado -> acerca
-    - Cambiar de tema -> tema
+    - Press gently -> closer
+    - Change the subject -> subject
 
-scene acerca
-  louise: ...Extraño mi casa. ¿Contento?
-  saito: Gracias por contarme.
-  goto fin
+scene closer
+  louise: ...I miss home. Happy now?
+  saito: Thanks for telling me.
+  goto ending
 
-scene tema
-  saito: Linda noche, ¿no?
+scene subject
+  saito: Nice night, isn't it?
   louise: Hmpf.
-  goto fin
+  goto ending
 
-scene fin
-  * Afuera, la brisa movió las cortinas.
+scene ending
+  * Outside, the breeze stirred the curtains.
   end
 """
 
 
 def _ops_selfcheck():
-    # validate: detecta gotos/personajes/dead-ends
+    # validate: catches gotos/characters/dead-ends
     bad = _link_choices(parse(
         'title: t\ncharacter a "A"\n'
         'scene uno\n  show b left\n  goto ninguna\n'
@@ -663,9 +663,9 @@ def _ops_selfcheck():
     probs = validate(bad)
     assert any("ninguna" in p for p in probs), probs
     assert any("'b'" in p for p in probs), probs
-    assert any("dos" in p and "salida" in p for p in probs), probs
+    assert any("dos" in p and "no exit" in p for p in probs), probs
     assert validate(_link_choices(parse(DEMO_VN))) == []
-    # rename_character: mueve y reapunta referencias
+    # rename_character: moves and repoints references
     mm = _link_choices(parse('title: t\ncharacter x "X"\nscene s\n  show x left\n'
                              '  x: hola\n  animate x jump\n  end\n'))
     assert rename_character(mm, "x", "y") is True
@@ -673,37 +673,37 @@ def _ops_selfcheck():
     stp = mm["scenes"]["s"]
     assert stp[0]["id"] == "y" and stp[1]["who"] == "y" and stp[2]["id"] == "y", stp
     assert rename_character(mm, "nope", "z") is False and rename_character(mm, "y", "y") is False
-    # duplicate_scene: copia con id único, insertada después
+    # duplicate_scene: copy with a unique id, inserted right after
     dm = _link_choices(parse('title: t\ncharacter a "A"\nscene uno\n  a: hola\n  end\n'))
     nid = duplicate_scene(dm, "uno")
     assert nid in dm["scenes"] and nid != "uno"
     assert dm["scenes"][nid] == dm["scenes"]["uno"] and dm["scenes"][nid] is not dm["scenes"]["uno"]
     assert dm["order"].index(nid) == dm["order"].index("uno") + 1
-    assert duplicate_scene(dm, "uno") != nid          # id único la 2da vez
-    # duplicate_step: copia insertada después
+    assert duplicate_scene(dm, "uno") != nid          # unique id the 2nd time too
+    # duplicate_step: copy inserted right after
     stp = [{"op": "end"}]
     duplicate_step(stp, 0)
     assert len(stp) == 2 and stp[0] == stp[1] and stp[0] is not stp[1]
-    # move_scene: reordena en order, respeta bordes
+    # move_scene: reorders within order, respects the edges
     om = _link_choices(parse('title: t\nscene a\n  end\nscene b\n  end\nscene c\n  end\n'))
     assert om["order"] == ["a", "b", "c"]
     assert move_scene(om, "a", 1) and om["order"] == ["b", "a", "c"]
     assert move_scene(om, "a", -1) and om["order"] == ["a", "b", "c"]
     assert move_scene(om, "a", -1) is False and move_scene(om, "c", 1) is False
-    # list_assets: imágenes del proyecto, ordenadas; dir inexistente -> []
+    # list_assets: project images, sorted; missing dir -> []
     import tempfile, os as _os
     d = tempfile.mkdtemp()
     for f in ("b.jpg", "a.png", "note.txt"):
         open(_os.path.join(d, f), "w").close()
     assert list_assets(d) == ["a.png", "b.jpg"], list_assets(d)
     assert list_assets(_os.path.join(d, "nope")) == []
-    # blank_model: proyecto mínimo válido y round-trip
+    # blank_model: minimal valid project and round-trip
     bm = blank_model()
     assert bm["order"] and bm["start"] == bm["order"][0]
     assert "narrator" in bm["characters"]
-    assert validate(bm) == []                          # arranca sin problemas
+    assert validate(bm) == []                          # starts with no problems
     assert list(_link_choices(parse(to_text(bm)))["scenes"]) == bm["order"]
-    # audio: bgm/se en el .vn + round-trip
+    # audio: bgm/se in the .vn + round-trip
     au = _link_choices(parse('title: t\ncharacter a "A"\nscene s\n'
                              '  bgm tema.ogg\n  a: hola\n  se golpe.wav\n  bgm stop\n  end\n'))
     sts = au["scenes"]["s"]
@@ -722,12 +722,12 @@ def demo():
     assert model["start"] == "intro"
     assert model["characters"]["louise"]["color"] == "#ff9ec2"
     ch = [s for s in model["scenes"]["intro"] if s["op"] == "choice"][0]
-    assert len(ch["options"]) == 2 and ch["options"][0]["target"] == "acerca"
+    assert len(ch["options"]) == 2 and ch["options"][0]["target"] == "closer"
     says = [s for s in model["scenes"]["intro"] if s["op"] == "say"]
     assert says[0]["who"] == "narrator" and says[1]["who"] == "louise"
     h = render_html(model)
-    assert "<title>" in h and "M.start" in h and "El Familiar de Cero" in h
-    assert "/*DATA*/" not in h        # el JSON se inyectó
+    assert "<title>" in h and "M.start" in h and "The Familiar of Zero" in h
+    assert "/*DATA*/" not in h        # the JSON was injected
     print("demo OK")
 
 
@@ -736,7 +736,7 @@ def cli(argv):
         return demo()
     if argv[0] == "build":
         return build(argv[1], argv[2])
-    if argv[0] == "demo-build":       # genera el player de ejemplo
+    if argv[0] == "demo-build":       # generates the example player
         open("_demo.vn", "w", encoding="utf-8").write(DEMO_VN)
         return build("_demo.vn", argv[1] if len(argv) > 1 else "vn_demo.html")
     print(__doc__)

@@ -1,112 +1,112 @@
-# VN Studio (web) — mapa de features y QA
+# VN Studio (web) — feature map and QA
 
-Estado al 2026-09-04, rama `web-studio`. El editor corre sobre el engine real
-(`znt.vnstudio.VNRuntime`); el server Python es la fuente de verdad y el browser
-compone con CSS. Este documento es el inventario + lo que encontró el QA + lo que
-falta para la visión.
+Status as of 2026-09-04, branch `web-studio`. The editor runs on the real engine
+(`znt.vnstudio.VNRuntime`); the Python server is the source of truth and the
+browser composes with CSS. This document is the inventory + what the QA found +
+what is missing for the vision.
 
-## 1. Mapa de features (lo que existe)
+## 1. Feature map (what exists)
 
-### Proyecto
-| Feature | Dónde | Cómo |
+### Project
+| Feature | Where | How |
 |---|---|---|
-| Nuevo / Abrir / Guardar / Guardar como / Exportar HTML | topbar | diálogos propios + explorador de archivos 📁 |
-| Validar (gotos rotos, personajes/expresiones inexistentes, escenas sin salida, assets) | topbar | panel de problemas en el inspector |
-| **⌥ flujo**: grafo de escenas | topbar | SVG, click va a la escena |
-| Exportar **html / vnp / iso** | topbar | diálogo de formato + explorador |
-| Undo / Redo | topbar, Ctrl+Z / Ctrl+Y | historial en el server |
-| Server: `--restart`, `--stop`, `--port`, aviso de versión de API | CLI | pidfile + barrido de /proc |
+| New / Open / Save / Save as / Export HTML | topbar | own dialogs + 📁 file browser |
+| Validate (broken gotos, missing characters/expressions, scenes with no exit, assets) | topbar | problems panel in the inspector |
+| **⌥ flow**: scene graph | topbar | SVG, click goes to the scene |
+| Export **html / vnp / iso** | topbar | format dialog + browser |
+| Undo / Redo | topbar, Ctrl+Z / Ctrl+Y | history on the server |
+| Server: `--restart`, `--stop`, `--port`, API version warning | CLI | pidfile + /proc sweep |
 
-### Escenas y pasos
-| Feature | Dónde |
+### Scenes and steps
+| Feature | Where |
 |---|---|
-| Escenas: agregar, duplicar, renombrar, subir/bajar | outliner |
-| Pasos: agregar (10 tipos), duplicar, borrar, mover, reordenar arrastrando, **multi-selección, Ctrl+C/V, Ctrl+F** | timeline |
-| **Grupos** (Ctrl+G): varios pasos = un click en Play; banda en el timeline y lista en el outliner; `group x … endgroup` en el .vn | timeline / outliner |
-| Timeline con pistas por tipo, regla, playhead, scrub, Ctrl+rueda zoom | timeline |
-| Inspector por tipo de paso con secciones plegables | inspector |
-| Campos numéricos con scrub (arrastrar la etiqueta, Shift fino) | inspector |
+| Scenes: add, duplicate, rename, move up/down | outliner |
+| Steps: add (10 types), duplicate, delete, move, drag to reorder, **multi-selection, Ctrl+C/V, Ctrl+F** | timeline |
+| **Groups** (Ctrl+G): several steps = one click in Play; band on the timeline and list in the outliner; `group x … endgroup` in the .vn | timeline / outliner |
+| Timeline with tracks per type, ruler, playhead, scrub, Ctrl+wheel zoom | timeline |
+| Inspector per step type with collapsible sections | inspector |
+| Numeric fields with scrub (drag the label, Shift fine) | inspector |
 
-### Personajes y capas
-| Feature | Dónde |
+### Characters and layers
+| Feature | Where |
 |---|---|
-| Crear personaje (id, nombre, color) | topbar ＋ Personaje |
-| Sección Personaje única: elegir, nombre, color, sprite (📁/⇧ subir), **expresiones**, renombrar id | inspector |
-| Capas del paso (al frente primero), selección sincronizada, doble click → su `show` | outliner |
-| Arrastrar sprite con snap y guías (Shift libre); handles de esquina = zoom | viewport |
-| Orden Z ▲/▼, opacidad, tinte, x/y/z/zoom | inspector |
+| Create character (id, name, colour) | topbar ＋ Character |
+| Single Character section: choose, name, colour, sprite (📁/⇧ upload), **expressions**, rename id | inspector |
+| The step's layers (front first), synced selection, double click → its `show` | outliner |
+| Drag sprite with snap and guides (Shift free); corner handles = zoom | viewport |
+| Z order ▲/▼, opacity, tint, x/y/z/zoom | inspector |
 
-### Reproducción
-| Feature | Dónde |
+### Playback
+| Feature | Where |
 |---|---|
-| Play **paso a paso** desde el paso elegido (click/Espacio/⏭ = siguiente paso; un grupo = un click); choices; tipeo ⌨; bgm/se | viewport |
-| El timeline sigue al runtime (escena y paso), click en clip = reproducir desde ahí | timeline |
-| UI apagada en Play salvo juego + timeline | todo |
-| ▶ Probar paso: transición renderizada por el engine (APNG), se cierra sola | viewport |
-| Guías (centro/tercios/zona segura), ojo para apagar diálogo/opciones | viewport |
+| Play **step by step** from the chosen step (click/Space/⏭ = next step; a group = one click); choices; typing ⌨; bgm/se | viewport |
+| The timeline follows the runtime (scene and step), click on a clip = play from there | timeline |
+| UI switched off in Play except game + timeline | everywhere |
+| ▶ Try step: transition rendered by the engine (APNG), closes on its own | viewport |
+| Guides (centre/thirds/safe zone), eye to hide dialogue/options | viewport |
 
-### Robustez
-- Errores del server, del fetch y de assets ilegibles → toast + panel de problemas.
-- PNG 1/2/4/8/16 bits, paleta y gris; entrelazado avisa.
-- Op desconocida, ruta inexistente, guardar sin ruta → error explícito.
+### Robustness
+- Server errors, fetch errors and unreadable assets → toast + problems panel.
+- 1/2/4/8/16-bit PNG, palette and grayscale; interlaced warns.
+- Unknown op, nonexistent path, saving without a path → explicit error.
 
-## 2. Herramientas de QA
+## 2. QA tools
 
-- `tests/run_all.sh` — todo: demo del core, tests Python, tests JS (node), lector C,
-  DOM real (chromium `--dump-dom`) y masterizado ISO.
-- `tests/browser/qa.js` — **QA real**: maneja chromium por Chrome DevTools
-  Protocol (clicks, teclado, arrastre) contra el server real y junta las
-  excepciones JS. `node tests/browser/qa.js [flujo…]`, `QA_DEBUG=1` vuelca el
-  estado de la app al fallar. Cada flujo arranca limpio.
+- `tests/run_all.sh` — everything: core demo, Python tests, JS tests (node), C
+  reader, real DOM (chromium `--dump-dom`) and ISO mastering.
+- `tests/browser/qa.js` — **real QA**: drives chromium through the Chrome DevTools
+  Protocol (clicks, keyboard, drag) against the real server and collects the JS
+  exceptions. `node tests/browser/qa.js [flow…]`, `QA_DEBUG=1` dumps the app
+  state on failure. Every flow starts clean.
 
-## 3. Hallazgos del QA (browser real) y qué se hizo
+## 3. QA findings (real browser) and what was done
 
-| # | Hallazgo | Impacto | Estado |
+| # | Finding | Impact | Status |
 |---|---|---|---|
-| 1 | Enter en los diálogos ejecutaba **Cancelar** (era el primer botón submit del `<form method=dialog>`) | crear escena/personaje "no hacía nada" | arreglado |
-| 2 | Los campos del paso (texto, pos, tipo, opciones…) **no aplicaban** hasta tocar "Aplicar"; el resto del inspector sí aplicaba solo | edits perdidos, inconsistencia | arreglado: todo aplica al cambiar, sin botón |
-| 3 | **Validar** sin problemas no decía nada | parecía roto | arreglado: "✓ proyecto válido" / "N problemas" |
-| 4 | En una **confirmación** sin campos, Enter caía en Cancelar (primer foco) | borrar no borraba | arreglado: foco en Sí |
-| 5 | Una regla de id con `display:flex` le ganaba a `[hidden]` | la barra del preview quedaba visible siempre | arreglado |
-| 6 | El **velo negro** del choice se dibujaba también en edición | "se oscurece todo y no sé por qué" | arreglado: previsualización suave + cartel |
-| 7 | **Server viejo** ignoraba ops nuevas en silencio; puerto ocupado = traceback | "no funciona de mi lado" | arreglado: versión de API + `--restart` |
-| 8 | **Guardar sin ruta** era un no-op; el proyecto vivía sólo en memoria | trabajo perdido | arreglado: guardar como + autosave + ● |
-| 9 | El **choice** se editaba en un textarea "etiqueta -> escena" | propenso a typos | arreglado: filas con desplegable de escenas |
-| 10 | Los **params de animación** eran texto `k=v` | había que saber los nombres | arreglado: campos por tipo, con scrub |
-| 11 | Agregar un diálogo requería: elegir tipo, ＋, ir al inspector, tipear | lento para lo más común | arreglado: barra de **diálogo rápido** (Enter agrega y sigue) |
-| 12 | Borrar escena/personaje no existía | proyectos sucios | arreglado (con reglas: nunca la última; personaje en uso se niega y dice dónde) |
+| 1 | Enter in the dialogs ran **Cancel** (it was the first submit button of the `<form method=dialog>`) | creating a scene/character "did nothing" | fixed |
+| 2 | The step fields (text, pos, type, options…) **did not apply** until pressing "Apply"; the rest of the inspector did apply on its own | lost edits, inconsistency | fixed: everything applies on change, no button |
+| 3 | **Validate** with no problems said nothing | looked broken | fixed: "✓ project valid" / "N problems" |
+| 4 | In a **confirmation** with no fields, Enter landed on Cancel (first focus) | delete did not delete | fixed: focus on Yes |
+| 5 | An id rule with `display:flex` beat `[hidden]` | the preview bar stayed visible always | fixed |
+| 6 | The choice's **black veil** was also drawn while editing | "everything goes dark and I don't know why" | fixed: soft preview + sign |
+| 7 | **Old server** silently ignored new ops; busy port = traceback | "doesn't work on my side" | fixed: API version + `--restart` |
+| 8 | **Save without a path** was a no-op; the project lived only in memory | lost work | fixed: save as + autosave + ● |
+| 9 | The **choice** was edited in a "label -> scene" textarea | typo-prone | fixed: rows with a scene dropdown |
+| 10 | The **animation params** were `k=v` text | you had to know the names | fixed: fields per type, with scrub |
+| 11 | Adding a dialogue required: pick type, ＋, go to the inspector, type | slow for the most common thing | fixed: **quick dialogue** bar (Enter adds and continues) |
+| 12 | Deleting a scene/character did not exist | dirty projects | fixed (with rules: never the last one; a character in use is refused and it says where) |
 
-Falsos positivos del harness que se corrigieron en el harness (no en la app):
-conteo de pasos del proyecto de prueba, Enter sintético sin `text`, flujos que
-dependían del orden (ahora cada flujo arranca limpio), la escena nueva trae un
-`end` por diseño.
+Harness false positives that were fixed in the harness (not in the app):
+step count of the test project, synthetic Enter without `text`, flows that
+depended on order (now every flow starts clean), the new scene brings an `end`
+by design.
 
-## 4. Backlog de la visión — hecho (2026-09-04, TDD + QA real por item)
+## 4. Vision backlog — done (2026-09-04, TDD + real QA per item)
 
-| # | Feature | Dónde quedó |
+| # | Feature | Where it ended up |
 |---|---|---|
-| 1 | **Expresiones por personaje** — `sprite ana feliz feliz.png`, `show ana feliz [pos]`; pos opcional (mantiene posición) | formato + validate, runtime, server, inspector (sección Personaje / selector en show), outliner, player HTML, blob PS2 **v4** + lector C |
-| 2 | **Transición de fondo** `bg X fade=ms` (crossfade real) y **efecto de tipeo** en Play (⌨ cps; click completa, después avanza) | runtime (tween), preview APNG, player HTML (#bg2), inspector |
-| 3 | **Audio en el browser**: bgm en loop y se por disparo (se_seq) durante Play; ▶ para escuchar en los selectores | runtime, estado de Play, UI |
-| 4 | **Multi-selección** (Shift/Ctrl+click), **Ctrl+C/V** entre escenas, Supr múltiple | logic.js clickSelect, server paste_steps/del_steps |
-| 5 | **Ctrl+F** búsqueda en diálogos y opciones, resultados en vivo | logic.js searchSteps, diálogo |
-| 6 | **Vista de flujo** ⌥: grafo de escenas (BFS desde start, rojo = sin salida), click va a la escena | logic.js sceneGraph, SVG |
-| 7 | **Exportar** html / **vnp** / **iso** desde la UI (blob del proyecto en memoria; ISO pide el ELF y genisoimage) | server export_ps2, diálogo de formato + explorador |
+| 1 | **Expressions per character** — `sprite ana happy happy.png`, `show ana happy [pos]`; pos optional (keeps position) | format + validate, runtime, server, inspector (Character section / selector in show), outliner, HTML player, PS2 blob **v4** + C reader |
+| 2 | **Background transition** `bg X fade=ms` (real crossfade) and **typing effect** in Play (⌨ cps; click completes, then advances) | runtime (tween), APNG preview, HTML player (#bg2), inspector |
+| 3 | **Audio in the browser**: looping bgm and one-shot se (se_seq) during Play; ▶ to listen in the selectors | runtime, Play state, UI |
+| 4 | **Multi-selection** (Shift/Ctrl+click), **Ctrl+C/V** between scenes, multiple Del | logic.js clickSelect, server paste_steps/del_steps |
+| 5 | **Ctrl+F** search in dialogues and options, live results | logic.js searchSteps, dialog |
+| 6 | **Flow view** ⌥: scene graph (BFS from start, red = no exit), click goes to the scene | logic.js sceneGraph, SVG |
+| 7 | **Export** html / **vnp** / **iso** from the UI (blob of the in-memory project; ISO asks for the ELF and genisoimage) | server export_ps2, format dialog + browser |
 
-Hallazgos extra que salieron en esta ronda: Enter en un diálogo con el foco en
-un `<select>` no aceptaba (ahora Enter acepta desde cualquier campo); el efecto
-de tipeo hacía que el primer click no avanzara (por diseño: completa el texto;
-el QA lo modela y el flujo `tipeo` lo verifica).
+Extra findings that came out in this round: Enter in a dialog with the focus on
+a `<select>` did not accept (now Enter accepts from any field); the typing
+effect made the first click not advance (by design: it completes the text;
+the QA models it and the `tipeo` flow verifies it).
 
-Queda para después (sin bloquear nada): tema claro / escalado de UI, i18n del
-editor, arrastrar archivos al escenario, atajos por tipo de paso, expresiones
-y fade en el player PS2 (el blob ya lleva la imagen por expresión; el fade y el
-tipeo del ELF son trabajo de `ps2/main.c`).
+Left for later (blocking nothing): light theme / UI scaling, editor i18n,
+dragging files onto the stage, shortcuts per step type, expressions and fade
+in the PS2 player (the blob already carries the image per expression; the fade
+and typing of the ELF are `ps2/main.c` work).
 
-## 5. Cómo correr el QA
+## 5. How to run the QA
 
 ```sh
-./tests/run_all.sh                       # todo (incluye qa.js si hay chromium)
-node tests/browser/qa.js                 # sólo los flujos de usuario
-QA_DEBUG=1 node tests/browser/qa.js play # un flujo, con volcado de estado al fallar
+./tests/run_all.sh                       # everything (includes qa.js if chromium is there)
+node tests/browser/qa.js                 # just the user flows
+QA_DEBUG=1 node tests/browser/qa.js play # one flow, with a state dump on failure
 ```

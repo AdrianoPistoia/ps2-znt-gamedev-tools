@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Runner de escenas: integra transpilador + runtime + render para CORRER una
-escena real del juego y sacar frames.
+"""Scene runner: wires transpiler + runtime + render together to RUN a real
+game scene and produce frames.
 
-No reimplementa el engine entero. Implementa la capa de *comandos de escena* que
-las escenas llaman de verdad (`set`, `talk`, `reset`, `next`, `isJump`, ...) sobre
-el renderer de `render.py`, y deja un STUB por defecto para cualquier otro native:
-así una escena corre de punta a punta aunque falte implementar comandos, y su
-propia lógica (`if (isJump())`, ramas, loops) se ejecuta en la VM.
+It does not reimplement the whole engine. It implements the *scene command*
+layer that scenes actually call (`set`, `talk`, `reset`, `next`, `isJump`, ...)
+on top of the `render.py` renderer, and leaves a default STUB for any other
+native: a scene runs end to end even with commands still unimplemented, and its
+own logic (`if (isJump())`, branches, loops) executes in the VM.
 
-Direccionamiento de recursos del juego: `0x02000000 | idx` = textura de SCENEDAT,
-`0x03..` = BGM, `0x04..` = voz, `0x01..` = id de escena.
+Game resource addressing: `0x02000000 | idx` = SCENEDAT texture,
+`0x03..` = BGM, `0x04..` = voice, `0x01..` = scene id.
 
   python -m znt sqrun <disc> <scene_index> <out.png>
 """
@@ -26,13 +26,13 @@ class Runner:
     def __init__(self, disc):
         self.disc = disc
         self.font = disc.font
-        self.layers = {}        # nombre -> dict de props (incluye rows RGBA)
-        self.frames = []        # PNGs compuestos, uno por talk
+        self.layers = {}        # name -> props dict (includes RGBA rows)
+        self.frames = []        # composed PNGs, one per talk
         self.last_talk = None
         self.stop = False
         self.R = self._root()
 
-    # --- comandos de escena (los que llaman las escenas) -------------------
+    # --- scene commands (the ones scenes call) -----------------------------
     def _texture(self, image):
         if image is None or BANK(image) != 0x02:
             return None
@@ -63,11 +63,11 @@ class Runner:
         self.stop = True
 
     def cmd_isjump(self, *a):
-        return False        # primera pasada: no venimos de un jump
+        return False        # first pass: we did not come from a jump
 
     def _compose(self, name, text):
         sc = render.Scene(640, 448)
-        # nivel mayor = mas al fondo (los datos: stage=200 detras, chars=160)
+        # higher level = further back (the data: stage=200 behind, chars=160)
         for lname, l in sorted(self.layers.items(), key=lambda kv: -kv[1].get("level", 0)):
             if not l.get("rows") or l.get("show", 1) in (0, False):
                 continue
@@ -82,7 +82,7 @@ class Runner:
         sc.window = win
         return sc.compose()
 
-    # --- root table con stubs ----------------------------------------------
+    # --- root table with stubs ---------------------------------------------
     def _root(self):
         R = _Root(self)
         R.update(sqrt.new_root())
@@ -103,12 +103,12 @@ class Runner:
 
 
 class _Root(dict):
-    """Root table: lo que falta devuelve un stub que registra y no rompe."""
+    """Root table: anything missing returns a stub that logs and does not break."""
     def __init__(self, runner):
         super().__init__(); self._runner = runner; self.missing = set()
     def __missing__(self, key):
         self.missing.add(key)
-        return lambda *a, **k: None      # native no implementado: no-op
+        return lambda *a, **k: None      # unimplemented native: no-op
 
 
 def run_scene(disc_path, scene_index, out):
@@ -117,17 +117,17 @@ def run_scene(disc_path, scene_index, out):
     r = Runner(disc)
     frames = r.run(scene_index)
     if not frames:
-        print(f"escena {scene_index}: corrió sin talks (0 frames)")
+        print(f"scene {scene_index}: ran with no talks (0 frames)")
     else:
         frames[0].png(out)
-        print(f"escena {scene_index}: {len(frames)} frames, primero -> {out}")
+        print(f"scene {scene_index}: {len(frames)} frames, first -> {out}")
     if r.R.missing:
-        print("natives no implementados (stub):", ", ".join(sorted(r.R.missing)))
+        print("unimplemented natives (stub):", ", ".join(sorted(r.R.missing)))
     return out
 
 
 def demo():
-    """Self-check sin assets: los comandos de escena manejan capas y frames."""
+    """Asset-free self-check: the scene commands manage layers and frames."""
     class FakeCont:
         def __getitem__(self, i): raise KeyError
     class FakeDisc:

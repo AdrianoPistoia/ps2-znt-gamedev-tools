@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""Framework gráfico de desarrollo de novelas visuales, sobre el engine real.
+"""Graphical visual-novel development framework, on top of the real engine.
 
-Dos piezas:
-- `VNRuntime` (headless): reproduce un modelo autoral (`vn`) usando el MISMO
-  render y la MISMA animación del engine (capas `LayerState`, curvas y acciones).
-  Compone fondo + sprites; el texto del diálogo lo pone el frontend (la fuente del
-  juego es japonesa, sin acentos latinos), y lo expone como estado.
-- `run_editor` (tkinter): editor visual — lista de escenas y de pasos, edición de
-  propiedades, stage en vivo con el engine, Play, y export a `.vn` + player HTML.
+Two pieces:
+- `VNRuntime` (headless): plays an authoring model (`vn`) using the SAME
+  render and the SAME animation as the engine (`LayerState` layers, curves and actions).
+  It composes background + sprites; the dialogue text is drawn by the frontend (the
+  game font is Japanese, no Latin accents), and is exposed as state.
+- `run_editor` (tkinter): visual editor — scene and step lists, property editing,
+  live stage on the engine, Play, and export to `.vn` + HTML player.
 
-    python -m znt studio [proyecto.vn]      # abre el editor (necesita display)
+    python -m znt studio [project.vn]      # opens the editor (needs a display)
 
-El runtime es headless y guionable; el editor va encima. Reusa image/render/engine
-y el formato de `vn` (parse/to_text/build).
+The runtime is headless and scriptable; the editor sits on top. It reuses
+image/render/engine and the `vn` format (parse/to_text/build).
 """
 import sys, os
 
@@ -46,7 +46,7 @@ def _grad_rows(w, h, a, b):
 
 
 def _scale_rows(rows, pct):
-    """Escala filas RGBA por `pct`% (nearest-neighbor)."""
+    """Scales RGBA rows by `pct`% (nearest-neighbor)."""
     if pct == 100:
         return rows
     h, w = len(rows), len(rows[0]) // 4
@@ -62,7 +62,7 @@ def _scale_rows(rows, pct):
 
 
 def _block_rows(w, h, rgb, alpha=170):
-    """Placeholder de personaje: bloque tenue con esquinas redondeadas."""
+    """Character placeholder: a faint block with rounded corners."""
     px = bytes((*rgb, alpha)); clear = bytes((0, 0, 0, 0)); rad = min(w, h) // 6
     rows = []
     for y in range(h):
@@ -89,10 +89,10 @@ class VNRuntime:
         self.stage = {}          # name -> LayerState
         self.speaker = self.text = None
         self.choices = []
-        self.bg_spec = None      # último fondo aplicado (para el frontend)
-        self.bgm = None          # archivo de música actual (estado)
-        self.last_se = None      # último efecto disparado
-        self.se_seq = 0          # cuántos se dispararon (el cliente detecta uno nuevo por esto)
+        self.bg_spec = None      # last background applied (for the frontend)
+        self.bgm = None          # current music file (state)
+        self.last_se = None      # last effect fired
+        self.se_seq = 0          # how many were fired (the client detects a new one by this)
         self.scene_id = None
         self.done = False
         self.ip = 0
@@ -104,15 +104,15 @@ class VNRuntime:
         rows = None
         try:
             _, _, rows = image.load_png_file(os.path.join(self.base, fname))
-        except Exception as e:                      # se dibuja el placeholder,
-            self._bad[fname] = str(e) or type(e).__name__   # pero se avisa por qué
+        except Exception as e:                      # the placeholder gets drawn,
+            self._bad[fname] = str(e) or type(e).__name__   # but we record why
         self._asset_cache[fname] = rows
         return rows
 
     def warnings(self):
-        """Assets que no se pudieron leer (el escenario los reemplaza por el
-        placeholder, pero el editor tiene que poder decir qué pasó)."""
-        return [f"no se pudo leer {f}: {why}" for f, why in sorted(self._bad.items())]
+        """Assets that could not be read (the stage replaces them with the
+        placeholder, but the editor has to be able to say what happened)."""
+        return [f"could not read {f}: {why}" for f, why in sorted(self._bad.items())]
 
     def _bg_rows(self, spec):
         if spec["kind"] == "solid":
@@ -130,19 +130,19 @@ class VNRuntime:
                 return rows
         return _block_rows(200, 300, _hex(c.get("color")))
 
-    # --- ejecutar la escena ------------------------------------------------
+    # --- run the scene -----------------------------------------------------
     def enter(self, scene_id):
         self.reset_state()
         self.scene_id = scene_id
         self._run()
 
     def enter_at(self, scene_id, k, stepwise=True):
-        """Arranca el Play en el paso k: lo anterior se aplica sin frenar.
+        """Starts Play at step k: everything before is applied without stopping.
 
-        `stepwise` (el Play del editor) ejecuta ese paso y ahí se para, aunque no sea
-        un diálogo, y cada step_once() sigue con el próximo. Sin él corre como el
-        jugador —hasta el próximo diálogo u opción—, igual que el player HTML y el
-        ELF de PS2, para previsualizar el ritmo real."""
+        `stepwise` (the editor's Play) executes that step and stops there, even if it
+        is not a dialogue, and each step_once() continues with the next. Without it,
+        it runs like the player —up to the next dialogue or choice—, the same as the
+        HTML player and the PS2 ELF, to preview the real pacing."""
         self.reset_state(); self.scene_id = scene_id
         k = max(0, int(k))
         for s in self._steps()[:k]:
@@ -153,15 +153,15 @@ class VNRuntime:
         else: self._run()
 
     def step_once(self):
-        """Ejecuta exactamente un paso (modo paso a paso del editor)."""
+        """Executes exactly one step (the editor's step-by-step mode)."""
         steps = self._steps()
         self.speaker = self.text = None; self.choices = []
         if self.done or self.ip >= len(steps):
             self.done = True; return
-        while True:                                  # un grupo entero es un click
+        while True:                                  # a whole group is one click
             s = steps[self.ip]; self.ip += 1
             if s["op"] == "goto":
-                self.enter_at(s["target"], 0); return     # entra y muestra su primer paso
+                self.enter_at(s["target"], 0); return     # enters and shows its first step
             if s["op"] == "end":
                 self.done = True; return
             self._exec(s)
@@ -174,14 +174,14 @@ class VNRuntime:
 
     @property
     def cursor(self):
-        """Índice del paso en el que está parado el Play (el último ejecutado)."""
+        """Index of the step Play is standing on (the last one executed)."""
         return max(0, self.ip - 1)
 
     def _steps(self):
         return self.model["scenes"].get(self.scene_id, [])
 
     def _run(self):
-        """Ejecuta pasos no bloqueantes hasta un say/choice/goto/end."""
+        """Executes non-blocking steps until a say/choice/goto/end."""
         self.speaker = self.text = None
         self.choices = []
         steps = self._steps()
@@ -192,11 +192,11 @@ class VNRuntime:
         self.done = True
 
     def _exec(self, s, navigate=True):
-        """Aplica un paso. Devuelve True si es bloqueante (say/choice/goto/end)."""
+        """Applies a step. Returns True if it is blocking (say/choice/goto/end)."""
         op = s["op"]
         if op == "bg":
             fade, old = int(s.get("fade") or 0), self.stage.get("bg")
-            if fade and old is not None and old.rows:      # crossfade: el viejo queda abajo
+            if fade and old is not None and old.rows:      # crossfade: the old one stays underneath
                 prev = self.stage.setdefault("bg_prev", LayerState())
                 prev.rows, prev.level, prev.opacity, prev.show = old.rows, -1, 100.0, True
                 prev.x = prev.y = 0.0
@@ -209,9 +209,9 @@ class VNRuntime:
             self.bg_spec = s["spec"]
         elif op == "show":
             l = self.stage.setdefault(s["id"], LayerState())
-            was = bool(getattr(l, "show", False) and l.rows)   # ya estaba en escena
+            was = bool(getattr(l, "show", False) and l.rows)   # already on stage
             l.rows = self._sprite_rows(s["id"], s.get("expr")); l.expr = s.get("expr")
-            # re-mostrar (cambio de expresión) sin decir dónde: se queda donde está
+            # re-showing (expression change) without saying where: stays where it is
             if "x" in s: l.x = float(s["x"])
             elif "pos" in s or not was: l.x = float(POS.get(s.get("pos", "center"), 0))
             if "y" in s or not was: l.y = float(s.get("y", 0))
@@ -243,9 +243,9 @@ class VNRuntime:
         return False
 
     def preview_upto(self, scene_id, k, settle=True):
-        """Estado tras ejecutar los pasos 0..k de una escena (para el editor).
-        settle=True deja las animaciones resueltas (estático); settle=False las deja
-        vivas desde t=0 para previsualizar la transición."""
+        """State after executing steps 0..k of a scene (for the editor).
+        settle=True leaves the animations resolved (static); settle=False leaves them
+        live from t=0 to preview the transition."""
         self.reset_state(); self.scene_id = scene_id
         self.speaker = self.text = None; self.choices = []
         for s in self._steps()[:k+1]:
@@ -278,7 +278,7 @@ class VNRuntime:
             else: self.enter(self.choices[i]["target"])
 
     def settle(self):
-        """Lleva los tweens (movimientos) a su fin, para el preview estático."""
+        """Runs the tweens (movements) to their end, for the static preview."""
         for _ in range(60):
             if not any(l.tw for l in self.stage.values()):
                 break
@@ -287,7 +287,7 @@ class VNRuntime:
     def tick(self, dt):
         for l in self.stage.values():
             l.tick(dt)
-        prev = self.stage.get("bg_prev")               # terminó el fade: el viejo se va
+        prev = self.stage.get("bg_prev")               # fade finished: the old one goes away
         if prev is not None and prev.show and not self.stage["bg"].tw:
             prev.show = False
 
@@ -295,7 +295,7 @@ class VNRuntime:
         return any(l.animating for l in self.stage.values())
 
     def _drawn(self, l):
-        """Filas ya escaladas por el zoom de la capa (cacheadas por %)."""
+        """Rows already scaled by the layer's zoom (cached per %)."""
         z = int(l.zoom)
         if z == 100:
             return l.rows
@@ -305,7 +305,7 @@ class VNRuntime:
         return l._zc[1]
 
     def _screen(self, l, rows=None):
-        """(sx, sy, w, h) del blit, anclado a base-centro (con zoom)."""
+        """(sx, sy, w, h) of the blit, anchored at bottom-center (with zoom)."""
         rows = rows if rows is not None else self._drawn(l)
         w, h = len(rows[0]) // 4, len(rows)
         ox, oy = l.offset
@@ -316,7 +316,7 @@ class VNRuntime:
         return self._screen(l) if l and l.rows and l.show else None
 
     def place_from_screen(self, name, sx, sy):
-        """Fija x/y de una capa a partir de una posición de pantalla (drag del editor)."""
+        """Sets a layer's x/y from a screen position (editor drag)."""
         l = self.stage.get(name)
         if not l or not l.rows:
             return
@@ -333,7 +333,7 @@ class VNRuntime:
         ly = render.Layer().loadImage(rows)
         ly.setPos(sx, sy); ly.setOpacity(l.opacity)
         if l.tint:
-            ly.setColor(*(c * 100 // 255 for c in _hex(l.tint)))   # tinte multiplicativo
+            ly.setColor(*(c * 100 // 255 for c in _hex(l.tint)))   # multiplicative tint
         ly.draw(fb)
 
     @staticmethod
@@ -342,10 +342,10 @@ class VNRuntime:
                       int(l.zoom), l.tint, id(l.rows)) for l in layers)
 
     def frame(self):
-        """Compone el frame. Cachea lo que va DETRÁS de la primera capa animada
-        (el fondo, que es lo caro) y por frame sólo re-blitea de ahí en adelante."""
+        """Composes the frame. Caches everything BEHIND the first animated layer
+        (the background, which is the expensive part) and per frame only re-blits from there on."""
         order = [l for l in sorted(self.stage.values(), key=lambda s: s.level)
-                 if l.rows and l.show]                      # menor level al fondo
+                 if l.rows and l.show]                      # lowest level at the back
         k = next((i for i, l in enumerate(order) if l.animating), len(order))
         sig = self._sig(order[:k])
         if sig != self._base_sig:
@@ -362,7 +362,7 @@ class VNRuntime:
 
 
 def demo():
-    """Self-check headless: reproduce un modelo con animación, sin display."""
+    """Headless self-check: plays a model with animation, no display."""
     model = vn._link_choices(vn.parse(
         'title: t\ncharacter a "Ana" color=#77ccff\n'
         'scene uno\n  bg grad:#101828,#304060\n  show a right\n'
@@ -372,29 +372,29 @@ def demo():
     rt.enter("uno")
     assert "bg" in rt.stage and "a" in rt.stage, list(rt.stage)
     assert rt.speaker == "a" and rt.text == "hola", (rt.speaker, rt.text)
-    # la animación de movimiento está activa y con la curva pedida
+    # the movement animation is active and uses the requested curve
     assert "x" in rt.stage["a"].tw and rt.stage["a"].tw["x"].curve == "accel"
     x0 = rt.stage["a"].x
-    rt.tick(200); assert rt.stage["a"].x != x0            # se movió
-    rt.settle(); assert not rt.stage["a"].tw               # terminó
+    rt.tick(200); assert rt.stage["a"].x != x0            # it moved
+    rt.settle(); assert not rt.stage["a"].tw               # it finished
     fb = rt.frame(); assert (fb.w, fb.h) == (640, 448)
-    # avanzar: narración y fin
+    # advance: narration and end
     rt.advance(); assert rt.text == "fin"
     rt.advance(); assert rt.done
-    # posición libre por x/y y round-trip de place_from_screen
+    # free position via x/y and place_from_screen round-trip
     m2 = vn._link_choices(vn.parse('title: t\ncharacter a "A"\nscene s\n  show a center x=60 y=-20\n  a: h\n  end\n'))
     r2 = VNRuntime(m2); r2.enter("s")
     assert r2.stage["a"].x == 60.0 and r2.stage["a"].y == -20.0, (r2.stage["a"].x, r2.stage["a"].y)
     sx, sy, w, h = r2.layer_rect("a")
-    r2.place_from_screen("a", sx + 10, sy - 5)      # mover 10 a la derecha, 5 arriba
+    r2.place_from_screen("a", sx + 10, sy - 5)      # move 10 right, 5 up
     assert r2.stage["a"].x == 70.0 and r2.stage["a"].y == -25.0, (r2.stage["a"].x, r2.stage["a"].y)
-    # zoom: escala anclada a base-centro (placeholder 200x300 al 200% -> 400x600)
+    # zoom: scale anchored at bottom-center (200x300 placeholder at 200% -> 400x600)
     m3 = vn._link_choices(vn.parse('title: t\ncharacter z "Z"\nscene s\n  show z center x=0 zoom=200\n  z: h\n  end\n'))
     r3 = VNRuntime(m3); r3.enter("s")
     assert r3.stage["z"].zoom == 200.0
     sx3, sy3, w3, h3 = r3.layer_rect("z")
     assert (w3, h3) == (400, 600) and sx3 == r3.W // 2 - 200 and sy3 == r3.H - 600, (w3, h3, sx3, sy3)
-    # opacidad y tinte por capa
+    # per-layer opacity and tint
     m4 = vn._link_choices(vn.parse('title: t\ncharacter w "W" color=#ffffff\n'
                                    'scene s\n  bg #000000\n  show w center opacity=50 tint=#0000ff\n  w: h\n  end\n'))
     r4 = VNRuntime(m4); r4.enter("s")
@@ -402,23 +402,23 @@ def demo():
     fb4 = r4.frame(); rw = r4.layer_rect("w")
     o = ((rw[1] + rw[3]//2) * fb4.w + rw[0] + rw[2]//2) * 3
     cw = tuple(fb4.buf[o:o+3])
-    assert cw[0] == 0 and cw[1] == 0 and cw[2] > 0, ("tinte azul", cw)   # R,G a 0; B queda
-    # previsualización de transición: settle=False la deja viva desde t=0
+    assert cw[0] == 0 and cw[1] == 0 and cw[2] > 0, ("blue tint", cw)   # R,G at 0; B remains
+    # transition preview: settle=False leaves it live from t=0
     m5 = vn._link_choices(vn.parse('title: t\ncharacter a "A"\nscene s\n  show a center x=0\n'
                                    '  animate a move x=200 curve=linear time=400\n  a: h\n  end\n'))
     r5 = VNRuntime(m5)
     r5.preview_upto("s", 1, settle=False)
-    assert "x" in r5.stage["a"].tw and r5.stage["a"].x == 0.0     # viva, sin arrancar
-    r5.preview_upto("s", 1)                                       # settle=True: resuelta
+    assert "x" in r5.stage["a"].tw and r5.stage["a"].x == 0.0     # live, not started
+    r5.preview_upto("s", 1)                                       # settle=True: resolved
     assert "x" not in r5.stage["a"].tw and r5.stage["a"].x == 200.0
-    # audio: el runtime trackea bgm/se como estado
+    # audio: the runtime tracks bgm/se as state
     m6 = vn._link_choices(vn.parse('title: t\ncharacter a "A"\nscene s\n'
                                    '  bgm tema.ogg\n  a: hola\n  se golpe.wav\n  bgm stop\n  end\n'))
     r6 = VNRuntime(m6); r6.enter("s")
-    assert r6.bgm == "tema.ogg" and r6.last_se is None            # tras el primer talk
+    assert r6.bgm == "tema.ogg" and r6.last_se is None            # after the first talk
     r6.advance(); assert r6.last_se == "golpe.wav" and r6.bgm is None   # se + bgm stop
     print("demo OK")
 
 
-if __name__ == "__main__":       # el runtime es headless; el editor va en `znt studio`
+if __name__ == "__main__":       # the runtime is headless; the editor lives in `znt studio`
     demo()

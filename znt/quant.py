@@ -1,28 +1,28 @@
-"""Cuantización a 256 colores para las texturas del player de PS2.
+"""256-color quantization for the PS2 player's textures.
 
-Una imagen RGBA de 640x448 pesa 1.1 MB: con 4 MB de VRAM entran pocas, y hay que
-leerlas del DVD. En 8bpp + CLUT pesa 287 KB (4x menos de VRAM y 4x menos de disco).
+A 640x448 RGBA image weighs 1.1 MB: with 4 MB of VRAM few fit, and they have to
+be read from the DVD. At 8bpp + CLUT it weighs 287 KB (4x less VRAM and 4x less disk).
 
-`quantize` devuelve (clut, indices): 256 entradas RGBA (1024 bytes) y un byte por
-píxel. El CLUT sale **en el orden que espera el GS** (CSM1, ver `swizzle_clut`), así
-el ELF lo sube tal cual sin reordenar nada.
+`quantize` returns (clut, indices): 256 RGBA entries (1024 bytes) and one byte per
+pixel. The CLUT comes out **in the order the GS expects** (CSM1, see `swizzle_clut`),
+so the ELF uploads it as-is without reordering anything.
 
-Método: median cut. Si la imagen tiene 256 colores distintos o menos —el caso normal
-del arte plano de una VN— se usan tal cual y no se pierde nada. Si tiene más, se
-agrupa a 5 bits por canal (incluido el alfa) y se parte el espacio en 256 cajas,
-cada una representada por el promedio real de sus píxeles.
+Method: median cut. If the image has 256 distinct colors or fewer —the normal case
+for the flat art of a VN— they are used as-is and nothing is lost. If it has more,
+colors are binned to 5 bits per channel (alpha included) and the space is split
+into 256 boxes, each represented by the real average of its pixels.
 
-Sólo stdlib. Self-check: `python3 -m znt.quant`.
+Stdlib only. Self-check: `python3 -m znt.quant`.
 """
 
 PAL = 256
 
 
 def swizzle_clut(clut):
-    """Intercambia las entradas 8-15 con las 16-23 de cada grupo de 32.
+    """Swaps entries 8-15 with 16-23 in every group of 32.
 
-    El GS lee el CLUT de una textura de 8 bits en ese orden (CSM1); si se sube
-    derecho, los colores salen cambiados por bloques. Es su propio inverso."""
+    The GS reads the CLUT of an 8-bit texture in that order (CSM1); if uploaded
+    straight, the colors come out swapped in blocks. It is its own inverse."""
     out = bytearray(clut)
     for base in range(0, PAL, 32):
         for k in range(8):
@@ -33,7 +33,7 @@ def swizzle_clut(clut):
 
 
 def _counts(rgba, bits):
-    """{clave -> [suma_r, suma_g, suma_b, suma_a, n]} agrupando a `bits` por canal."""
+    """{key -> [sum_r, sum_g, sum_b, sum_a, n]} binning to `bits` per channel."""
     sh = 8 - bits
     acc = {}
     mv = memoryview(rgba)
@@ -48,7 +48,7 @@ def _counts(rgba, bits):
 
 
 def _split(items):
-    """Median cut: parte `items` en <=256 cajas. Devuelve la lista de cajas."""
+    """Median cut: splits `items` into <=256 boxes. Returns the list of boxes."""
     def stats(box):
         lo = [255] * 4; hi = [0] * 4; n = 0
         for it in box:
@@ -59,14 +59,14 @@ def _split(items):
             n += it[4]
         rng = [hi[c] - lo[c] for c in range(4)]
         ch = max(range(4), key=lambda c: rng[c])
-        return rng[ch] * n, ch                      # cajas grandes y pobladas primero
+        return rng[ch] * n, ch                      # large, populated boxes first
 
     boxes = [(items, *stats(items))]
     while len(boxes) < PAL:
         i = max(range(len(boxes)), key=lambda k: boxes[k][1])
         box, score, ch = boxes[i]
         if score == 0 or len(box) < 2:
-            break                                   # no queda nada que valga la pena partir
+            break                                   # nothing worth splitting is left
         box = sorted(box, key=lambda it: it[ch] // it[4])
         half = sum(it[4] for it in box) // 2
         acc = j = 0
@@ -78,14 +78,14 @@ def _split(items):
 
 
 def is_lossless(rgba):
-    """¿La imagen entra en 256 colores exactos? (arte plano de VN: casi siempre sí)"""
+    """Does the image fit in 256 exact colors? (flat VN art: almost always yes)"""
     return len(_counts(rgba, 8)) <= PAL
 
 
 def quantize(w, h, rgba):
-    """RGBA crudo -> (clut de 1024 bytes ya en orden del GS, indices de w*h bytes)."""
+    """Raw RGBA -> (1024-byte clut already in GS order, w*h bytes of indices)."""
     exact = _counts(rgba, 8)
-    if len(exact) <= PAL:                           # arte plano: sin pérdida
+    if len(exact) <= PAL:                           # flat art: lossless
         keys = list(exact)
         pal = [k for k in keys]
         index = {k: i for i, k in enumerate(keys)}
@@ -118,8 +118,8 @@ def quantize(w, h, rgba):
 
 
 def unquantize(w, h, clut, idx):
-    """Deshace `quantize` (para verificar). Devuelve RGBA crudo."""
-    pal = swizzle_clut(clut)                        # el intercambio es su propio inverso
+    """Undoes `quantize` (for verification). Returns raw RGBA."""
+    pal = swizzle_clut(clut)                        # the swap is its own inverse
     return b"".join(pal[i*4:i*4+4] for i in idx)
 
 

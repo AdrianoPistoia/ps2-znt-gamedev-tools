@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-/* Captura de VN Studio por CDP, sin tocar el código de la app.
- *   node tests/browser/shot.js proyecto.vn salida.png ["js a correr antes"] */
+/* Screenshot of VN Studio over CDP, without touching the app code.
+ *   node tests/browser/shot.js project.vn out.png ["js to run first"] */
 "use strict";
 const { spawn } = require("child_process");
 const fs = require("fs"), os = require("os"), path = require("path");
@@ -12,7 +12,7 @@ const waitLine = (p, st, re) => new Promise((res, rej) => { let b = "";
 (async () => {
   const srv = spawn("python3", ["-m", "znt", "web", vnPath, "--port", "0", "--no-browser"],
                     { cwd: REPO, env: { ...process.env, PYTHONPATH: REPO, PYTHONUNBUFFERED: "1" } });
-  const [, url] = await waitLine(srv, "stdout", /en (http:\/\/127\.0\.0\.1:\d+\/)/);
+  const [, url] = await waitLine(srv, "stdout", /at (http:\/\/127\.0\.0\.1:\d+\/)/);
   const prof = fs.mkdtempSync(path.join(os.tmpdir(), "vnshot-"));
   const chrome = spawn("chromium", ["--headless=new", "--disable-gpu", "--no-first-run", "--hide-scrollbars",
     "--remote-debugging-port=0", "--remote-allow-origins=*", "--window-size=1400,860", "--user-data-dir=" + prof, "about:blank"]);
@@ -30,5 +30,5 @@ const waitLine = (p, st, re) => new Promise((res, rej) => { let b = "";
   const r = await send("Page.captureScreenshot", { format: "png" });
   fs.writeFileSync(out, Buffer.from(r.result.data, "base64"));
   ws.close(); chrome.kill("SIGKILL"); srv.kill("SIGKILL");
-  console.log("escrito", out);
+  console.log("written", out);
 })().catch(e => { console.error(e.message); process.exit(1); });
